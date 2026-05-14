@@ -1,19 +1,20 @@
-import OpenAI from 'openai';
+import { VoyageAIClient } from 'voyageai';
 import { env } from './env';
 
-let _openai: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!_openai) _openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
-  return _openai;
+let _client: VoyageAIClient | null = null;
+function getClient(): VoyageAIClient {
+  if (!_client) _client = new VoyageAIClient({ apiKey: env.VOYAGE_API_KEY });
+  return _client;
 }
 
 export async function embed(text: string): Promise<number[]> {
-  const response = await getClient().embeddings.create({
-    model: 'text-embedding-3-small',
+  const response = await getClient().embed({
+    model: 'voyage-3',
     input: text,
-    dimensions: 1536,
   });
-  return response.data[0].embedding;
+  const embedding = response.data?.[0]?.embedding;
+  if (!embedding) throw new Error('Voyage embed returned no embedding');
+  return embedding;
 }
 
 export function buildEmbeddingText(data: {

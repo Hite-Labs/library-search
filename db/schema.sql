@@ -13,7 +13,7 @@ CREATE TABLE content_items (
   r2_key           text NOT NULL,
   public_url       text NOT NULL,
   content_page_url text,
-  embedding        vector(1536) NOT NULL,
+  embedding        vector(1024) NOT NULL,
   program_id       uuid,
   sequence_order   integer,
   created_at       timestamptz NOT NULL DEFAULT now()
@@ -26,7 +26,7 @@ CREATE INDEX content_items_media_type_idx ON content_items (media_type);
 CREATE INDEX content_items_program_id_idx ON content_items (program_id);
 
 CREATE OR REPLACE FUNCTION match_content_items(
-  query_embedding vector(1536),
+  query_embedding vector(1024),
   match_threshold float,
   match_count     int
 )
