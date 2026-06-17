@@ -1,18 +1,26 @@
-import { VoyageAIClient } from 'voyageai';
 import { env } from './env';
 
-let _client: VoyageAIClient | null = null;
-function getClient(): VoyageAIClient {
-  if (!_client) _client = new VoyageAIClient({ apiKey: env.VOYAGE_API_KEY });
-  return _client;
-}
+const VOYAGE_API_URL = 'https://api.voyageai.com/v1/embeddings';
 
 export async function embed(text: string): Promise<number[]> {
-  const response = await getClient().embed({
-    model: 'voyage-3',
-    input: text,
+  const response = await fetch(VOYAGE_API_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.VOYAGE_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ model: 'voyage-3', input: text }),
   });
-  const embedding = response.data?.[0]?.embedding;
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Voyage embed failed: ${response.status} ${body}`);
+  }
+
+  const json = (await response.json()) as {
+    data?: Array<{ embedding?: number[] }>;
+  };
+  const embedding = json.data?.[0]?.embedding;
   if (!embedding) throw new Error('Voyage embed returned no embedding');
   return embedding;
 }
