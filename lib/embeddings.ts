@@ -31,8 +31,16 @@ export function buildEmbeddingText(data: {
   useCases: string;
   modality: string;
   moodTags: string;
+  transcript?: string;
 }): string {
-  return [data.title, data.description, data.useCases, data.modality, data.moodTags]
+  return [
+    data.title,
+    data.description,
+    data.useCases,
+    data.modality,
+    data.moodTags,
+    data.transcript ?? '',
+  ]
     .filter(Boolean)
     .join(' ');
 }

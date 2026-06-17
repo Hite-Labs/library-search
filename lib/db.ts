@@ -20,6 +20,7 @@ export interface ContentItem {
   r2_key: string;
   public_url: string;
   content_page_url: string | null;
+  transcript: string | null;
   program_id: string | null;
   sequence_order: number | null;
   created_at: string;
@@ -50,18 +51,19 @@ export async function insertContentItem(data: {
   durationSeconds: number | null;
   r2Key: string;
   publicUrl: string;
+  transcript: string | null;
   embedding: number[];
 }): Promise<string> {
   const sql = getSql();
   const embeddingStr = `[${data.embedding.join(',')}]`;
   const rows = await sql`
     INSERT INTO content_items
-      (title, description, media_type, use_cases, modality, mood_tags,
-       duration_seconds, r2_key, public_url, embedding)
+      (title, description, media_type, use_cases, mood_tags, modality,
+       duration_seconds, r2_key, public_url, transcript, embedding)
     VALUES
       (${data.title}, ${data.description}, ${data.mediaType}, ${data.useCases},
-       ${data.modality}, ${data.moodTags}, ${data.durationSeconds},
-       ${data.r2Key}, ${data.publicUrl}, ${embeddingStr}::vector)
+       ${data.moodTags}, ${data.modality}, ${data.durationSeconds},
+       ${data.r2Key}, ${data.publicUrl}, ${data.transcript}, ${embeddingStr}::vector)
     RETURNING id
   `;
   return rows[0].id as string;

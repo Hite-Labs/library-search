@@ -13,6 +13,7 @@ CREATE TABLE content_items (
   r2_key           text NOT NULL,
   public_url       text NOT NULL,
   content_page_url text,
+  transcript       text,
   embedding        vector(1024) NOT NULL,
   program_id       uuid,
   sequence_order   integer,

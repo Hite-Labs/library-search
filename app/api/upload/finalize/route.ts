@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCmsItem, patchCmsItem, publishItem } from '@/lib/webflow';
 import { embed, buildEmbeddingText } from '@/lib/embeddings';
+import { transcribe } from '@/lib/transcribe';
 import { insertContentItem, updateWebflowItemId } from '@/lib/db';
 import { FinalizeUploadSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
-export const maxDuration = 30;
+export const maxDuration = 300; // transcription polling can take minutes
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -40,6 +41,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, step: 'publish', error: String(err), webflowItemId }, { status: 500 });
   }
 
+  // Step 2.5: Transcribe audio/video (skip PDFs). Transcript feeds the embedding
+  // so search matches spoken content, and is stored for future re-embedding.
+  let transcript: string | null = null;
+  if (data.mediaType !== 'pdf') {
+    try {
+      transcript = await transcribe(data.publicUrl);
+    } catch (err) {
+      return NextResponse.json({ ok: false, step: 'transcribe', error: String(err), webflowItemId }, { status: 500 });
+    }
+  }
+
   // Step 3: Generate embedding
   let embedding: number[];
   try {
@@ -49,6 +61,7 @@ export async function POST(req: NextRequest) {
       useCases: data.useCases,
       modality: data.modality,
       moodTags: data.moodTags,
+      transcript: transcript ?? undefined,
     });
     embedding = await embed(embeddingText);
   } catch (err) {
@@ -68,6 +81,7 @@ export async function POST(req: NextRequest) {
       durationSeconds: data.durationSeconds,
       r2Key: data.r2Key,
       publicUrl: data.publicUrl,
+      transcript,
       embedding,
     });
   } catch (err) {
@@ -77,7 +91,7 @@ export async function POST(req: NextRequest) {
   // Step 5: Cross-link — store Neon ID back in Webflow, and Webflow ID in Neon
   try {
     await Promise.all([
-      patchCmsItem(webflowItemId, { 'neon-id': neonId }),
+      patchCmsItem(webflowItemId, { 'neon-record-id': neonId }),
       updateWebflowItemId(neonId, webflowItemId),
     ]);
   } catch (err) {

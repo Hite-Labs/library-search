@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Step 2: Query Neon for top matches
-  const matches = await matchContentItems(queryEmbedding, 0.5, 5);
+  const matches = await matchContentItems(queryEmbedding, 0.4, 5);
 
   // Step 3: Build Claude prompt with matches
   const matchesText =

@@ -58,11 +58,23 @@ export async function createCmsItem(data: {
 }): Promise<string> {
   await fetchOptionIds();
 
-  const mediaTypeId = mediaTypeOptions![data.mediaType];
+  // Webflow's Media Type option names are Audio / Video / Written. Map our
+  // internal mediaType (audio/video/pdf) onto the lowercased option-name keys.
+  const mediaTypeOptionName =
+    data.mediaType === 'pdf' ? 'written' : data.mediaType; // 'audio' | 'video' | 'written'
+  const mediaTypeId = mediaTypeOptions![mediaTypeOptionName];
   if (!mediaTypeId) throw new Error(`Unknown media type option: ${data.mediaType}`);
 
   const modalityId = modalityOptions![data.modality.toLowerCase()];
   if (!modalityId) throw new Error(`Unknown modality option: ${data.modality}`);
+
+  // Webflow has separate audio-url / video-url fields (no field for PDFs).
+  const mediaUrlField =
+    data.mediaType === 'video'
+      ? { 'video-url': data.mediaUrl }
+      : data.mediaType === 'audio'
+        ? { 'audio-url': data.mediaUrl }
+        : {};
 
   const payload = {
     isArchived: false,
@@ -72,8 +84,8 @@ export async function createCmsItem(data: {
       slug: slugify(data.title),
       description: data.description,
       'media-type': mediaTypeId,
-      'media-url': data.mediaUrl,
-      'duration-seconds': data.durationSeconds,
+      ...mediaUrlField,
+      duration: data.durationSeconds,
       'use-cases': data.useCases,
       modality: modalityId,
       'mood-tags': data.moodTags,

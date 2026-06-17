@@ -14,6 +14,7 @@ const envSchema = z.object({
 
   ANTHROPIC_API_KEY: z.string().min(1),
   VOYAGE_API_KEY: z.string().min(1),
+  ASSEMBLYAI_API_KEY: z.string().min(1),
 
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),
