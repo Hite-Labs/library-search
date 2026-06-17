@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCmsItem, patchCmsItem, publishItem } from '@/lib/webflow';
 import { embed, buildEmbeddingText } from '@/lib/embeddings';
-import { transcribe } from '@/lib/transcribe';
 import { insertContentItem, updateWebflowItemId } from '@/lib/db';
 import { FinalizeUploadSchema } from '@/lib/schemas';
 
@@ -41,16 +40,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, step: 'publish', error: String(err), webflowItemId }, { status: 500 });
   }
 
-  // Step 2.5: Transcribe audio/video (skip PDFs). Transcript feeds the embedding
-  // so search matches spoken content, and is stored for future re-embedding.
-  let transcript: string | null = null;
-  if (data.mediaType !== 'pdf') {
-    try {
-      transcript = await transcribe(data.publicUrl);
-    } catch (err) {
-      return NextResponse.json({ ok: false, step: 'transcribe', error: String(err), webflowItemId }, { status: 500 });
-    }
-  }
+  // Transcript was computed in the earlier /api/upload/analyze step and passed back
+  // (null for PDFs / manual entries). It feeds the embedding and is stored in Neon.
+  const transcript = data.transcript;
 
   // Step 3: Generate embedding
   let embedding: number[];

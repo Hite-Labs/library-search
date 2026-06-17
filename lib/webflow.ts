@@ -40,10 +40,14 @@ async function fetchOptionIds(): Promise<void> {
 }
 
 function slugify(text: string): string {
-  return text
+  const base = text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
+  // Append a short random suffix so slugs are unique even when two items share a
+  // title or a file is re-uploaded — Webflow rejects duplicate slugs with a 400.
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return base ? `${base}-${suffix}` : suffix;
 }
 
 export async function createCmsItem(data: {

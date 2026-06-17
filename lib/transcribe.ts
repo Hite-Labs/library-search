@@ -15,12 +15,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export interface TranscriptResult {
+  text: string;
+  durationSeconds: number | null;
+}
+
 /**
  * Transcribe an audio/video file that lives at a public URL (e.g. Cloudflare R2).
  * AssemblyAI accepts the remote URL directly and auto-extracts audio from video,
- * so no download/ffmpeg is needed. Returns the transcript text.
+ * so no download/ffmpeg is needed. Returns the transcript text and audio duration.
  */
-export async function transcribe(publicUrl: string): Promise<string> {
+export async function transcribe(publicUrl: string): Promise<TranscriptResult> {
   // Step 1: submit the URL for transcription
   const submitRes = await fetch(`${ASSEMBLYAI_BASE}/transcript`, {
     method: 'POST',
@@ -50,11 +55,12 @@ export async function transcribe(publicUrl: string): Promise<string> {
     const data = (await pollRes.json()) as {
       status: string;
       text?: string;
+      audio_duration?: number; // seconds, returned by AssemblyAI on completion
       error?: string;
     };
 
     if (data.status === 'completed') {
-      return data.text ?? '';
+      return { text: data.text ?? '', durationSeconds: data.audio_duration ?? null };
     }
     if (data.status === 'error') {
       throw new Error(`AssemblyAI transcription error: ${data.error ?? 'unknown'}`);
