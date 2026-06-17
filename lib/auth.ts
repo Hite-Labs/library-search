@@ -42,7 +42,10 @@ export async function setAuthCookie(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, makeToken(), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    // Only require HTTPS for the cookie when explicitly enabled. Over the bare
+    // droplet IP (plain HTTP) a Secure cookie is silently dropped by the browser,
+    // breaking login. Set COOKIE_SECURE=true in the env once HTTPS/a domain is live.
+    secure: process.env.COOKIE_SECURE === 'true',
     sameSite: 'lax',
     path: '/',
     maxAge: COOKIE_MAX_AGE,
