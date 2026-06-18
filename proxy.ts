@@ -37,7 +37,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/api/upload/') ||
     pathname === '/api/suggest' ||
     pathname.startsWith('/api/clients') ||
-    pathname.startsWith('/api/enrollments');
+    pathname.startsWith('/api/enrollments') ||
+    pathname.startsWith('/api/cohorts');
 
   if (!isProtectedApi) return NextResponse.next();
 
@@ -58,5 +59,7 @@ export const config = {
     '/api/clients/:path*',
     '/api/clients',
     '/api/enrollments/:path*',
+    '/api/cohorts/:path*',
+    '/api/cohorts',
   ],
 };

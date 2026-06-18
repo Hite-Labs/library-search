@@ -71,6 +71,39 @@ ALTER TABLE content_items ADD COLUMN downloadable boolean NOT NULL DEFAULT false
 ALTER TABLE content_items ADD COLUMN session_label text;
 CREATE INDEX content_items_client_id_idx ON content_items (client_id);
 
+-- ── Cohorts (group programs) ─────────────────────────────────────────────────
+
+CREATE TABLE cohorts (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            text NOT NULL,
+  description     text NOT NULL DEFAULT '',
+  goal            text NOT NULL DEFAULT '',        -- shared theme/goal
+  total_sessions  integer NOT NULL DEFAULT 4,
+  current_session integer NOT NULL DEFAULT 0,      -- group progress, advanced manually
+  status          text NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active','complete','archived')),
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE cohort_sessions (                      -- the fixed dated schedule
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cohort_id    uuid NOT NULL REFERENCES cohorts(id) ON DELETE CASCADE,
+  session_date timestamptz,
+  label        text NOT NULL DEFAULT '',
+  sort_order   integer NOT NULL DEFAULT 0,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX cohort_sessions_cohort_id_idx ON cohort_sessions (cohort_id);
+
+-- Cohort members reuse enrollments (program_type='cohort'), linked via cohort_id.
+ALTER TABLE enrollments ADD COLUMN cohort_id uuid REFERENCES cohorts(id);
+CREATE INDEX enrollments_cohort_id_idx ON enrollments (cohort_id);
+
+-- Shared cohort content: tagged with cohort_id (client_id stays null). Private to
+-- the cohort, excluded from library search (see match_content_items below).
+ALTER TABLE content_items ADD COLUMN cohort_id uuid REFERENCES cohorts(id);
+CREATE INDEX content_items_cohort_id_idx ON content_items (cohort_id);
+
 CREATE OR REPLACE FUNCTION match_content_items(
   query_embedding vector(1024),
   match_threshold float,
@@ -105,7 +138,7 @@ LANGUAGE sql STABLE AS $$
     ci.content_page_url,
     1 - (ci.embedding <=> query_embedding) AS similarity
   FROM content_items ci
-  WHERE ci.client_id IS NULL  -- exclude private client recordings from library search
+  WHERE ci.client_id IS NULL AND ci.cohort_id IS NULL  -- exclude private client + cohort content
     AND 1 - (ci.embedding <=> query_embedding) > match_threshold
   ORDER BY ci.embedding <=> query_embedding ASC
   LIMIT match_count;

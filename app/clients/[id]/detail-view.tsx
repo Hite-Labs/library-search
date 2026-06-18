@@ -100,7 +100,8 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
 function ActiveEnrollment({
   enrollment, logs, recordings, onChange,
 }: { enrollment: Enrollment; logs: SessionLog[]; recordings: Recording[]; onChange: () => void }) {
-  const suggestComplete = enrollment.sessions_done >= enrollment.total_sessions && enrollment.status !== 'complete';
+  const isCohort = enrollment.program_type === 'cohort';
+  const suggestComplete = !isCohort && enrollment.sessions_done >= enrollment.total_sessions && enrollment.status !== 'complete';
 
   async function patch(body: Record<string, unknown>) {
     await fetch(`/api/enrollments/${enrollment.id}`, {
@@ -120,10 +121,15 @@ function ActiveEnrollment({
             {enrollment.status}
           </span>
         </div>
-        <p className="text-sm font-medium text-stone-700">
-          {enrollment.sessions_done} of {enrollment.total_sessions} sessions
-        </p>
+        {!isCohort && (
+          <p className="text-sm font-medium text-stone-700">
+            {enrollment.sessions_done} of {enrollment.total_sessions} sessions
+          </p>
+        )}
       </div>
+
+      {/* Cohort members inherit the cohort's schedule + progress (no individual counter/logger). */}
+      {isCohort && <CohortInfo enrollmentId={enrollment.id} />}
 
       {suggestComplete && (
         <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex items-center justify-between">
@@ -135,24 +141,72 @@ function ActiveEnrollment({
         </div>
       )}
 
+      {/* Individual goal (intake) — present for both program types */}
       <GoalEditor enrollment={enrollment} onSave={(goal) => patch({ goal })} />
-      <NextSessionEditor enrollment={enrollment} onSave={(nextSessionAt) => patch({ nextSessionAt })} />
 
-      {/* Status controls */}
-      <div className="flex gap-2">
-        {(['active', 'paused', 'complete'] as const).map((s) => (
-          <button key={s} onClick={() => patch({ status: s })} disabled={enrollment.status === s}
-            className={`text-xs px-3 py-1.5 rounded-lg font-medium capitalize transition-colors ${
-              enrollment.status === s ? 'bg-stone-800 text-white' : 'text-stone-600 hover:bg-stone-100 border border-stone-200'
-            }`}>
-            {s}
-          </button>
-        ))}
-      </div>
+      {/* Individual-only controls: next session, status, session logging/history */}
+      {!isCohort && (
+        <>
+          <NextSessionEditor enrollment={enrollment} onSave={(nextSessionAt) => patch({ nextSessionAt })} />
+          <div className="flex gap-2">
+            {(['active', 'paused', 'complete'] as const).map((s) => (
+              <button key={s} onClick={() => patch({ status: s })} disabled={enrollment.status === s}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium capitalize transition-colors ${
+                  enrollment.status === s ? 'bg-stone-800 text-white' : 'text-stone-600 hover:bg-stone-100 border border-stone-200'
+                }`}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <SessionLogger enrollmentId={enrollment.id} onLogged={onChange} />
+          <SessionHistory logs={logs} />
+        </>
+      )}
 
-      <SessionLogger enrollmentId={enrollment.id} onLogged={onChange} />
-      <SessionHistory logs={logs} />
+      {/* Private individual recordings — available in both program types
+          (a cohort member can still get a personal asset only they see). */}
       <RecordingsSection enrollmentId={enrollment.id} recordings={recordings} onChange={onChange} />
+    </div>
+  );
+}
+
+// For a cohort member: show which cohort they're in + the cohort's session schedule
+// and current progress (inherited from the cohort, not tracked per-member).
+function CohortInfo({ enrollmentId }: { enrollmentId: string }) {
+  const [cohort, setCohort] = useState<{ id: string; name: string; current_session: number; total_sessions: number } | null>(null);
+  const [sessions, setSessions] = useState<{ id: string; label: string; session_date: string | null }[]>([]);
+
+  useEffect(() => {
+    fetch(`/api/enrollments/${enrollmentId}/cohort`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setCohort(d.cohort); setSessions(d.sessions ?? []); } })
+      .catch(() => {});
+  }, [enrollmentId]);
+
+  if (!cohort) return null;
+
+  return (
+    <div className="bg-stone-50 border border-stone-200 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-2">
+        <Link href={`/cohorts/${cohort.id}`} className="text-sm font-medium text-stone-800 hover:underline">
+          {cohort.name}
+        </Link>
+        <span className="text-sm text-stone-600">Session {cohort.current_session} of {cohort.total_sessions}</span>
+      </div>
+      {sessions.length > 0 && (
+        <ul className="space-y-1">
+          {sessions.map((s, i) => {
+            const done = i < cohort.current_session;
+            return (
+              <li key={s.id} className="text-sm flex items-center gap-2">
+                <span className={done ? 'text-green-600' : 'text-stone-300'}>{done ? '✓' : '○'}</span>
+                <span className={done ? 'text-stone-700' : 'text-stone-500'}>{s.label || `Session ${i + 1}`}</span>
+                {s.session_date && <span className="text-xs text-stone-400">· {fmtDate(s.session_date)}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

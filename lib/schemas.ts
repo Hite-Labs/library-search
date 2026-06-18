@@ -85,6 +85,49 @@ export const AttachRecordingSchema = z
     { message: 'Provide either contentId, or title + publicUrl + r2Key + mediaType' },
   );
 
+// ── Cohorts ──────────────────────────────────────────────────────────────────
+
+export const CreateCohortSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().default(''),
+  goal: z.string().default(''),
+  totalSessions: z.number().int().positive().default(4),
+});
+
+export const UpdateCohortSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  goal: z.string().optional(),
+  status: z.enum(['active', 'complete', 'archived']).optional(),
+  totalSessions: z.number().int().positive().optional(),
+  currentSession: z.number().int().nonnegative().optional(),
+});
+
+export const CohortSessionSchema = z.object({
+  label: z.string().default(''),
+  sessionDate: z.string().datetime().nullable().default(null),
+  sortOrder: z.number().int().default(0),
+});
+
+export const UpdateCohortSessionSchema = z.object({
+  label: z.string().optional(),
+  sessionDate: z.string().datetime().nullable().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const AddCohortMemberSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  goal: z.string().default(''),
+});
+
+export const CohortContentSchema = z.object({
+  title: z.string().min(1),
+  publicUrl: z.string().url(),
+  r2Key: z.string().min(1),
+  mediaType: z.enum(['audio', 'video', 'pdf']),
+});
+
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type PresignInput = z.infer<typeof PresignSchema>;
 export type AnalyzeInput = z.infer<typeof AnalyzeSchema>;

@@ -8,8 +8,20 @@
 > Part 2) to a **client + enrollment** model: everyone is a `client` (person, deduped by email);
 > what they're enrolled in is a repeatable `enrollment` ("pack") that holds all progress state
 > (goal, status, session counter, next-session). This lets a client do multiple individual packs
-> over time and supports cohorts later (program_type enum). See git history / db/schema.sql for
-> the implemented schema. The user stories in Part 1 remain the source of truth for behavior.
+> over time. See git history / db/schema.sql for the implemented schema. The user stories in
+> Part 1 remain the source of truth for behavior.
+>
+> **COHORTS BUILT (2026-06-18, C-07 fleshed out):** Cohorts are group programs. A `cohorts`
+> table owns the fixed/shared facets (name, shared goal, a `cohort_sessions` dated schedule,
+> shared content via `content_items.cohort_id`, and a manually-advanced `current_session` =
+> group progress). Members = `enrollments` with `program_type='cohort'` + `cohort_id`. Members
+> **inherit** the cohort's schedule/content/progress (no per-member session counter), but keep
+> individual facets: their own enrollment `goal` (intake) and private recordings (only they see).
+> A person can be BOTH an individual client and a cohort member (verified). Library search
+> excludes both `client_id` and `cohort_id` content. Operator UI: a Cohorts nav section (list →
+> detail with schedule/shared-content/roster + progress advancer); cohort members render
+> cohort-aware on the client detail page (cohort sessions + group progress instead of an
+> individual counter). Still deferred: client-facing portal + Webflow, GHL/Calendly/Memberstack.
 
 This document has two parts:
 1. **User Stories** — the requirements (source of truth).

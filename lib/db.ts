@@ -315,3 +315,217 @@ export async function attachRecordingToClient(
         session_label = ${data.sessionLabel}, program_id = ${data.enrollmentId ?? null}
     WHERE id = ${contentId}`;
 }
+
+// ── Cohorts (group programs) ─────────────────────────────────────────────────
+
+export interface Cohort {
+  id: string;
+  name: string;
+  description: string;
+  goal: string;
+  total_sessions: number;
+  current_session: number;
+  status: 'active' | 'complete' | 'archived';
+  created_at: string;
+}
+
+export interface CohortSession {
+  id: string;
+  cohort_id: string;
+  session_date: string | null;
+  label: string;
+  sort_order: number;
+  created_at: string;
+}
+
+// Roster row: a cohort member's enrollment joined with their client info.
+export interface CohortMember {
+  enrollment_id: string;
+  client_id: string;
+  client_name: string;
+  client_email: string;
+  goal: string;
+  status: 'active' | 'paused' | 'complete';
+}
+
+export interface CohortListRow extends Cohort {
+  member_count: number;
+}
+
+export async function listCohorts(statusFilter?: string): Promise<CohortListRow[]> {
+  const sql = getSql();
+  const rows = statusFilter
+    ? await sql`
+        SELECT c.*, (SELECT count(*)::int FROM enrollments e WHERE e.cohort_id = c.id) AS member_count
+        FROM cohorts c WHERE c.status = ${statusFilter} ORDER BY c.created_at DESC`
+    : await sql`
+        SELECT c.*, (SELECT count(*)::int FROM enrollments e WHERE e.cohort_id = c.id) AS member_count
+        FROM cohorts c ORDER BY c.created_at DESC`;
+  return rows as CohortListRow[];
+}
+
+export async function createCohort(data: {
+  name: string;
+  description?: string;
+  goal?: string;
+  totalSessions?: number;
+}): Promise<Cohort> {
+  const sql = getSql();
+  const rows = await sql`
+    INSERT INTO cohorts (name, description, goal, total_sessions)
+    VALUES (${data.name}, ${data.description ?? ''}, ${data.goal ?? ''}, ${data.totalSessions ?? 4})
+    RETURNING *`;
+  return rows[0] as Cohort;
+}
+
+export async function getCohort(id: string): Promise<Cohort | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM cohorts WHERE id = ${id}`;
+  return (rows[0] as Cohort) ?? null;
+}
+
+export async function getCohortRoster(cohortId: string): Promise<CohortMember[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT e.id AS enrollment_id, e.goal, e.status,
+           c.id AS client_id, c.name AS client_name, c.email AS client_email
+    FROM enrollments e JOIN clients c ON c.id = e.client_id
+    WHERE e.cohort_id = ${cohortId}
+    ORDER BY c.name`;
+  return rows as CohortMember[];
+}
+
+export async function updateCohort(
+  id: string,
+  data: {
+    name?: string;
+    description?: string;
+    goal?: string;
+    status?: string;
+    totalSessions?: number;
+    currentSession?: number;
+  },
+): Promise<Cohort | null> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE cohorts SET
+      name = COALESCE(${data.name ?? null}, name),
+      description = COALESCE(${data.description ?? null}, description),
+      goal = COALESCE(${data.goal ?? null}, goal),
+      status = COALESCE(${data.status ?? null}, status),
+      total_sessions = COALESCE(${data.totalSessions ?? null}, total_sessions),
+      current_session = COALESCE(${data.currentSession ?? null}, current_session)
+    WHERE id = ${id}
+    RETURNING *`;
+  return (rows[0] as Cohort) ?? null;
+}
+
+export async function getCohortSessions(cohortId: string): Promise<CohortSession[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM cohort_sessions WHERE cohort_id = ${cohortId}
+    ORDER BY sort_order, session_date NULLS LAST, created_at`;
+  return rows as CohortSession[];
+}
+
+export async function addCohortSession(
+  cohortId: string,
+  data: { label: string; sessionDate: string | null; sortOrder?: number },
+): Promise<CohortSession> {
+  const sql = getSql();
+  const rows = await sql`
+    INSERT INTO cohort_sessions (cohort_id, label, session_date, sort_order)
+    VALUES (${cohortId}, ${data.label}, ${data.sessionDate}, ${data.sortOrder ?? 0})
+    RETURNING *`;
+  return rows[0] as CohortSession;
+}
+
+export async function updateCohortSession(
+  id: string,
+  data: { label?: string; sessionDate?: string | null; sortOrder?: number },
+): Promise<CohortSession | null> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE cohort_sessions SET
+      label = COALESCE(${data.label ?? null}, label),
+      session_date = ${data.sessionDate === undefined ? sql`session_date` : data.sessionDate},
+      sort_order = COALESCE(${data.sortOrder ?? null}, sort_order)
+    WHERE id = ${id}
+    RETURNING *`;
+  return (rows[0] as CohortSession) ?? null;
+}
+
+export async function deleteCohortSession(id: string): Promise<void> {
+  const sql = getSql();
+  await sql`DELETE FROM cohort_sessions WHERE id = ${id}`;
+}
+
+/**
+ * Add a member to a cohort: reuse the client (dedupe by email) or create one,
+ * then create a program_type='cohort' enrollment linked to the cohort.
+ */
+export async function addCohortMember(data: {
+  cohortId: string;
+  name: string;
+  email: string;
+  goal: string;
+}): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean }> {
+  const sql = getSql();
+  const existing = await findClientByEmail(data.email);
+
+  let client: Client;
+  let reusedClient: boolean;
+  if (existing) {
+    client = existing;
+    reusedClient = true;
+  } else {
+    const rows = await sql`
+      INSERT INTO clients (name, email) VALUES (${data.name}, ${data.email}) RETURNING *`;
+    client = rows[0] as Client;
+    reusedClient = false;
+  }
+
+  const enrollRows = await sql`
+    INSERT INTO enrollments (client_id, program_type, cohort_id, goal, total_sessions)
+    VALUES (${client.id}, 'cohort', ${data.cohortId}, ${data.goal}, 0)
+    RETURNING *`;
+  return { client, enrollment: enrollRows[0] as Enrollment, reusedClient };
+}
+
+export async function getCohortContent(cohortId: string): Promise<ContentItem[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM content_items WHERE cohort_id = ${cohortId} ORDER BY created_at DESC`;
+  return rows as ContentItem[];
+}
+
+/** Create a shared cohort content row from a pasted R2 link (zero-vector; never searched). */
+export async function insertCohortContent(data: {
+  title: string;
+  cohortId: string;
+  mediaType: 'audio' | 'video' | 'pdf';
+  r2Key: string;
+  publicUrl: string;
+}): Promise<string> {
+  const sql = getSql();
+  const zeroVec = `[${new Array(1024).fill(0).join(',')}]`;
+  const rows = await sql`
+    INSERT INTO content_items
+      (title, description, media_type, use_cases, mood_tags,
+       r2_key, public_url, embedding, cohort_id, downloadable)
+    VALUES
+      (${data.title}, '', ${data.mediaType}, '', '',
+       ${data.r2Key}, ${data.publicUrl}, ${zeroVec}::vector, ${data.cohortId}, true)
+    RETURNING id`;
+  return rows[0].id as string;
+}
+
+// Cohort enrollment lookup for the cohort-aware member view (joins the cohort).
+export async function getCohortForEnrollment(enrollmentId: string): Promise<Cohort | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT c.* FROM cohorts c
+    JOIN enrollments e ON e.cohort_id = c.id
+    WHERE e.id = ${enrollmentId}`;
+  return (rows[0] as Cohort) ?? null;
+}
