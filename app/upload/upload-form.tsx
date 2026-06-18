@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react';
 import { FilePicker } from '@/components/upload/FilePicker';
 import { TagInput } from '@/components/upload/TagInput';
 import { SuggestButton } from '@/components/upload/SuggestButton';
+import { Nav } from '@/components/Nav';
 
 const MEDIA_TYPES = ['audio', 'video', 'pdf'] as const;
 type MediaType = typeof MEDIA_TYPES[number];
@@ -229,23 +230,12 @@ export function UploadForm() {
   const isPdf = mediaType === 'pdf';
 
   return (
-    <div className="min-h-screen bg-stone-50 py-10 px-4">
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-xl font-semibold text-stone-800">Upload Content</h1>
-            <p className="text-sm text-stone-500 mt-0.5">Add a new item to the content library</p>
-          </div>
-          <button
-            type="button"
-            onClick={async () => {
-              await fetch('/api/auth/logout', { method: 'POST' });
-              window.location.reload();
-            }}
-            className="text-xs text-stone-400 hover:text-stone-600"
-          >
-            Sign out
-          </button>
+    <div className="min-h-screen bg-stone-50">
+      <Nav />
+      <div className="max-w-2xl mx-auto py-10 px-4">
+        <div className="mb-8">
+          <h1 className="text-xl font-semibold text-stone-800">Upload Content</h1>
+          <p className="text-sm text-stone-500 mt-0.5">Add a new item to the content library</p>
         </div>
 
         {success && (
