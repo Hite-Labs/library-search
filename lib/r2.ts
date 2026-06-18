@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from './env';
 import { randomUUID } from 'crypto';
@@ -39,4 +39,17 @@ export async function getPresignedPutUrl(
     ContentType: contentType,
   });
   return getSignedUrl(getR2Client(), command, { expiresIn: 3600 });
+}
+
+// Time-limited signed GET URL for downloading a private object (client recordings).
+// Regenerated per request so the raw R2 URL is never exposed (S-03).
+export async function getPresignedGetUrl(
+  r2Key: string,
+  expiresIn = 3600,
+): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: env.R2_BUCKET_NAME,
+    Key: r2Key,
+  });
+  return getSignedUrl(getR2Client(), command, { expiresIn });
 }

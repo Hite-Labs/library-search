@@ -99,3 +99,219 @@ export async function matchContentItems(
   `;
   return rows as MatchResult[];
 }
+
+// ── Client management (coaching) ─────────────────────────────────────────────
+
+export interface Client {
+  id: string;
+  name: string;
+  email: string;
+  memberstack_id: string | null;
+  created_at: string;
+}
+
+export interface Enrollment {
+  id: string;
+  client_id: string;
+  program_type: 'individual' | 'cohort';
+  goal: string;
+  status: 'active' | 'paused' | 'complete';
+  total_sessions: number;
+  sessions_done: number;
+  next_session_at: string | null;
+  created_at: string;
+}
+
+export interface SessionLog {
+  id: string;
+  enrollment_id: string;
+  session_date: string;
+  notes: string;
+  next_actions: string;
+  created_at: string;
+}
+
+// Row for the clients list view: one enrollment joined with its client + last-session date.
+export interface EnrollmentListRow extends Enrollment {
+  client_name: string;
+  client_email: string;
+  last_session_at: string | null;
+}
+
+export async function findClientByEmail(email: string): Promise<Client | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM clients WHERE email = ${email}`;
+  return (rows[0] as Client) ?? null;
+}
+
+/**
+ * Create a client + their first enrollment. If a client with this email already
+ * exists, reuse it and just add a new enrollment ("pack"). Returns the enrollment,
+ * the client, and whether the client was reused (for the dedupe UX message).
+ */
+export async function createClientWithEnrollment(data: {
+  name: string;
+  email: string;
+  goal: string;
+  totalSessions: number;
+}): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean }> {
+  const sql = getSql();
+  const existing = await findClientByEmail(data.email);
+
+  let client: Client;
+  let reusedClient: boolean;
+  if (existing) {
+    client = existing;
+    reusedClient = true;
+  } else {
+    const rows = await sql`
+      INSERT INTO clients (name, email) VALUES (${data.name}, ${data.email})
+      RETURNING *`;
+    client = rows[0] as Client;
+    reusedClient = false;
+  }
+
+  const enrollment = await addEnrollment(client.id, {
+    goal: data.goal,
+    totalSessions: data.totalSessions,
+  });
+  return { client, enrollment, reusedClient };
+}
+
+export async function addEnrollment(
+  clientId: string,
+  data: { goal?: string; totalSessions?: number; programType?: 'individual' | 'cohort' },
+): Promise<Enrollment> {
+  const sql = getSql();
+  const rows = await sql`
+    INSERT INTO enrollments (client_id, program_type, goal, total_sessions)
+    VALUES (${clientId}, ${data.programType ?? 'individual'},
+            ${data.goal ?? ''}, ${data.totalSessions ?? 6})
+    RETURNING *`;
+  return rows[0] as Enrollment;
+}
+
+export async function listEnrollments(statusFilter?: string): Promise<EnrollmentListRow[]> {
+  const sql = getSql();
+  const rows = statusFilter
+    ? await sql`
+        SELECT e.*, c.name AS client_name, c.email AS client_email,
+               (SELECT max(sl.session_date) FROM session_logs sl WHERE sl.enrollment_id = e.id) AS last_session_at
+        FROM enrollments e JOIN clients c ON c.id = e.client_id
+        WHERE e.status = ${statusFilter}
+        ORDER BY e.created_at DESC`
+    : await sql`
+        SELECT e.*, c.name AS client_name, c.email AS client_email,
+               (SELECT max(sl.session_date) FROM session_logs sl WHERE sl.enrollment_id = e.id) AS last_session_at
+        FROM enrollments e JOIN clients c ON c.id = e.client_id
+        ORDER BY e.created_at DESC`;
+  return rows as EnrollmentListRow[];
+}
+
+export async function getClientWithEnrollments(
+  clientId: string,
+): Promise<{ client: Client; enrollments: Enrollment[] } | null> {
+  const sql = getSql();
+  const clientRows = await sql`SELECT * FROM clients WHERE id = ${clientId}`;
+  if (!clientRows[0]) return null;
+  const enrollments = await sql`
+    SELECT * FROM enrollments WHERE client_id = ${clientId} ORDER BY created_at DESC`;
+  return { client: clientRows[0] as Client, enrollments: enrollments as Enrollment[] };
+}
+
+export async function getEnrollment(id: string): Promise<Enrollment | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM enrollments WHERE id = ${id}`;
+  return (rows[0] as Enrollment) ?? null;
+}
+
+export async function updateEnrollment(
+  id: string,
+  data: { goal?: string; status?: string; nextSessionAt?: string | null },
+): Promise<Enrollment | null> {
+  const sql = getSql();
+  // COALESCE keeps existing values when a field isn't provided. next_session_at is
+  // handled separately so it can be explicitly cleared to null.
+  const rows = await sql`
+    UPDATE enrollments SET
+      goal = COALESCE(${data.goal ?? null}, goal),
+      status = COALESCE(${data.status ?? null}, status),
+      next_session_at = ${data.nextSessionAt === undefined ? sql`next_session_at` : data.nextSessionAt}
+    WHERE id = ${id}
+    RETURNING *`;
+  return (rows[0] as Enrollment) ?? null;
+}
+
+/** Add a session log and increment the enrollment's counter atomically. */
+export async function addSessionLog(
+  enrollmentId: string,
+  data: { notes: string; nextActions: string; sessionDate?: string },
+): Promise<{ log: SessionLog; enrollment: Enrollment }> {
+  const sql = getSql();
+  const [logRows, enrollRows] = await sql.transaction([
+    sql`INSERT INTO session_logs (enrollment_id, notes, next_actions, session_date)
+        VALUES (${enrollmentId}, ${data.notes}, ${data.nextActions},
+                ${data.sessionDate ?? new Date().toISOString()})
+        RETURNING *`,
+    sql`UPDATE enrollments SET sessions_done = sessions_done + 1
+        WHERE id = ${enrollmentId} RETURNING *`,
+  ]);
+  return { log: logRows[0] as SessionLog, enrollment: enrollRows[0] as Enrollment };
+}
+
+export async function getSessionLogs(enrollmentId: string): Promise<SessionLog[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM session_logs WHERE enrollment_id = ${enrollmentId}
+    ORDER BY session_date DESC`;
+  return rows as SessionLog[];
+}
+
+export async function getClientRecordings(clientId: string): Promise<ContentItem[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM content_items WHERE client_id = ${clientId} ORDER BY created_at DESC`;
+  return rows as ContentItem[];
+}
+
+/**
+ * Insert a private client recording from a pasted R2 link (no upload/transcription).
+ * Client recordings are excluded from library search (match_content_items filters
+ * client_id IS NULL), so the embedding is never used — we store a zero vector to
+ * satisfy the NOT NULL column rather than spend an embedding call on it.
+ */
+export async function insertClientRecording(data: {
+  title: string;
+  clientId: string;
+  enrollmentId: string | null;
+  sessionLabel: string | null;
+  mediaType: 'audio' | 'video' | 'pdf';
+  r2Key: string;
+  publicUrl: string;
+}): Promise<string> {
+  const sql = getSql();
+  const zeroVec = `[${new Array(1024).fill(0).join(',')}]`;
+  const rows = await sql`
+    INSERT INTO content_items
+      (title, description, media_type, use_cases, mood_tags,
+       r2_key, public_url, embedding, client_id, downloadable, session_label, program_id)
+    VALUES
+      (${data.title}, '', ${data.mediaType}, '', '',
+       ${data.r2Key}, ${data.publicUrl}, ${zeroVec}::vector,
+       ${data.clientId}, true, ${data.sessionLabel}, ${data.enrollmentId})
+    RETURNING id`;
+  return rows[0].id as string;
+}
+
+/** Tag an existing content_items row as a private downloadable recording for a client. */
+export async function attachRecordingToClient(
+  contentId: string,
+  data: { clientId: string; sessionLabel: string | null; enrollmentId?: string | null },
+): Promise<void> {
+  const sql = getSql();
+  await sql`
+    UPDATE content_items
+    SET client_id = ${data.clientId}, downloadable = true,
+        session_label = ${data.sessionLabel}, program_id = ${data.enrollmentId ?? null}
+    WHERE id = ${contentId}`;
+}

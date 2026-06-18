@@ -1,7 +1,15 @@
 # Confidence Program — Spec & Phase 1 Plan
 
-> Status: **Spec saved. Not yet started.** Prerequisite: finish testing the existing
-> content uploader end-to-end first, so client management is added onto a tested base.
+> Status: **Backend built & verified (2026-06-18).** Content uploader is live in production.
+> Client-management BACKEND (clients + enrollments + session_logs + recordings/privacy) is
+> implemented and curl-verified. UI dashboard is the next pass.
+>
+> **MODEL UPDATE:** The data model evolved from the original client-centric shape (below in
+> Part 2) to a **client + enrollment** model: everyone is a `client` (person, deduped by email);
+> what they're enrolled in is a repeatable `enrollment` ("pack") that holds all progress state
+> (goal, status, session counter, next-session). This lets a client do multiple individual packs
+> over time and supports cohorts later (program_type enum). See git history / db/schema.sql for
+> the implemented schema. The user stories in Part 1 remain the source of truth for behavior.
 
 This document has two parts:
 1. **User Stories** — the requirements (source of truth).

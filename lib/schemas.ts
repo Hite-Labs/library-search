@@ -38,6 +38,53 @@ export const SearchSchema = z.object({
   memberstackUserId: z.string().optional(),
 });
 
+// ── Client management ────────────────────────────────────────────────────────
+
+export const CreateClientSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  goal: z.string().default(''),
+  totalSessions: z.number().int().positive().default(6),
+});
+
+export const AddEnrollmentSchema = z.object({
+  goal: z.string().default(''),
+  totalSessions: z.number().int().positive().default(6),
+  programType: z.enum(['individual', 'cohort']).default('individual'),
+});
+
+export const UpdateEnrollmentSchema = z.object({
+  goal: z.string().optional(),
+  status: z.enum(['active', 'paused', 'complete']).optional(),
+  nextSessionAt: z.string().datetime().nullable().optional(),
+});
+
+export const SessionLogSchema = z.object({
+  notes: z.string().default(''),
+  nextActions: z.string().default(''),
+  sessionDate: z.string().datetime().optional(),
+});
+
+// Attach a recording to a client, two modes:
+// (a) attach an existing content_items row by contentId (e.g. from the upload flow)
+// (b) paste an existing R2 link → create a new private client recording row
+export const AttachRecordingSchema = z
+  .object({
+    sessionLabel: z.string().nullable().default(null),
+    enrollmentId: z.string().uuid().nullable().default(null),
+    // mode (a)
+    contentId: z.string().uuid().optional(),
+    // mode (b)
+    title: z.string().min(1).optional(),
+    publicUrl: z.string().url().optional(),
+    r2Key: z.string().min(1).optional(),
+    mediaType: z.enum(['audio', 'video', 'pdf']).optional(),
+  })
+  .refine(
+    (d) => d.contentId || (d.title && d.publicUrl && d.r2Key && d.mediaType),
+    { message: 'Provide either contentId, or title + publicUrl + r2Key + mediaType' },
+  );
+
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type PresignInput = z.infer<typeof PresignSchema>;
 export type AnalyzeInput = z.infer<typeof AnalyzeSchema>;
