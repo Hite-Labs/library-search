@@ -16,8 +16,20 @@ jobs:
           username: ${{ secrets.DO_SSH_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
+            set -e
             cd ~/library-search
+            # Capture lockfile hash before pulling so we only reinstall deps when they change.
+            BEFORE=$(sha1sum package-lock.json 2>/dev/null | cut -d' ' -f1 || echo none)
             git pull origin main
-            npm ci
+            AFTER=$(sha1sum package-lock.json 2>/dev/null | cut -d' ' -f1 || echo none)
+            if [ "$BEFORE" != "$AFTER" ] || [ ! -d node_modules/next ]; then
+              echo "Dependencies changed (or missing) — installing..."
+              # npm install (not ci): doesn't wipe node_modules, gentler on the 1GB box.
+              npm install
+            else
+              echo "No dependency change — skipping install."
+            fi
+            # Build first; set -e aborts before reload if the build fails, so a broken
+            # build never takes the running app down.
             npm run build
             pm2 reload ecosystem.config.js --update-env
