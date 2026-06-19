@@ -49,6 +49,7 @@ CREATE TABLE enrollments (
   total_sessions  integer NOT NULL DEFAULT 6,
   sessions_done   integer NOT NULL DEFAULT 0,    -- may exceed total (makeup/bonus)
   next_session_at timestamptz,
+  calendar_url    text NOT NULL DEFAULT '',       -- per-client scheduling/booking link
   created_at      timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX enrollments_client_id_idx ON enrollments (client_id);
@@ -59,7 +60,8 @@ CREATE TABLE session_logs (
   enrollment_id uuid NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
   session_date  timestamptz NOT NULL DEFAULT now(),
   notes         text NOT NULL DEFAULT '',
-  next_actions  text NOT NULL DEFAULT '',
+  next_actions  text NOT NULL DEFAULT '',          -- client actions (tasks the client owns)
+  coach_actions text NOT NULL DEFAULT '',          -- coach actions (tasks Lindsay owns)
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX session_logs_enrollment_id_idx ON session_logs (enrollment_id);

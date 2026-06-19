@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, FormEvent } from 'react';
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
+import { PencilIcon } from '@/components/PencilIcon';
 
 interface Enrollment {
   id: string;
@@ -12,10 +13,11 @@ interface Enrollment {
   total_sessions: number;
   sessions_done: number;
   next_session_at: string | null;
+  calendar_url: string;
   created_at: string;
 }
 interface Client { id: string; name: string; email: string; }
-interface SessionLog { id: string; session_date: string; notes: string; next_actions: string; }
+interface SessionLog { id: string; session_date: string; notes: string; next_actions: string; coach_actions: string; }
 interface Recording { id: string; title: string; session_label: string | null; public_url: string; media_type: string; }
 
 interface DetailData {
@@ -31,9 +33,23 @@ function fmtDate(d: string | null): string {
   return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-// Global booking link (set NEXT_PUBLIC_BOOKING_URL). Empty → button hidden.
+// Sentence-case the first character (display only) — goal shows with an initial cap
+// even when the stored text wasn't capitalized.
+function initialCap(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// Manrope input-label style (reserve Oswald/font-label for headers & subheaders).
+const INPUT_LABEL = 'block text-xs font-medium uppercase tracking-wide text-slate/70 mb-1';
+
+// Pipe separator for the metadata label line.
+const PIPE = <span className="text-slate/40">|</span>;
+
+// Global booking link (set NEXT_PUBLIC_BOOKING_URL). Used as the default when a
+// client has no per-enrollment calendar link saved yet.
 const BOOKING_URL = process.env.NEXT_PUBLIC_BOOKING_URL ?? '';
 
+// Still used by PastPackRow to tint historical-program status badges.
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
   paused: 'bg-amber-100 text-amber-800',
@@ -58,6 +74,156 @@ function CopyButton({ value, label }: { value: string; label: string }) {
     >
       {copied ? 'Copied!' : label}
     </button>
+  );
+}
+
+// Page header: client identity + active-enrollment metadata (type | status | progress),
+// the goal, the per-client calendar link, and a pencil that opens the edit popup.
+function ClientHeader({
+  client, enrollment, onChange,
+}: { client: Client; enrollment: Enrollment | null; onChange: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const isCohort = enrollment?.program_type === 'cohort';
+  const typeLabel = enrollment?.program_type === 'cohort' ? 'Cohort' : 'Individual';
+  const calendarLink = enrollment?.calendar_url || BOOKING_URL;
+
+  async function patch(body: Record<string, unknown>) {
+    if (!enrollment) return;
+    await fetch(`/api/enrollments/${enrollment.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    onChange();
+  }
+
+  return (
+    <div className="mt-2 mb-6">
+      <h1 className="text-xl font-serif text-slate">{client.name}</h1>
+      <p className="text-sm text-slate/60">{client.email}</p>
+
+      {enrollment && (
+        <>
+          {/* Metadata label line — Oswald, regular weight, pipe-separated (no badges). */}
+          <div className="mt-3 flex items-center gap-2 font-label font-normal text-sm text-slate capitalize">
+            <span>{typeLabel}</span>
+            {PIPE}
+            <span>{enrollment.status}</span>
+            {!isCohort && (
+              <>
+                {PIPE}
+                <span>Session {enrollment.sessions_done} of {enrollment.total_sessions}</span>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              aria-label="Edit program details"
+              className="ml-1 text-slate/50 hover:text-gold transition-colors"
+            >
+              <PencilIcon />
+            </button>
+          </div>
+
+          {/* Goal value with a small label beneath. */}
+          <div className="mt-3">
+            <p className="text-base text-slate">{enrollment.goal ? initialCap(enrollment.goal) : '—'}</p>
+            <span className="font-label font-normal text-xs text-slate/60">Goal</span>
+          </div>
+
+          {/* Per-client calendar / scheduling link Lindsay can copy & send. */}
+          <CalendarLinkEditor enrollment={enrollment} onSave={(calendarUrl) => patch({ calendarUrl })} defaultUrl={calendarLink} />
+
+          {editing && (
+            <EditEnrollmentModal
+              enrollment={enrollment}
+              isCohort={isCohort}
+              onClose={() => setEditing(false)}
+              onSave={async (body) => { await patch(body); setEditing(false); }}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Editable per-client scheduling link with a copy action (mirrors the cohort ZoomEditor).
+function CalendarLinkEditor({
+  enrollment, onSave, defaultUrl,
+}: { enrollment: Enrollment; onSave: (url: string) => void; defaultUrl: string }) {
+  const [url, setUrl] = useState(enrollment.calendar_url);
+  const dirty = url !== enrollment.calendar_url;
+  const copyValue = enrollment.calendar_url || defaultUrl;
+  return (
+    <div className="mt-4">
+      <label className={INPUT_LABEL}>Calendar link</label>
+      <div className="flex gap-2">
+        <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://cal.com/…"
+          className="flex-1 border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+        {copyValue && !dirty && <CopyButton value={copyValue} label="Copy link" />}
+      </div>
+      {dirty && (
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => onSave(url)} className="btn-spark text-xs px-3 py-1">Save</button>
+          <button onClick={() => setUrl(enrollment.calendar_url)} className="btn-spark-outline text-xs px-2 py-1">Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Popup to edit goal / number of sessions / status in one place (replaces the
+// scattered inline editors and badge-row controls).
+function EditEnrollmentModal({
+  enrollment, isCohort, onClose, onSave,
+}: { enrollment: Enrollment; isCohort: boolean; onClose: () => void; onSave: (body: Record<string, unknown>) => void }) {
+  const [goal, setGoal] = useState(enrollment.goal);
+  const [totalSessions, setTotalSessions] = useState(String(enrollment.total_sessions));
+  const [status, setStatus] = useState(enrollment.status);
+
+  function save() {
+    const body: Record<string, unknown> = { goal, status };
+    const n = parseInt(totalSessions, 10);
+    if (!isCohort && n > 0) body.totalSessions = n;
+    onSave(body);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-serif text-slate mb-4">Edit program</h2>
+        <div className="space-y-4">
+          <div>
+            <label className={INPUT_LABEL}>Goal</label>
+            <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2}
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
+          </div>
+          {!isCohort && (
+            <div>
+              <label className={INPUT_LABEL}>Number of sessions</label>
+              <input type="number" min="1" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)}
+                className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+            </div>
+          )}
+          <div>
+            <label className={INPUT_LABEL}>Status</label>
+            <div className="flex gap-2">
+              {(['active', 'paused', 'complete'] as const).map((s) => (
+                <button key={s} type="button" onClick={() => setStatus(s)}
+                  className={`font-label text-xs px-3 py-1.5 rounded-lg capitalize transition-colors ${
+                    status === s ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal border border-gold/20'
+                  }`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose} className="btn-spark-outline flex-1">Cancel</button>
+            <button type="button" onClick={save} className="btn-spark flex-1">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -100,13 +266,7 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
       <Nav />
       <div className="max-w-3xl mx-auto px-4 py-8">
         <Link href="/clients" className="text-sm text-slate/60 hover:text-slate">← All clients</Link>
-        <div className="mt-2 mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-serif text-slate">{data.client.name}</h1>
-            <p className="text-sm text-slate/60">{data.client.email}</p>
-          </div>
-          <CopyButton value={BOOKING_URL} label="Copy booking link" />
-        </div>
+        <ClientHeader client={data.client} enrollment={active} onChange={load} />
 
         {active ? (
           <ActiveEnrollment enrollment={active} logs={data.activeLogs} recordings={data.recordings} onChange={load} />
@@ -139,23 +299,6 @@ function ActiveEnrollment({
 
   return (
     <div className="bg-white rounded-2xl border border-gold/20 p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-label text-xs px-2 py-0.5 rounded-full font-medium capitalize bg-petal/40 text-slate">
-            {enrollment.program_type}
-          </span>
-          <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[enrollment.status]}`}>
-            {enrollment.status}
-          </span>
-        </div>
-        {!isCohort && (
-          <SessionCountEditor enrollment={enrollment} onSave={(totalSessions) => patch({ totalSessions })} />
-        )}
-      </div>
-
-      {/* Goal (intake) surfaced at the top of the card with inline edit */}
-      <GoalEditor enrollment={enrollment} onSave={(goal) => patch({ goal })} />
-
       {/* Cohort members inherit the cohort's schedule + progress (no individual counter/logger). */}
       {isCohort && <CohortInfo enrollmentId={enrollment.id} />}
 
@@ -169,22 +312,12 @@ function ActiveEnrollment({
         </div>
       )}
 
-      {/* Individual-only controls: session logging/history, then next session, then status */}
+      {/* Individual-only controls: session logging/history, then next session */}
       {!isCohort && (
         <>
           <SessionLogger enrollmentId={enrollment.id} onLogged={onChange} />
           {/* Next session sits BELOW the log (after note-taking, not before) */}
           <NextSessionEditor enrollment={enrollment} onSave={(nextSessionAt) => patch({ nextSessionAt })} />
-          <div className="flex gap-2">
-            {(['active', 'paused', 'complete'] as const).map((s) => (
-              <button key={s} onClick={() => patch({ status: s })} disabled={enrollment.status === s}
-                className={`font-label text-xs px-3 py-1.5 rounded-lg capitalize transition-colors ${
-                  enrollment.status === s ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal border border-gold/20'
-                }`}>
-                {s}
-              </button>
-            ))}
-          </div>
           <SessionHistory logs={logs} />
         </>
       )}
@@ -192,30 +325,6 @@ function ActiveEnrollment({
       {/* Private individual recordings — available in both program types
           (a cohort member can still get a personal asset only they see). */}
       <RecordingsSection enrollmentId={enrollment.id} recordings={recordings} onChange={onChange} />
-    </div>
-  );
-}
-
-// Editable "x of N" session count — N becomes editable after creation (click to change).
-function SessionCountEditor({ enrollment, onSave }: { enrollment: Enrollment; onSave: (n: number) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(String(enrollment.total_sessions));
-  if (!editing) {
-    return (
-      <button onClick={() => { setVal(String(enrollment.total_sessions)); setEditing(true); }}
-        className="text-sm font-medium text-plum hover:underline">
-        {enrollment.sessions_done} of {enrollment.total_sessions} sessions
-      </button>
-    );
-  }
-  return (
-    <div className="flex items-center gap-1 text-sm text-plum">
-      <span>{enrollment.sessions_done} of</span>
-      <input type="number" min="1" value={val} onChange={(e) => setVal(e.target.value)} autoFocus
-        className="w-14 border border-slate/20 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
-      <button onClick={() => { const n = parseInt(val, 10); if (n > 0) onSave(n); setEditing(false); }}
-        className="font-label text-xs text-gold hover:text-plum">save</button>
-      <button onClick={() => setEditing(false)} className="font-label text-xs text-slate/50">cancel</button>
     </div>
   );
 }
@@ -269,24 +378,6 @@ function CohortInfo({ enrollmentId }: { enrollmentId: string }) {
   );
 }
 
-function GoalEditor({ enrollment, onSave }: { enrollment: Enrollment; onSave: (g: string) => void }) {
-  const [goal, setGoal] = useState(enrollment.goal);
-  const dirty = goal !== enrollment.goal;
-  return (
-    <div>
-      <label className="block font-label text-xs text-slate mb-1">Goal</label>
-      <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2}
-        className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
-      {dirty && (
-        <div className="flex gap-2 mt-2">
-          <button onClick={() => onSave(goal)} className="btn-spark text-xs px-3 py-1">Save goal</button>
-          <button onClick={() => setGoal(enrollment.goal)} className="btn-spark-outline text-xs px-2 py-1">Cancel</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function NextSessionEditor({ enrollment, onSave }: { enrollment: Enrollment; onSave: (d: string | null) => void }) {
   // datetime-local needs 'YYYY-MM-DDTHH:mm'
   const toLocal = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 16) : '');
@@ -294,7 +385,7 @@ function NextSessionEditor({ enrollment, onSave }: { enrollment: Enrollment; onS
   const dirty = val !== toLocal(enrollment.next_session_at);
   return (
     <div>
-      <label className="block font-label text-xs text-slate mb-1">Next session</label>
+      <label className={INPUT_LABEL}>Next session</label>
       <input type="datetime-local" value={val} onChange={(e) => setVal(e.target.value)}
         className="border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
       {dirty && (
@@ -311,6 +402,7 @@ function NextSessionEditor({ enrollment, onSave }: { enrollment: Enrollment; onS
 function SessionLogger({ enrollmentId, onLogged }: { enrollmentId: string; onLogged: () => void }) {
   const [notes, setNotes] = useState('');
   const [nextActions, setNextActions] = useState('');
+  const [coachActions, setCoachActions] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -318,9 +410,9 @@ function SessionLogger({ enrollmentId, onLogged }: { enrollmentId: string; onLog
     setSaving(true);
     await fetch(`/api/enrollments/${enrollmentId}/sessions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes, nextActions }),
+      body: JSON.stringify({ notes, nextActions, coachActions }),
     });
-    setNotes(''); setNextActions(''); setSaving(false);
+    setNotes(''); setNextActions(''); setCoachActions(''); setSaving(false);
     onLogged();
   }
 
@@ -329,8 +421,16 @@ function SessionLogger({ enrollmentId, onLogged }: { enrollmentId: string; onLog
       <h3 className="font-label text-xs text-plum">Log a session</h3>
       <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={8} placeholder="What happened this session…"
         className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-y" />
-      <input type="text" value={nextActions} onChange={(e) => setNextActions(e.target.value)} placeholder="Aligned Actions (tasks & tools)"
-        className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+      <div>
+        <label className={INPUT_LABEL}>Client actions</label>
+        <input type="text" value={nextActions} onChange={(e) => setNextActions(e.target.value)} placeholder="Tasks & tools the client owns"
+          className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+      </div>
+      <div>
+        <label className={INPUT_LABEL}>Coach actions</label>
+        <input type="text" value={coachActions} onChange={(e) => setCoachActions(e.target.value)} placeholder="Follow-ups Lindsay owns"
+          className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+      </div>
       <button type="submit" disabled={saving || !notes.trim()}
         className="btn-spark disabled:opacity-50">
         {saving ? 'Saving…' : 'Log session'}
@@ -349,7 +449,8 @@ function SessionHistory({ logs }: { logs: SessionLog[] }) {
           <div key={l.id} className="border border-gold/20 rounded-lg p-3">
             <p className="text-xs text-slate/60 mb-1">{fmtDate(l.session_date)}</p>
             <p className="text-sm text-slate whitespace-pre-wrap">{l.notes}</p>
-            {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Aligned Actions:</span> {l.next_actions}</p>}
+            {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Client actions:</span> {l.next_actions}</p>}
+            {l.coach_actions && <p className="text-xs text-slate/60 mt-1"><span className="font-medium">Coach actions:</span> {l.coach_actions}</p>}
           </div>
         ))}
       </div>
@@ -393,8 +494,8 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
     <div className="border-t border-gold/10 pt-5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-label text-xs text-plum">Recordings ({recordings.length})</h3>
-        <button onClick={() => setShowAdd(!showAdd)} className="text-xs text-slate/60 hover:text-slate underline underline-offset-2">
-          {showAdd ? 'Cancel' : '+ Attach recording'}
+        <button onClick={() => setShowAdd(!showAdd)} className="btn-spark-outline text-xs px-3 py-1.5">
+          {showAdd ? 'Cancel' : 'Attach recording'}
         </button>
       </div>
 
@@ -517,7 +618,8 @@ function PastPackRow({ enrollment }: { enrollment: Enrollment }) {
               <div key={l.id} className="border border-gold/20 rounded-lg p-3">
                 <p className="text-xs text-slate/60 mb-1">{fmtDate(l.session_date)}</p>
                 <p className="text-sm text-slate whitespace-pre-wrap">{l.notes}</p>
-                {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Aligned Actions:</span> {l.next_actions}</p>}
+                {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Client actions:</span> {l.next_actions}</p>}
+                {l.coach_actions && <p className="text-xs text-slate/60 mt-1"><span className="font-medium">Coach actions:</span> {l.coach_actions}</p>}
               </div>
             ))
           )}

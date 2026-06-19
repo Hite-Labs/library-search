@@ -3,6 +3,18 @@
 import { useState, useEffect, useCallback, FormEvent } from 'react';
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
+import { PencilIcon } from '@/components/PencilIcon';
+
+// Sentence-case the first character (display only).
+function initialCap(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// Manrope input-label style (reserve Oswald/font-label for headers & subheaders).
+const INPUT_LABEL = 'block text-xs font-medium uppercase tracking-wide text-slate/70 mb-1';
+
+// Pipe separator for the metadata label line.
+const PIPE = <span className="text-slate/40">|</span>;
 
 interface Cohort {
   id: string; name: string; description: string; goal: string;
@@ -64,37 +76,7 @@ export function CohortDetailView({ cohortId }: { cohortId: string }) {
       <Nav />
       <div className="max-w-3xl mx-auto px-4 py-8">
         <Link href="/cohorts" className="text-sm text-slate/60 hover:text-slate">← All cohorts</Link>
-        <h1 className="text-xl font-serif text-slate mt-2 mb-6">{cohort.name}</h1>
-
-        {/* Progress + status */}
-        <div className="bg-white rounded-2xl border border-gold/20 p-6 space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-plum">
-                Session {cohort.current_session} of{' '}
-                <TotalEditor total={cohort.total_sessions} onSave={(n) => patchCohort({ totalSessions: n })} />
-              </span>
-              <div className="flex gap-1">
-                <button onClick={() => patchCohort({ currentSession: Math.max(0, cohort.current_session - 1) })}
-                  disabled={cohort.current_session <= 0}
-                  className="w-7 h-7 rounded-lg border border-gold/30 text-plum hover:bg-petal disabled:opacity-40">−</button>
-                <button onClick={() => patchCohort({ currentSession: cohort.current_session + 1 })}
-                  className="w-7 h-7 rounded-lg border border-gold/30 text-plum hover:bg-petal">+</button>
-              </div>
-            </div>
-            <div className="flex gap-1">
-              {(['active', 'complete', 'archived'] as const).map((s) => (
-                <button key={s} onClick={() => patchCohort({ status: s })} disabled={cohort.status === s}
-                  className={`font-label text-xs px-3 py-1.5 rounded-lg capitalize transition-colors ${
-                    cohort.status === s ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal border border-gold/20'
-                  }`}>{s}</button>
-              ))}
-            </div>
-          </div>
-
-          <GoalEditor cohort={cohort} onSave={(goal) => patchCohort({ goal })} />
-          <ZoomEditor cohort={cohort} onSave={(zoomUrl) => patchCohort({ zoomUrl })} />
-        </div>
+        <CohortHeader cohort={cohort} onPatch={patchCohort} />
 
         <ScheduleSection cohortId={cohortId} sessions={data.sessions} onChange={load} />
         <SharedContentSection cohortId={cohortId} content={data.content} onChange={load} />
@@ -104,43 +86,109 @@ export function CohortDetailView({ cohortId }: { cohortId: string }) {
   );
 }
 
-function GoalEditor({ cohort, onSave }: { cohort: Cohort; onSave: (g: string) => void }) {
-  const [goal, setGoal] = useState(cohort.goal);
-  const dirty = goal !== cohort.goal;
+// Consolidated cohort header: name + metadata label line (type | status | progress)
+// with inline +/- session steppers, the shared goal, the Zoom link, and a pencil
+// popup for editing goal / total sessions / status.
+function CohortHeader({ cohort, onPatch }: { cohort: Cohort; onPatch: (body: Record<string, unknown>) => void }) {
+  const [editing, setEditing] = useState(false);
+
   return (
-    <div>
-      <label className="block font-label text-xs text-slate mb-1">Shared goal / theme</label>
-      <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2}
-        className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
-      {dirty && (
-        <div className="flex gap-2 mt-2">
-          <button onClick={() => onSave(goal)} className="btn-spark text-xs px-3 py-1">Save</button>
-          <button onClick={() => setGoal(cohort.goal)} className="btn-spark-outline text-xs px-2 py-1">Cancel</button>
-        </div>
+    <div className="mt-2 mb-6">
+      <h1 className="text-xl font-serif text-slate mb-4">{cohort.name}</h1>
+
+      <div className="bg-white rounded-2xl border border-gold/20 p-6 space-y-4">
+      {/* Metadata label line — Oswald, regular weight, pipe-separated (no badges). */}
+      <div className="flex items-center gap-2 font-label font-normal text-sm text-slate capitalize">
+        <span>Cohort</span>
+        {PIPE}
+        <span>{cohort.status}</span>
+        {PIPE}
+        <span className="flex items-center gap-2">
+          Session {cohort.current_session} of {cohort.total_sessions}
+          <span className="inline-flex gap-1">
+            <button onClick={() => onPatch({ currentSession: Math.max(0, cohort.current_session - 1) })}
+              disabled={cohort.current_session <= 0} aria-label="Previous session"
+              className="w-6 h-6 rounded-lg border border-gold/30 text-plum hover:bg-petal disabled:opacity-40 normal-case">−</button>
+            <button onClick={() => onPatch({ currentSession: cohort.current_session + 1 })} aria-label="Next session"
+              className="w-6 h-6 rounded-lg border border-gold/30 text-plum hover:bg-petal normal-case">+</button>
+          </span>
+        </span>
+        <button type="button" onClick={() => setEditing(true)} aria-label="Edit cohort details"
+          className="ml-1 text-slate/50 hover:text-gold transition-colors">
+          <PencilIcon />
+        </button>
+      </div>
+
+      {/* Shared goal value with a small label beneath. */}
+      <div>
+        <p className="text-base text-slate">{cohort.goal ? initialCap(cohort.goal) : '—'}</p>
+        <span className="font-label font-normal text-xs text-slate/60">Goal</span>
+      </div>
+
+      <ZoomEditor cohort={cohort} onSave={(zoomUrl) => onPatch({ zoomUrl })} />
+      </div>
+
+      {editing && (
+        <EditCohortModal
+          cohort={cohort}
+          onClose={() => setEditing(false)}
+          onSave={(body) => { onPatch(body); setEditing(false); }}
+        />
       )}
     </div>
   );
 }
 
-// Inline editable total-session count (the "of N" in the header).
-function TotalEditor({ total, onSave }: { total: number; onSave: (n: number) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(String(total));
-  if (!editing) {
-    return (
-      <button onClick={() => { setVal(String(total)); setEditing(true); }} className="underline decoration-dotted hover:text-gold">
-        {total}
-      </button>
-    );
+// Popup to edit shared goal / total sessions / status in one place.
+function EditCohortModal({
+  cohort, onClose, onSave,
+}: { cohort: Cohort; onClose: () => void; onSave: (body: Record<string, unknown>) => void }) {
+  const [goal, setGoal] = useState(cohort.goal);
+  const [totalSessions, setTotalSessions] = useState(String(cohort.total_sessions));
+  const [status, setStatus] = useState(cohort.status);
+
+  function save() {
+    const body: Record<string, unknown> = { goal, status };
+    const n = parseInt(totalSessions, 10);
+    if (n > 0) body.totalSessions = n;
+    onSave(body);
   }
+
   return (
-    <span className="inline-flex items-center gap-1">
-      <input type="number" min="1" value={val} onChange={(e) => setVal(e.target.value)} autoFocus
-        className="w-14 border border-slate/20 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
-      <button onClick={() => { const n = parseInt(val, 10); if (n > 0) onSave(n); setEditing(false); }}
-        className="font-label text-xs text-gold hover:text-plum">save</button>
-      <button onClick={() => setEditing(false)} className="font-label text-xs text-slate/50">cancel</button>
-    </span>
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-serif text-slate mb-4">Edit cohort</h2>
+        <div className="space-y-4">
+          <div>
+            <label className={INPUT_LABEL}>Shared goal / theme</label>
+            <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2}
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
+          </div>
+          <div>
+            <label className={INPUT_LABEL}>Number of sessions</label>
+            <input type="number" min="1" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)}
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+          </div>
+          <div>
+            <label className={INPUT_LABEL}>Status</label>
+            <div className="flex gap-2">
+              {(['active', 'complete', 'archived'] as const).map((s) => (
+                <button key={s} type="button" onClick={() => setStatus(s)}
+                  className={`font-label text-xs px-3 py-1.5 rounded-lg capitalize transition-colors ${
+                    status === s ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal border border-gold/20'
+                  }`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose} className="btn-spark-outline flex-1">Cancel</button>
+            <button type="button" onClick={save} className="btn-spark flex-1">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -151,7 +199,7 @@ function ZoomEditor({ cohort, onSave }: { cohort: Cohort; onSave: (url: string) 
   const dirty = url !== cohort.zoom_url;
   return (
     <div>
-      <label className="block font-label text-xs text-slate mb-1">Zoom link <span className="font-normal lowercase text-slate/50">(shared weekly)</span></label>
+      <label className={`${INPUT_LABEL} normal-case`}>Zoom link <span className="font-normal lowercase text-slate/50">(shared weekly)</span></label>
       <div className="flex gap-2">
         <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://zoom.us/j/…"
           className="flex-1 border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
@@ -209,12 +257,12 @@ function ScheduleSection({ cohortId, sessions, onChange }: { cohortId: string; s
       )}
       <form onSubmit={add} className="flex gap-2 items-end">
         <div className="flex-1">
-          <label className="block font-label text-xs text-slate/60 mb-1">Label</label>
+          <label className={INPUT_LABEL}>Label</label>
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Session 1: Intro" disabled={saving}
             className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
         </div>
         <div>
-          <label className="block font-label text-xs text-slate/60 mb-1">Date/time</label>
+          <label className={INPUT_LABEL}>Date/time</label>
           <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} disabled={saving}
             className="border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
         </div>
@@ -256,8 +304,8 @@ function SharedContentSection({ cohortId, content, onChange }: { cohortId: strin
     <div className="bg-white rounded-2xl border border-gold/20 p-6 mt-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-label text-xs text-plum">Shared content <span className="font-normal text-slate/60">(all members see)</span></h2>
-        <button onClick={() => setShowAdd(!showAdd)} className="text-xs text-slate/60 hover:text-slate underline underline-offset-2">
-          {showAdd ? 'Cancel' : '+ Attach content'}
+        <button onClick={() => setShowAdd(!showAdd)} className="btn-spark-outline text-xs px-3 py-1.5">
+          {showAdd ? 'Cancel' : 'Attach content'}
         </button>
       </div>
       {content.length > 0 && (
@@ -317,8 +365,8 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
     <div className="bg-white rounded-2xl border border-gold/20 p-6 mt-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-label text-xs text-plum">Members ({roster.length})</h2>
-        <button onClick={() => setShowAdd(!showAdd)} className="text-xs text-slate/60 hover:text-slate underline underline-offset-2">
-          {showAdd ? 'Cancel' : '+ Add member'}
+        <button onClick={() => setShowAdd(!showAdd)} className="btn-spark-outline text-xs px-3 py-1.5">
+          {showAdd ? 'Cancel' : 'Add member'}
         </button>
       </div>
 

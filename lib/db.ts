@@ -119,6 +119,7 @@ export interface Enrollment {
   total_sessions: number;
   sessions_done: number;
   next_session_at: string | null;
+  calendar_url: string;
   created_at: string;
 }
 
@@ -128,6 +129,7 @@ export interface SessionLog {
   session_date: string;
   notes: string;
   next_actions: string;
+  coach_actions: string;
   created_at: string;
 }
 
@@ -227,7 +229,7 @@ export async function getEnrollment(id: string): Promise<Enrollment | null> {
 
 export async function updateEnrollment(
   id: string,
-  data: { goal?: string; status?: string; nextSessionAt?: string | null; totalSessions?: number },
+  data: { goal?: string; status?: string; nextSessionAt?: string | null; totalSessions?: number; calendarUrl?: string },
 ): Promise<Enrollment | null> {
   const sql = getSql();
   // COALESCE keeps existing values when a field isn't provided. next_session_at is
@@ -237,6 +239,7 @@ export async function updateEnrollment(
       goal = COALESCE(${data.goal ?? null}, goal),
       status = COALESCE(${data.status ?? null}, status),
       total_sessions = COALESCE(${data.totalSessions ?? null}, total_sessions),
+      calendar_url = COALESCE(${data.calendarUrl ?? null}, calendar_url),
       next_session_at = ${data.nextSessionAt === undefined ? sql`next_session_at` : data.nextSessionAt}
     WHERE id = ${id}
     RETURNING *`;
@@ -246,12 +249,12 @@ export async function updateEnrollment(
 /** Add a session log and increment the enrollment's counter atomically. */
 export async function addSessionLog(
   enrollmentId: string,
-  data: { notes: string; nextActions: string; sessionDate?: string },
+  data: { notes: string; nextActions: string; coachActions: string; sessionDate?: string },
 ): Promise<{ log: SessionLog; enrollment: Enrollment }> {
   const sql = getSql();
   const [logRows, enrollRows] = await sql.transaction([
-    sql`INSERT INTO session_logs (enrollment_id, notes, next_actions, session_date)
-        VALUES (${enrollmentId}, ${data.notes}, ${data.nextActions},
+    sql`INSERT INTO session_logs (enrollment_id, notes, next_actions, coach_actions, session_date)
+        VALUES (${enrollmentId}, ${data.notes}, ${data.nextActions}, ${data.coachActions},
                 ${data.sessionDate ?? new Date().toISOString()})
         RETURNING *`,
     sql`UPDATE enrollments SET sessions_done = sessions_done + 1

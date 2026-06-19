@@ -58,11 +58,13 @@ export const UpdateEnrollmentSchema = z.object({
   status: z.enum(['active', 'paused', 'complete']).optional(),
   nextSessionAt: z.string().datetime().nullable().optional(),
   totalSessions: z.number().int().positive().optional(),
+  calendarUrl: z.string().optional(),
 });
 
 export const SessionLogSchema = z.object({
   notes: z.string().default(''),
   nextActions: z.string().default(''),
+  coachActions: z.string().default(''),
   sessionDate: z.string().datetime().optional(),
 });
 
