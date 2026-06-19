@@ -31,11 +31,35 @@ function fmtDate(d: string | null): string {
   return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// Global booking link (set NEXT_PUBLIC_BOOKING_URL). Empty → button hidden.
+const BOOKING_URL = process.env.NEXT_PUBLIC_BOOKING_URL ?? '';
+
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
   paused: 'bg-amber-100 text-amber-800',
   complete: 'bg-petal text-plum',
 };
+
+// Small "copy to clipboard" button with a brief confirmation. Renders nothing if no value.
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) return null;
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch { /* clipboard blocked — no-op */ }
+      }}
+      className="btn-spark-outline text-xs px-3 py-1.5 shrink-0"
+    >
+      {copied ? 'Copied!' : label}
+    </button>
+  );
+}
 
 export function ClientDetailView({ clientId }: { clientId: string }) {
   const [data, setData] = useState<DetailData | null>(null);
@@ -76,9 +100,12 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
       <Nav />
       <div className="max-w-3xl mx-auto px-4 py-8">
         <Link href="/clients" className="text-sm text-slate/60 hover:text-slate">← All clients</Link>
-        <div className="mt-2 mb-6">
-          <h1 className="text-xl font-serif text-slate">{data.client.name}</h1>
-          <p className="text-sm text-slate/60">{data.client.email}</p>
+        <div className="mt-2 mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-serif text-slate">{data.client.name}</h1>
+            <p className="text-sm text-slate/60">{data.client.email}</p>
+          </div>
+          <CopyButton value={BOOKING_URL} label="Copy booking link" />
         </div>
 
         {active ? (
@@ -122,11 +149,12 @@ function ActiveEnrollment({
           </span>
         </div>
         {!isCohort && (
-          <p className="text-sm font-medium text-plum">
-            {enrollment.sessions_done} of {enrollment.total_sessions} sessions
-          </p>
+          <SessionCountEditor enrollment={enrollment} onSave={(totalSessions) => patch({ totalSessions })} />
         )}
       </div>
+
+      {/* Goal (intake) surfaced at the top of the card with inline edit */}
+      <GoalEditor enrollment={enrollment} onSave={(goal) => patch({ goal })} />
 
       {/* Cohort members inherit the cohort's schedule + progress (no individual counter/logger). */}
       {isCohort && <CohortInfo enrollmentId={enrollment.id} />}
@@ -141,12 +169,11 @@ function ActiveEnrollment({
         </div>
       )}
 
-      {/* Individual goal (intake) — present for both program types */}
-      <GoalEditor enrollment={enrollment} onSave={(goal) => patch({ goal })} />
-
-      {/* Individual-only controls: next session, status, session logging/history */}
+      {/* Individual-only controls: session logging/history, then next session, then status */}
       {!isCohort && (
         <>
+          <SessionLogger enrollmentId={enrollment.id} onLogged={onChange} />
+          {/* Next session sits BELOW the log (after note-taking, not before) */}
           <NextSessionEditor enrollment={enrollment} onSave={(nextSessionAt) => patch({ nextSessionAt })} />
           <div className="flex gap-2">
             {(['active', 'paused', 'complete'] as const).map((s) => (
@@ -158,7 +185,6 @@ function ActiveEnrollment({
               </button>
             ))}
           </div>
-          <SessionLogger enrollmentId={enrollment.id} onLogged={onChange} />
           <SessionHistory logs={logs} />
         </>
       )}
@@ -170,10 +196,34 @@ function ActiveEnrollment({
   );
 }
 
+// Editable "x of N" session count — N becomes editable after creation (click to change).
+function SessionCountEditor({ enrollment, onSave }: { enrollment: Enrollment; onSave: (n: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(String(enrollment.total_sessions));
+  if (!editing) {
+    return (
+      <button onClick={() => { setVal(String(enrollment.total_sessions)); setEditing(true); }}
+        className="text-sm font-medium text-plum hover:underline">
+        {enrollment.sessions_done} of {enrollment.total_sessions} sessions
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1 text-sm text-plum">
+      <span>{enrollment.sessions_done} of</span>
+      <input type="number" min="1" value={val} onChange={(e) => setVal(e.target.value)} autoFocus
+        className="w-14 border border-slate/20 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+      <button onClick={() => { const n = parseInt(val, 10); if (n > 0) onSave(n); setEditing(false); }}
+        className="font-label text-xs text-gold hover:text-plum">save</button>
+      <button onClick={() => setEditing(false)} className="font-label text-xs text-slate/50">cancel</button>
+    </div>
+  );
+}
+
 // For a cohort member: show which cohort they're in + the cohort's session schedule
 // and current progress (inherited from the cohort, not tracked per-member).
 function CohortInfo({ enrollmentId }: { enrollmentId: string }) {
-  const [cohort, setCohort] = useState<{ id: string; name: string; current_session: number; total_sessions: number } | null>(null);
+  const [cohort, setCohort] = useState<{ id: string; name: string; current_session: number; total_sessions: number; zoom_url: string } | null>(null);
   const [sessions, setSessions] = useState<{ id: string; label: string; session_date: string | null }[]>([]);
 
   useEffect(() => {
@@ -206,6 +256,14 @@ function CohortInfo({ enrollmentId }: { enrollmentId: string }) {
             );
           })}
         </ul>
+      )}
+      {cohort.zoom_url && (
+        <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-gold/15">
+          <a href={cohort.zoom_url} target="_blank" rel="noreferrer" className="text-sm text-plum hover:underline truncate">
+            Zoom link
+          </a>
+          <CopyButton value={cohort.zoom_url} label="Copy Zoom" />
+        </div>
       )}
     </div>
   );
@@ -269,9 +327,9 @@ function SessionLogger({ enrollmentId, onLogged }: { enrollmentId: string; onLog
   return (
     <form onSubmit={submit} className="border-t border-gold/10 pt-5 space-y-3">
       <h3 className="font-label text-xs text-plum">Log a session</h3>
-      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="What happened this session…"
-        className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
-      <input type="text" value={nextActions} onChange={(e) => setNextActions(e.target.value)} placeholder="Assigned for next session (optional)"
+      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={8} placeholder="What happened this session…"
+        className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-y" />
+      <input type="text" value={nextActions} onChange={(e) => setNextActions(e.target.value)} placeholder="Aligned Actions (tasks & tools)"
         className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
       <button type="submit" disabled={saving || !notes.trim()}
         className="btn-spark disabled:opacity-50">
@@ -291,7 +349,7 @@ function SessionHistory({ logs }: { logs: SessionLog[] }) {
           <div key={l.id} className="border border-gold/20 rounded-lg p-3">
             <p className="text-xs text-slate/60 mb-1">{fmtDate(l.session_date)}</p>
             <p className="text-sm text-slate whitespace-pre-wrap">{l.notes}</p>
-            {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Next:</span> {l.next_actions}</p>}
+            {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Aligned Actions:</span> {l.next_actions}</p>}
           </div>
         ))}
       </div>
@@ -459,7 +517,7 @@ function PastPackRow({ enrollment }: { enrollment: Enrollment }) {
               <div key={l.id} className="border border-gold/20 rounded-lg p-3">
                 <p className="text-xs text-slate/60 mb-1">{fmtDate(l.session_date)}</p>
                 <p className="text-sm text-slate whitespace-pre-wrap">{l.notes}</p>
-                {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Next:</span> {l.next_actions}</p>}
+                {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Aligned Actions:</span> {l.next_actions}</p>}
               </div>
             ))
           )}

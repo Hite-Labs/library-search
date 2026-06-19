@@ -57,6 +57,7 @@ export const UpdateEnrollmentSchema = z.object({
   goal: z.string().optional(),
   status: z.enum(['active', 'paused', 'complete']).optional(),
   nextSessionAt: z.string().datetime().nullable().optional(),
+  totalSessions: z.number().int().positive().optional(),
 });
 
 export const SessionLogSchema = z.object({
@@ -101,6 +102,7 @@ export const UpdateCohortSchema = z.object({
   status: z.enum(['active', 'complete', 'archived']).optional(),
   totalSessions: z.number().int().positive().optional(),
   currentSession: z.number().int().nonnegative().optional(),
+  zoomUrl: z.string().optional(),
 });
 
 export const CohortSessionSchema = z.object({

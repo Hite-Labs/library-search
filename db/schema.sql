@@ -82,6 +82,7 @@ CREATE TABLE cohorts (
   current_session integer NOT NULL DEFAULT 0,      -- group progress, advanced manually
   status          text NOT NULL DEFAULT 'active'
                     CHECK (status IN ('active','complete','archived')),
+  zoom_url        text NOT NULL DEFAULT '',         -- shared weekly Zoom link
   created_at      timestamptz NOT NULL DEFAULT now()
 );
 

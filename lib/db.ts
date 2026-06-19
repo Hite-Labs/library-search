@@ -227,7 +227,7 @@ export async function getEnrollment(id: string): Promise<Enrollment | null> {
 
 export async function updateEnrollment(
   id: string,
-  data: { goal?: string; status?: string; nextSessionAt?: string | null },
+  data: { goal?: string; status?: string; nextSessionAt?: string | null; totalSessions?: number },
 ): Promise<Enrollment | null> {
   const sql = getSql();
   // COALESCE keeps existing values when a field isn't provided. next_session_at is
@@ -236,6 +236,7 @@ export async function updateEnrollment(
     UPDATE enrollments SET
       goal = COALESCE(${data.goal ?? null}, goal),
       status = COALESCE(${data.status ?? null}, status),
+      total_sessions = COALESCE(${data.totalSessions ?? null}, total_sessions),
       next_session_at = ${data.nextSessionAt === undefined ? sql`next_session_at` : data.nextSessionAt}
     WHERE id = ${id}
     RETURNING *`;
@@ -326,6 +327,7 @@ export interface Cohort {
   total_sessions: number;
   current_session: number;
   status: 'active' | 'complete' | 'archived';
+  zoom_url: string;
   created_at: string;
 }
 
@@ -404,6 +406,7 @@ export async function updateCohort(
     status?: string;
     totalSessions?: number;
     currentSession?: number;
+    zoomUrl?: string;
   },
 ): Promise<Cohort | null> {
   const sql = getSql();
@@ -414,7 +417,8 @@ export async function updateCohort(
       goal = COALESCE(${data.goal ?? null}, goal),
       status = COALESCE(${data.status ?? null}, status),
       total_sessions = COALESCE(${data.totalSessions ?? null}, total_sessions),
-      current_session = COALESCE(${data.currentSession ?? null}, current_session)
+      current_session = COALESCE(${data.currentSession ?? null}, current_session),
+      zoom_url = COALESCE(${data.zoomUrl ?? null}, zoom_url)
     WHERE id = ${id}
     RETURNING *`;
   return (rows[0] as Cohort) ?? null;

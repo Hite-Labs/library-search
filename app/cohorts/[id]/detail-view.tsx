@@ -7,6 +7,7 @@ import { Nav } from '@/components/Nav';
 interface Cohort {
   id: string; name: string; description: string; goal: string;
   total_sessions: number; current_session: number; status: 'active' | 'complete' | 'archived';
+  zoom_url: string;
 }
 interface CohortSession { id: string; session_date: string | null; label: string; sort_order: number; }
 interface Member { enrollment_id: string; client_id: string; client_name: string; client_email: string; goal: string; status: string; }
@@ -69,7 +70,10 @@ export function CohortDetailView({ cohortId }: { cohortId: string }) {
         <div className="bg-white rounded-2xl border border-gold/20 p-6 space-y-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-plum">Session {cohort.current_session} of {cohort.total_sessions}</span>
+              <span className="text-sm font-medium text-plum">
+                Session {cohort.current_session} of{' '}
+                <TotalEditor total={cohort.total_sessions} onSave={(n) => patchCohort({ totalSessions: n })} />
+              </span>
               <div className="flex gap-1">
                 <button onClick={() => patchCohort({ currentSession: Math.max(0, cohort.current_session - 1) })}
                   disabled={cohort.current_session <= 0}
@@ -89,6 +93,7 @@ export function CohortDetailView({ cohortId }: { cohortId: string }) {
           </div>
 
           <GoalEditor cohort={cohort} onSave={(goal) => patchCohort({ goal })} />
+          <ZoomEditor cohort={cohort} onSave={(zoomUrl) => patchCohort({ zoomUrl })} />
         </div>
 
         <ScheduleSection cohortId={cohortId} sessions={data.sessions} onChange={load} />
@@ -111,6 +116,54 @@ function GoalEditor({ cohort, onSave }: { cohort: Cohort; onSave: (g: string) =>
         <div className="flex gap-2 mt-2">
           <button onClick={() => onSave(goal)} className="btn-spark text-xs px-3 py-1">Save</button>
           <button onClick={() => setGoal(cohort.goal)} className="btn-spark-outline text-xs px-2 py-1">Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Inline editable total-session count (the "of N" in the header).
+function TotalEditor({ total, onSave }: { total: number; onSave: (n: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(String(total));
+  if (!editing) {
+    return (
+      <button onClick={() => { setVal(String(total)); setEditing(true); }} className="underline decoration-dotted hover:text-gold">
+        {total}
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input type="number" min="1" value={val} onChange={(e) => setVal(e.target.value)} autoFocus
+        className="w-14 border border-slate/20 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+      <button onClick={() => { const n = parseInt(val, 10); if (n > 0) onSave(n); setEditing(false); }}
+        className="font-label text-xs text-gold hover:text-plum">save</button>
+      <button onClick={() => setEditing(false)} className="font-label text-xs text-slate/50">cancel</button>
+    </span>
+  );
+}
+
+// Shared Zoom link: editable field + copy button + open link.
+function ZoomEditor({ cohort, onSave }: { cohort: Cohort; onSave: (url: string) => void }) {
+  const [url, setUrl] = useState(cohort.zoom_url);
+  const [copied, setCopied] = useState(false);
+  const dirty = url !== cohort.zoom_url;
+  return (
+    <div>
+      <label className="block font-label text-xs text-slate mb-1">Zoom link <span className="font-normal lowercase text-slate/50">(shared weekly)</span></label>
+      <div className="flex gap-2">
+        <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://zoom.us/j/…"
+          className="flex-1 border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+        {cohort.zoom_url && !dirty && (
+          <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(cohort.zoom_url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} }}
+            className="btn-spark-outline text-xs px-3 shrink-0">{copied ? 'Copied!' : 'Copy'}</button>
+        )}
+      </div>
+      {dirty && (
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => onSave(url)} className="btn-spark text-xs px-3 py-1">Save</button>
+          <button onClick={() => setUrl(cohort.zoom_url)} className="btn-spark-outline text-xs px-2 py-1">Cancel</button>
         </div>
       )}
     </div>
