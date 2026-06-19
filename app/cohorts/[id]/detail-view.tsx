@@ -38,39 +38,51 @@ export function CohortDetailView({ cohortId }: { cohortId: string }) {
   }
 
   if (loading) {
-    return <div className="min-h-screen bg-stone-50"><Nav /><div className="py-16 flex justify-center"><div className="w-6 h-6 border-2 border-stone-300 border-t-stone-600 rounded-full animate-spin" /></div></div>;
+    return (
+      <div className="min-h-screen bg-petal/40">
+        <Nav />
+        <div className="py-16 flex justify-center">
+          <div className="w-6 h-6 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
+        </div>
+      </div>
+    );
   }
   if (!data) {
-    return <div className="min-h-screen bg-stone-50"><Nav /><div className="max-w-3xl mx-auto px-4 py-10 text-sm text-stone-500">Cohort not found.</div></div>;
+    return (
+      <div className="min-h-screen bg-petal/40">
+        <Nav />
+        <div className="max-w-3xl mx-auto px-4 py-10 text-sm text-slate/60">Cohort not found.</div>
+      </div>
+    );
   }
 
   const { cohort } = data;
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-petal/40">
       <Nav />
       <div className="max-w-3xl mx-auto px-4 py-8">
-        <Link href="/cohorts" className="text-sm text-stone-400 hover:text-stone-600">← All cohorts</Link>
-        <h1 className="text-xl font-semibold text-stone-800 mt-2 mb-6">{cohort.name}</h1>
+        <Link href="/cohorts" className="text-sm text-slate/60 hover:text-slate">← All cohorts</Link>
+        <h1 className="text-xl font-serif text-slate mt-2 mb-6">{cohort.name}</h1>
 
         {/* Progress + status */}
-        <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-5">
+        <div className="bg-white rounded-2xl border border-gold/20 p-6 space-y-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-stone-700">Session {cohort.current_session} of {cohort.total_sessions}</span>
+              <span className="text-sm font-medium text-plum">Session {cohort.current_session} of {cohort.total_sessions}</span>
               <div className="flex gap-1">
                 <button onClick={() => patchCohort({ currentSession: Math.max(0, cohort.current_session - 1) })}
                   disabled={cohort.current_session <= 0}
-                  className="w-7 h-7 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-100 disabled:opacity-40">−</button>
+                  className="w-7 h-7 rounded-lg border border-gold/30 text-plum hover:bg-petal disabled:opacity-40">−</button>
                 <button onClick={() => patchCohort({ currentSession: cohort.current_session + 1 })}
-                  className="w-7 h-7 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-100">+</button>
+                  className="w-7 h-7 rounded-lg border border-gold/30 text-plum hover:bg-petal">+</button>
               </div>
             </div>
             <div className="flex gap-1">
               {(['active', 'complete', 'archived'] as const).map((s) => (
                 <button key={s} onClick={() => patchCohort({ status: s })} disabled={cohort.status === s}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-medium capitalize ${
-                    cohort.status === s ? 'bg-stone-800 text-white' : 'text-stone-600 hover:bg-stone-100 border border-stone-200'
+                  className={`font-label text-xs px-3 py-1.5 rounded-lg capitalize transition-colors ${
+                    cohort.status === s ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal border border-gold/20'
                   }`}>{s}</button>
               ))}
             </div>
@@ -92,13 +104,13 @@ function GoalEditor({ cohort, onSave }: { cohort: Cohort; onSave: (g: string) =>
   const dirty = goal !== cohort.goal;
   return (
     <div>
-      <label className="block text-sm font-medium text-stone-700 mb-1">Shared goal / theme</label>
+      <label className="block font-label text-xs text-slate mb-1">Shared goal / theme</label>
       <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2}
-        className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400 resize-none" />
+        className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
       {dirty && (
         <div className="flex gap-2 mt-2">
-          <button onClick={() => onSave(goal)} className="text-xs bg-stone-800 text-white rounded-lg px-3 py-1 font-medium">Save</button>
-          <button onClick={() => setGoal(cohort.goal)} className="text-xs text-stone-500 px-2 py-1">Cancel</button>
+          <button onClick={() => onSave(goal)} className="btn-spark text-xs px-3 py-1">Save</button>
+          <button onClick={() => setGoal(cohort.goal)} className="btn-spark-outline text-xs px-2 py-1">Cancel</button>
         </div>
       )}
     </div>
@@ -127,15 +139,15 @@ function ScheduleSection({ cohortId, sessions, onChange }: { cohortId: string; s
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-stone-200 p-6 mt-4">
-      <h2 className="text-sm font-semibold text-stone-700 mb-3">Schedule</h2>
+    <div className="bg-white rounded-2xl border border-gold/20 p-6 mt-4">
+      <h2 className="font-label text-xs text-plum mb-3">Schedule</h2>
       {sessions.length > 0 && (
         <div className="space-y-2 mb-4">
           {sessions.map((s, i) => (
-            <div key={s.id} className="flex items-center justify-between border border-stone-200 rounded-lg p-2.5">
+            <div key={s.id} className="flex items-center justify-between border border-gold/20 rounded-lg p-2.5">
               <div>
-                <span className="text-sm text-stone-700">{s.label || `Session ${i + 1}`}</span>
-                <span className="text-xs text-stone-400 ml-2">{fmtDateTime(s.session_date)}</span>
+                <span className="text-sm text-slate">{s.label || `Session ${i + 1}`}</span>
+                <span className="text-xs text-slate/60 ml-2">{fmtDateTime(s.session_date)}</span>
               </div>
               <button onClick={() => remove(s.id)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
             </div>
@@ -144,17 +156,17 @@ function ScheduleSection({ cohortId, sessions, onChange }: { cohortId: string; s
       )}
       <form onSubmit={add} className="flex gap-2 items-end">
         <div className="flex-1">
-          <label className="block text-xs text-stone-500 mb-1">Label</label>
+          <label className="block font-label text-xs text-slate/60 mb-1">Label</label>
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Session 1: Intro" disabled={saving}
-            className="w-full border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
+            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
         </div>
         <div>
-          <label className="block text-xs text-stone-500 mb-1">Date/time</label>
+          <label className="block font-label text-xs text-slate/60 mb-1">Date/time</label>
           <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} disabled={saving}
-            className="border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
+            className="border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
         </div>
         <button type="submit" disabled={saving || !label}
-          className="bg-stone-800 text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-stone-700 disabled:opacity-50">Add</button>
+          className="btn-spark px-3 py-1.5 disabled:opacity-50">Add</button>
       </form>
     </div>
   );
@@ -188,32 +200,32 @@ function SharedContentSection({ cohortId, content, onChange }: { cohortId: strin
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-stone-200 p-6 mt-4">
+    <div className="bg-white rounded-2xl border border-gold/20 p-6 mt-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-stone-700">Shared content <span className="font-normal text-stone-400">(all members see)</span></h2>
-        <button onClick={() => setShowAdd(!showAdd)} className="text-xs text-stone-500 hover:text-stone-700 underline underline-offset-2">
+        <h2 className="font-label text-xs text-plum">Shared content <span className="font-normal text-slate/60">(all members see)</span></h2>
+        <button onClick={() => setShowAdd(!showAdd)} className="text-xs text-slate/60 hover:text-slate underline underline-offset-2">
           {showAdd ? 'Cancel' : '+ Attach content'}
         </button>
       </div>
       {content.length > 0 && (
         <div className="space-y-2 mb-3">
           {content.map((c) => (
-            <div key={c.id} className="flex items-center justify-between border border-stone-200 rounded-lg p-2.5">
-              <span className="text-sm text-stone-700 truncate">{c.title}</span>
-              <a href={c.public_url} target="_blank" rel="noreferrer" className="text-xs text-stone-500 hover:text-stone-700 shrink-0 ml-2">Open</a>
+            <div key={c.id} className="flex items-center justify-between border border-gold/20 rounded-lg p-2.5">
+              <span className="text-sm text-slate truncate">{c.title}</span>
+              <a href={c.public_url} target="_blank" rel="noreferrer" className="text-xs text-slate/60 hover:text-slate shrink-0 ml-2">Open</a>
             </div>
           ))}
         </div>
       )}
       {showAdd && (
-        <form onSubmit={attach} className="space-y-2 bg-stone-50 rounded-lg p-3">
+        <form onSubmit={attach} className="space-y-2 bg-petal/40 rounded-lg p-3">
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" required disabled={saving}
-            className="w-full border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
+            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="R2 file URL (https://…)" required disabled={saving}
-            className="w-full border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
+            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           {error && <p className="text-xs text-red-600">{error}</p>}
           <button type="submit" disabled={saving || !title || !url}
-            className="bg-stone-800 text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
+            className="btn-spark disabled:opacity-50">
             {saving ? 'Attaching…' : 'Attach'}
           </button>
         </form>
@@ -249,10 +261,10 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-stone-200 p-6 mt-4">
+    <div className="bg-white rounded-2xl border border-gold/20 p-6 mt-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-stone-700">Members ({roster.length})</h2>
-        <button onClick={() => setShowAdd(!showAdd)} className="text-xs text-stone-500 hover:text-stone-700 underline underline-offset-2">
+        <h2 className="font-label text-xs text-plum">Members ({roster.length})</h2>
+        <button onClick={() => setShowAdd(!showAdd)} className="text-xs text-slate/60 hover:text-slate underline underline-offset-2">
           {showAdd ? 'Cancel' : '+ Add member'}
         </button>
       </div>
@@ -261,29 +273,29 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
         <div className="space-y-2 mb-3">
           {roster.map((m) => (
             <Link key={m.enrollment_id} href={`/clients/${m.client_id}`}
-              className="flex items-center justify-between border border-stone-200 rounded-lg p-3 hover:border-stone-300 transition-colors">
+              className="flex items-center justify-between border border-gold/20 rounded-lg p-3 hover:border-gold/50 transition-colors">
               <div className="min-w-0">
-                <p className="text-sm text-stone-700 truncate">{m.client_name}</p>
-                <p className="text-xs text-stone-400 truncate">{m.goal || m.client_email}</p>
+                <p className="text-sm text-slate truncate">{m.client_name}</p>
+                <p className="text-xs text-slate/60 truncate">{m.goal || m.client_email}</p>
               </div>
-              <span className="text-xs text-stone-400 shrink-0 ml-2">View →</span>
+              <span className="text-xs text-slate/60 shrink-0 ml-2">View →</span>
             </Link>
           ))}
         </div>
       )}
 
       {showAdd && (
-        <form onSubmit={add} className="space-y-2 bg-stone-50 rounded-lg p-3">
+        <form onSubmit={add} className="space-y-2 bg-petal/40 rounded-lg p-3">
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required disabled={saving}
-            className="w-full border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
+            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required disabled={saving}
-            className="w-full border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
+            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           <input type="text" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Individual goal (optional)" disabled={saving}
-            className="w-full border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
+            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           {error && <p className="text-xs text-red-600">{error}</p>}
           {notice && <p className="text-xs text-amber-700">{notice}</p>}
           <button type="submit" disabled={saving || !name || !email}
-            className="bg-stone-800 text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
+            className="btn-spark disabled:opacity-50">
             {saving ? 'Adding…' : 'Add member'}
           </button>
         </form>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import Image from 'next/image';
 
 interface LoginFormProps {
   onSuccess: () => void;
@@ -42,14 +43,15 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-stone-200 p-8">
-        <h1 className="text-xl font-semibold text-stone-800 mb-1">Content Upload Tool</h1>
-        <p className="text-sm text-stone-500 mb-6">Enter the access password to continue.</p>
+    <div className="min-h-screen bg-forest flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-petal rounded-3xl shadow-xl p-8 text-center">
+        <Image src="/sys-mark.png" alt="Show Your Spark" width={56} height={56} className="rounded-lg mx-auto mb-4" />
+        <h1 className="font-serif text-2xl text-slate mb-1">Show Your Spark</h1>
+        <p className="font-label text-xs text-plum mb-6">Dashboard Access</p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 text-left">
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-stone-700 mb-1">
+            <label htmlFor="password" className="block font-label text-xs text-slate/70 mb-1">
               Password
             </label>
             <input
@@ -57,23 +59,19 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+              className="w-full border border-slate/20 bg-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
               autoFocus
               required
             />
           </div>
 
           {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <p className="text-sm text-scarlet bg-scarlet/10 border border-scarlet/20 rounded-lg px-3 py-2">
               {error}
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={loading || !password}
-            className="w-full bg-stone-800 text-white rounded-lg py-2 text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
-          >
+          <button type="submit" disabled={loading || !password} className="btn-spark w-full">
             {loading ? 'Checking…' : 'Continue'}
           </button>
         </form>

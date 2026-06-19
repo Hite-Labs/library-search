@@ -19,8 +19,8 @@ type StatusFilter = typeof STATUS_FILTERS[number];
 
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
-  complete: 'bg-stone-200 text-stone-600',
-  archived: 'bg-stone-100 text-stone-400',
+  complete: 'bg-petal text-plum',
+  archived: 'bg-petal/60 text-slate/50',
 };
 
 export function CohortsView() {
@@ -41,16 +41,16 @@ export function CohortsView() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-petal/40">
       <Nav />
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-xl font-semibold text-stone-800">Cohorts</h1>
-            <p className="text-sm text-stone-500 mt-0.5">Group programs and their members</p>
+            <h1 className="text-xl font-serif text-slate">Cohorts</h1>
+            <p className="text-sm text-slate/60 mt-0.5">Group programs and their members</p>
           </div>
           <button type="button" onClick={() => setShowForm(true)}
-            className="bg-stone-800 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-stone-700 transition-colors">
+            className="btn-spark">
             New cohort
           </button>
         </div>
@@ -58,8 +58,8 @@ export function CohortsView() {
         <div className="flex gap-1 mb-4">
           {STATUS_FILTERS.map((f) => (
             <button key={f} type="button" onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${
-                filter === f ? 'bg-stone-800 text-white' : 'text-stone-600 hover:bg-stone-100'
+              className={`px-3 py-1.5 rounded-lg font-label text-xs capitalize transition-colors ${
+                filter === f ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal'
               }`}>
               {f}
             </button>
@@ -68,28 +68,28 @@ export function CohortsView() {
 
         {loading ? (
           <div className="py-16 flex justify-center">
-            <div className="w-6 h-6 border-2 border-stone-300 border-t-stone-600 rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
           </div>
         ) : rows.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-stone-200 p-10 text-center text-sm text-stone-500">
+          <div className="bg-white rounded-2xl border border-gold/20 p-10 text-center text-sm text-slate/60">
             No {filter === 'all' ? '' : filter} cohorts yet.
           </div>
         ) : (
           <div className="space-y-2">
             {rows.map((r) => (
               <Link key={r.id} href={`/cohorts/${r.id}`}
-                className="block bg-white rounded-xl border border-stone-200 p-4 hover:border-stone-300 hover:shadow-sm transition-all">
+                className="block bg-white rounded-xl border border-gold/20 p-4 hover:border-gold/50 hover:shadow-sm transition-all">
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-stone-800 truncate">{r.name}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[r.status] ?? ''}`}>{r.status}</span>
+                      <span className="font-serif text-slate truncate">{r.name}</span>
+                      <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[r.status] ?? ''}`}>{r.status}</span>
                     </div>
-                    <p className="text-sm text-stone-500 truncate mt-0.5">{r.goal || 'No goal set'}</p>
+                    <p className="text-sm text-slate/60 truncate mt-0.5">{r.goal || 'No goal set'}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-medium text-stone-700">Session {r.current_session} of {r.total_sessions}</p>
-                    <p className="text-xs text-stone-400 mt-0.5">{r.member_count} member{r.member_count !== 1 ? 's' : ''}</p>
+                    <p className="text-sm font-medium text-plum">Session {r.current_session} of {r.total_sessions}</p>
+                    <p className="text-xs text-slate/60 mt-0.5">{r.member_count} member{r.member_count !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
               </Link>
@@ -131,30 +131,30 @@ function NewCohortModal({ onClose, onCreated }: { onClose: () => void; onCreated
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold text-stone-800 mb-4">New cohort</h2>
+        <h2 className="text-lg font-serif text-slate mb-4">New cohort</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Name</label>
+            <label className="block font-label text-xs text-slate mb-1">Name</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} required disabled={saving}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
               placeholder="e.g. Spring Confidence Cohort" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Shared goal / theme</label>
+            <label className="block font-label text-xs text-slate mb-1">Shared goal / theme</label>
             <textarea value={goal} onChange={(e) => setGoal(e.target.value)} disabled={saving} rows={2}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400 resize-none" />
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Number of sessions</label>
+            <label className="block font-label text-xs text-slate mb-1">Number of sessions</label>
             <input type="number" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)} min="1" disabled={saving}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           </div>
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose} disabled={saving}
-              className="flex-1 border border-stone-300 text-stone-600 rounded-lg py-2 text-sm font-medium hover:bg-stone-50 disabled:opacity-50">Cancel</button>
+              className="btn-spark-outline flex-1 disabled:opacity-50">Cancel</button>
             <button type="submit" disabled={saving || !name}
-              className="flex-1 bg-stone-800 text-white rounded-lg py-2 text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
+              className="btn-spark flex-1 disabled:opacity-50">
               {saving ? 'Saving…' : 'Create'}
             </button>
           </div>

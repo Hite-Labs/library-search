@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 const LINKS = [
@@ -13,20 +14,23 @@ export function Nav() {
   const pathname = usePathname();
 
   return (
-    <header className="bg-white border-b border-stone-200">
-      <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+    <header className="bg-forest">
+      <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
         <nav className="flex items-center gap-1">
-          <span className="text-sm font-semibold text-stone-800 mr-4">Show Your Spark</span>
+          <Link href="/clients" className="flex items-center gap-2.5 mr-5">
+            <Image src="/sys-mark.png" alt="Show Your Spark" width={34} height={34} className="rounded-md" />
+            <span className="font-serif text-petal text-lg">Dashboard</span>
+          </Link>
           {LINKS.map((l) => {
             const active = pathname === l.href || pathname.startsWith(l.href + '/');
             return (
               <Link
                 key={l.href}
                 href={l.href}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`font-label text-sm px-3 py-1.5 transition-colors border-b-2 ${
                   active
-                    ? 'bg-stone-800 text-white'
-                    : 'text-stone-600 hover:bg-stone-100'
+                    ? 'text-gold border-gold'
+                    : 'text-petal/80 border-transparent hover:text-gold'
                 }`}
               >
                 {l.label}
@@ -40,7 +44,7 @@ export function Nav() {
             await fetch('/api/auth/logout', { method: 'POST' });
             window.location.href = '/upload';
           }}
-          className="text-xs text-stone-400 hover:text-stone-600"
+          className="font-label text-xs text-petal/60 hover:text-gold transition-colors"
         >
           Sign out
         </button>

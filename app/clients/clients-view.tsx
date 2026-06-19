@@ -23,7 +23,7 @@ type StatusFilter = typeof STATUS_FILTERS[number];
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
   paused: 'bg-amber-100 text-amber-800',
-  complete: 'bg-stone-200 text-stone-600',
+  complete: 'bg-petal text-plum',
 };
 
 function fmtDate(d: string | null): string {
@@ -51,18 +51,18 @@ export function ClientsView() {
   }, [load]);
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-petal/40">
       <Nav />
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-xl font-semibold text-stone-800">Clients</h1>
-            <p className="text-sm text-stone-500 mt-0.5">Coaching clients and their program progress</p>
+            <h1 className="text-xl font-serif text-slate">Clients</h1>
+            <p className="text-sm text-slate/60 mt-0.5">Coaching clients and their program progress</p>
           </div>
           <button
             type="button"
             onClick={() => setShowForm(true)}
-            className="bg-stone-800 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-stone-700 transition-colors"
+            className="btn-spark"
           >
             New client
           </button>
@@ -75,8 +75,8 @@ export function ClientsView() {
               key={f}
               type="button"
               onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${
-                filter === f ? 'bg-stone-800 text-white' : 'text-stone-600 hover:bg-stone-100'
+              className={`px-3 py-1.5 rounded-lg font-label text-xs capitalize transition-colors ${
+                filter === f ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal'
               }`}
             >
               {f}
@@ -86,10 +86,10 @@ export function ClientsView() {
 
         {loading ? (
           <div className="py-16 flex justify-center">
-            <div className="w-6 h-6 border-2 border-stone-300 border-t-stone-600 rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
           </div>
         ) : rows.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-stone-200 p-10 text-center text-sm text-stone-500">
+          <div className="bg-white rounded-2xl border border-gold/20 p-10 text-center text-sm text-slate/60">
             No {filter === 'all' ? '' : filter} clients yet.
           </div>
         ) : (
@@ -98,23 +98,23 @@ export function ClientsView() {
               <Link
                 key={r.id}
                 href={`/clients/${r.client_id}`}
-                className="block bg-white rounded-xl border border-stone-200 p-4 hover:border-stone-300 hover:shadow-sm transition-all"
+                className="block bg-white rounded-xl border border-gold/20 p-4 hover:border-gold/50 hover:shadow-sm transition-all"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-stone-800 truncate">{r.client_name}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[r.status] ?? ''}`}>
+                      <span className="font-serif text-slate truncate">{r.client_name}</span>
+                      <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[r.status] ?? ''}`}>
                         {r.status}
                       </span>
                     </div>
-                    <p className="text-sm text-stone-500 truncate mt-0.5">{r.goal || 'No goal set'}</p>
+                    <p className="text-sm text-slate/60 truncate mt-0.5">{r.goal || 'No goal set'}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-medium text-stone-700">
+                    <p className="text-sm font-medium text-plum">
                       {r.sessions_done} of {r.total_sessions}
                     </p>
-                    <p className="text-xs text-stone-400 mt-0.5">last: {fmtDate(r.last_session_at)}</p>
+                    <p className="text-xs text-slate/60 mt-0.5">last: {fmtDate(r.last_session_at)}</p>
                   </div>
                 </div>
               </Link>
@@ -180,36 +180,36 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold text-stone-800 mb-4">New client</h2>
+        <h2 className="text-lg font-serif text-slate mb-4">New client</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Name</label>
+            <label className="block font-label text-xs text-slate mb-1">Name</label>
             <input
               type="text" value={name} onChange={(e) => setName(e.target.value)} required disabled={saving}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Email</label>
+            <label className="block font-label text-xs text-slate mb-1">Email</label>
             <input
               type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={saving}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Goal</label>
+            <label className="block font-label text-xs text-slate mb-1">Goal</label>
             <textarea
               value={goal} onChange={(e) => setGoal(e.target.value)} disabled={saving} rows={2}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400 resize-none"
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none"
               placeholder="What they're working toward this program"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Sessions in package</label>
+            <label className="block font-label text-xs text-slate mb-1">Sessions in package</label>
             <input
               type="number" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)}
               min="1" disabled={saving}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
             />
           </div>
 
@@ -218,11 +218,11 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose} disabled={saving}
-              className="flex-1 border border-stone-300 text-stone-600 rounded-lg py-2 text-sm font-medium hover:bg-stone-50 disabled:opacity-50">
+              className="btn-spark-outline flex-1 disabled:opacity-50">
               Cancel
             </button>
             <button type="submit" disabled={saving || !name || !email}
-              className="flex-1 bg-stone-800 text-white rounded-lg py-2 text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
+              className="btn-spark flex-1 disabled:opacity-50">
               {saving ? 'Saving…' : 'Create'}
             </button>
           </div>

@@ -1,26 +1,106 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Show Your Spark brand tokens (exact, from coaching.showyourspark.com) */
+  --sys-forest: #143428;
+  --sys-plum: #4e1a24;
+  --sys-gold: #dda637;
+  --sys-petal: #fff2df;
+  --sys-peach: #faa576;
+  --sys-scarlet: #f85001;
+  --sys-slate: #0e0e0d;
+
+  /* App surfaces — warm, light, legible for daily operator use */
+  --background: #faf6ef;       /* soft warm cream-tint page bg */
+  --foreground: var(--sys-slate);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Brand palette as Tailwind colors → bg-forest, text-gold, border-plum, etc. */
+  --color-forest: var(--sys-forest);
+  --color-plum: var(--sys-plum);
+  --color-gold: var(--sys-gold);
+  --color-petal: var(--sys-petal);
+  --color-peach: var(--sys-peach);
+  --color-scarlet: var(--sys-scarlet);
+  --color-slate: var(--sys-slate);
+
+  /* Fonts → font-serif (headings), font-label (Oswald), font-body (Manrope) */
+  --font-serif: var(--font-baskervville);
+  --font-label: var(--font-oswald);
+  --font-body: var(--font-manrope);
+  --font-sans: var(--font-manrope);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-manrope), system-ui, sans-serif;
 }
+
+/* ── Brand component utilities ──────────────────────────────────────────── */
+
+/* Oswald uppercase label/eyebrow (section headers, nav, button text) */
+.font-label {
+  font-family: var(--font-oswald), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.font-serif {
+  font-family: var(--font-baskervville), Georgia, serif;
+}
+
+/* Primary pill button: plum bg, gold border, gold Oswald text → hover gold/plum */
+.btn-spark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.5rem;
+  border-radius: 9999px;
+  background-color: var(--sys-plum);
+  border: 1px solid var(--sys-gold);
+  color: var(--sys-gold);
+  font-family: var(--font-oswald), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+.btn-spark:hover:not(:disabled) {
+  background-color: var(--sys-gold);
+  border-color: var(--sys-gold);
+  color: var(--sys-plum);
+}
+.btn-spark:disabled { opacity: 0.5; cursor: default; }
+
+/* Outline pill (secondary / cancel) */
+.btn-spark-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.5rem;
+  border-radius: 9999px;
+  background-color: transparent;
+  border: 1px solid color-mix(in srgb, var(--sys-slate) 25%, transparent);
+  color: var(--sys-slate);
+  font-family: var(--font-oswald), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.btn-spark-outline:hover:not(:disabled) {
+  border-color: var(--sys-gold);
+  color: var(--sys-plum);
+}
+.btn-spark-outline:disabled { opacity: 0.5; cursor: default; }

@@ -230,12 +230,12 @@ export function UploadForm() {
   const isPdf = mediaType === 'pdf';
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen">
       <Nav />
       <div className="max-w-2xl mx-auto py-10 px-4">
         <div className="mb-8">
-          <h1 className="text-xl font-semibold text-stone-800">Upload Content</h1>
-          <p className="text-sm text-stone-500 mt-0.5">Add a new item to the content library</p>
+          <h1 className="text-xl font-serif text-slate">Upload Content</h1>
+          <p className="text-sm text-slate/60 mt-0.5">Add a new item to the content library</p>
         </div>
 
         {success && (
@@ -258,7 +258,7 @@ export function UploadForm() {
 
         {/* Step 1: pick a file and analyze (or upload, for PDFs) */}
         {!analyzed && (
-          <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 space-y-5">
+          <div className="bg-white rounded-2xl shadow-sm border border-gold/20 p-6 space-y-5">
             <FilePicker value={file} onChange={onFileChange} disabled={busy} />
 
             {file && (
@@ -266,7 +266,7 @@ export function UploadForm() {
                 type="button"
                 onClick={isPdf ? handlePdfUpload : handleAnalyze}
                 disabled={busy}
-                className="w-full bg-stone-800 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
+                className="btn-spark w-full disabled:opacity-50"
               >
                 {busy
                   ? 'Working…'
@@ -277,10 +277,10 @@ export function UploadForm() {
             )}
 
             {progress && (
-              <p className="text-sm text-stone-500 text-center animate-pulse">{progress}</p>
+              <p className="text-sm text-gold text-center animate-pulse">{progress}</p>
             )}
             {!isPdf && file && !busy && (
-              <p className="text-xs text-stone-400 text-center">
+              <p className="text-xs text-slate/60 text-center">
                 We&apos;ll transcribe the recording and pre-fill the details for you to review.
               </p>
             )}
@@ -289,47 +289,47 @@ export function UploadForm() {
 
         {/* Step 2: review auto-filled fields and save */}
         {analyzed && (
-          <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 space-y-5">
-            <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-500">
+          <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-gold/20 p-6 space-y-5">
+            <div className="bg-petal/40 border border-gold/20 rounded-lg px-3 py-2 text-xs text-slate/60">
               {isPdf
                 ? 'PDF uploaded. Fill in the details below.'
                 : 'Transcribed and pre-filled from the recording — review and adjust, then save.'}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Title</label>
+              <label className="block text-sm font-medium text-slate mb-1">Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
                 disabled={busy}
-                className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+                className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
                 placeholder="e.g. Morning Anxiety Release"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Description</label>
+              <label className="block text-sm font-medium text-slate mb-1">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 required
                 disabled={busy}
                 rows={3}
-                className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400 resize-none"
+                className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none"
                 placeholder="2-3 sentences describing the content and what it helps with"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">Media Type</label>
+                <label className="block text-sm font-medium text-slate mb-1">Media Type</label>
                 <select
                   value={mediaType}
                   onChange={(e) => setMediaType(e.target.value as MediaType)}
                   disabled={busy}
-                  className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+                  className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
                 >
                   {MEDIA_TYPES.map((t) => (
                     <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
@@ -338,12 +338,12 @@ export function UploadForm() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">Modality</label>
+                <label className="block text-sm font-medium text-slate mb-1">Modality</label>
                 <select
                   value={modality}
                   onChange={(e) => setModality(e.target.value)}
                   disabled={busy}
-                  className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+                  className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
                 >
                   {MODALITIES.map((m) => (
                     <option key={m} value={m}>{m}</option>
@@ -353,7 +353,7 @@ export function UploadForm() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Duration (minutes)</label>
+              <label className="block text-sm font-medium text-slate mb-1">Duration (minutes)</label>
               <input
                 type="number"
                 value={durationMinutes}
@@ -361,7 +361,7 @@ export function UploadForm() {
                 disabled={busy}
                 min="0"
                 step="0.5"
-                className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+                className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
                 placeholder="e.g. 12.5"
               />
             </div>
@@ -396,7 +396,7 @@ export function UploadForm() {
             />
 
             {progress && (
-              <p className="text-sm text-stone-500 text-center animate-pulse">{progress}</p>
+              <p className="text-sm text-gold text-center animate-pulse">{progress}</p>
             )}
 
             <div className="flex gap-3">
@@ -404,14 +404,14 @@ export function UploadForm() {
                 type="button"
                 onClick={resetAll}
                 disabled={busy}
-                className="flex-1 border border-stone-300 text-stone-600 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-50 disabled:opacity-50 transition-colors"
+                className="btn-spark-outline flex-1 disabled:opacity-50"
               >
                 Start over
               </button>
               <button
                 type="submit"
                 disabled={busy || !title || !description}
-                className="flex-[2] bg-stone-800 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-700 disabled:opacity-50 transition-colors"
+                className="btn-spark flex-[2] disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Save to Library'}
               </button>
