@@ -28,12 +28,16 @@ export function WidgetRoot() {
   const [results, setResults] = useState<Result[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [memberstackUserId, setMemberstackUserId] = useState<string | null>(null);
+  const [memberToken, setMemberToken] = useState<string | null>(null);
 
-  // Listen for Memberstack user ID from parent page
+  // Listen for the Memberstack user id + JWT from the parent page (forwarded by
+  // embed.js). The token is what the backend actually verifies; the id is kept for
+  // backward-compat/logging only.
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.data?.type === 'ms-user') {
         setMemberstackUserId(e.data.userId ?? null);
+        setMemberToken(e.data.token ?? null);
       }
     }
     window.addEventListener('message', onMessage);
@@ -54,9 +58,11 @@ export function WidgetRoot() {
     setErrorMsg('');
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (memberToken) headers.Authorization = memberToken;
       const res = await fetch('/api/search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ query, memberstackUserId }),
       });
       const data = await res.json();

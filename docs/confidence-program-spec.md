@@ -237,5 +237,20 @@ Do **not** guard `/api/portal/*` with the operator cookie. Add `/api/portal/*` C
 6. Auth boundary: `/api/clients` without cookie → 401; `/api/portal/*` without cookie → 200.
 
 ## Notes
-Memberstack identity on portal APIs is trust-the-id for v1; harden (verify Memberstack JWT)
-when wiring the real Webflow portal in Phase 2.
+Memberstack identity: `/api/search` now **verifies the Memberstack JWT** (the `_ms-mid`
+token forwarded from the parent page via `embed.js` → widget → `Authorization` header) using
+`verifyMemberToken` in `lib/memberstack.ts` — no longer trust-the-id. Any **new** `/api/portal/*`
+route that returns a member's private data MUST do the same: verify the token and match
+`verified.id` to the target record's `memberstack_id` (see the `// SECURITY:` note in
+`app/api/search/route.ts`).
+
+### Memberstack wiring — done (previously Phase 2)
+- **Auto-provisioning:** creating a client (`createClientWithEnrollment`) provisions/links a
+  Memberstack member and stores `clients.memberstack_id`. Best-effort — never blocks client
+  creation; failures surface a warning in the New Client modal.
+- **Cohort-aware search:** a verified member also sees their cohort's content
+  (`matchContentItemsForMember` + `getCohortIdsForMember`); anonymous callers get the public
+  library only.
+- Env: `MEMBERSTACK_SECRET_KEY` (required), `NEXT_PUBLIC_MEMBERSTACK_APP_ID` (optional audience).
+- Still deferred: GHL webhook (S-01), Calendly sync, the Webflow portal page itself,
+  streaming-player UI, DigitalOcean deployment.

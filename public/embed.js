@@ -22,7 +22,14 @@
         : Promise.resolve(null);
       Promise.resolve(getUser).then(function (m) {
         var userId = (m && (m.id || (m.data && m.data.id))) || null;
-        iframe.contentWindow.postMessage({ type: 'ms-user', userId: userId }, APP_URL);
+        // Memberstack stores the member JWT in the _ms-mid cookie. The backend
+        // verifies this token (the userId alone is not trusted for access).
+        var tokenMatch = document.cookie.match(/_ms-mid=([^;]+)/);
+        var token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : null;
+        iframe.contentWindow.postMessage(
+          { type: 'ms-user', userId: userId, token: token },
+          APP_URL
+        );
       });
     } catch (e) {
       // Memberstack not available — that's fine

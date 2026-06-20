@@ -163,10 +163,18 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error ?? 'Failed to create client');
+      const msgs: string[] = [];
       if (data.reusedClient) {
         // Dedupe UX: the email matched an existing client — we added a new pack instead.
-        setNotice(`${name || data.client.name} already exists — added a new program (pack) for them.`);
-        setTimeout(onCreated, 1500);
+        msgs.push(`${name || data.client.name} already exists — added a new program (pack) for them.`);
+      }
+      // Provisioning is best-effort; if it failed the client was still saved.
+      if (data.provisionWarning) msgs.push(data.provisionWarning);
+
+      if (msgs.length > 0) {
+        // Keep the modal up briefly so Lindsay sees the note(s) before we refresh.
+        setNotice(msgs.join(' '));
+        setTimeout(onCreated, data.provisionWarning ? 2500 : 1500);
       } else {
         onCreated();
       }

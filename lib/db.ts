@@ -1,5 +1,6 @@
 import { neon, NeonQueryFunction } from '@neondatabase/serverless';
 import { env } from './env';
+import { provisionMember } from './memberstack';
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 function getSql(): NeonQueryFunction<false, false> {
@@ -100,6 +101,53 @@ export async function matchContentItems(
   return rows as MatchResult[];
 }
 
+/**
+ * Cohort ids a Memberstack member belongs to (via their client → enrollments).
+ * Empty array if the member isn't linked to any client or any cohort.
+ */
+export async function getCohortIdsForMember(memberstackId: string): Promise<string[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT DISTINCT e.cohort_id
+    FROM enrollments e
+    JOIN clients c ON c.id = e.client_id
+    WHERE c.memberstack_id = ${memberstackId}
+      AND e.cohort_id IS NOT NULL
+  `;
+  return rows.map((r) => r.cohort_id as string);
+}
+
+/**
+ * Member-scoped variant of matchContentItems: returns the public library PLUS the
+ * member's own cohort content. Mirrors the match_content_items SQL function but widens
+ * the visibility filter. Private per-client recordings (client_id set) stay excluded.
+ */
+export async function matchContentItemsForMember(
+  embedding: number[],
+  matchThreshold: number,
+  matchCount: number,
+  cohortIds: string[],
+): Promise<MatchResult[]> {
+  if (cohortIds.length === 0) {
+    return matchContentItems(embedding, matchThreshold, matchCount);
+  }
+  const sql = getSql();
+  const embeddingStr = `[${embedding.join(',')}]`;
+  const rows = await sql`
+    SELECT ci.id, ci.webflow_item_id, ci.title, ci.description, ci.media_type,
+           ci.use_cases, ci.modality, ci.mood_tags, ci.duration_seconds,
+           ci.public_url, ci.content_page_url,
+           1 - (ci.embedding <=> ${embeddingStr}::vector) AS similarity
+    FROM content_items ci
+    WHERE ci.client_id IS NULL
+      AND (ci.cohort_id IS NULL OR ci.cohort_id = ANY(${cohortIds}))
+      AND 1 - (ci.embedding <=> ${embeddingStr}::vector) > ${matchThreshold}
+    ORDER BY ci.embedding <=> ${embeddingStr}::vector ASC
+    LIMIT ${matchCount}
+  `;
+  return rows as MatchResult[];
+}
+
 // ── Client management (coaching) ─────────────────────────────────────────────
 
 export interface Client {
@@ -151,12 +199,18 @@ export async function findClientByEmail(email: string): Promise<Client | null> {
  * exists, reuse it and just add a new enrollment ("pack"). Returns the enrollment,
  * the client, and whether the client was reused (for the dedupe UX message).
  */
+/** Persist a member id onto a client row (provisioning + later backfill). */
+export async function setClientMemberstackId(clientId: string, memberstackId: string): Promise<void> {
+  const sql = getSql();
+  await sql`UPDATE clients SET memberstack_id = ${memberstackId} WHERE id = ${clientId}`;
+}
+
 export async function createClientWithEnrollment(data: {
   name: string;
   email: string;
   goal: string;
   totalSessions: number;
-}): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean }> {
+}): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean; provisionWarning?: string }> {
   const sql = getSql();
   const existing = await findClientByEmail(data.email);
 
@@ -173,11 +227,26 @@ export async function createClientWithEnrollment(data: {
     reusedClient = false;
   }
 
+  // Provision (or link) a Memberstack member so the client can access the portal.
+  // Never block client creation on this — if Memberstack is down, save anyway and
+  // surface a warning so Lindsay can retry later. Only call out when we don't yet
+  // have an id stored (new client, or an older client created before this wiring).
+  let provisionWarning: string | undefined;
+  if (!client.memberstack_id) {
+    try {
+      const { id } = await provisionMember({ email: data.email });
+      await setClientMemberstackId(client.id, id);
+      client = { ...client, memberstack_id: id };
+    } catch (err) {
+      provisionWarning = `Client saved, but Memberstack provisioning failed: ${String(err)}`;
+    }
+  }
+
   const enrollment = await addEnrollment(client.id, {
     goal: data.goal,
     totalSessions: data.totalSessions,
   });
-  return { client, enrollment, reusedClient };
+  return { client, enrollment, reusedClient, provisionWarning };
 }
 
 export async function addEnrollment(
