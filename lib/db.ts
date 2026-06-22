@@ -210,7 +210,7 @@ export async function createClientWithEnrollment(data: {
   email: string;
   goal: string;
   totalSessions: number;
-}): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean; provisionWarning?: string }> {
+}): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean; provisionWarning?: string; memberProvisioned: boolean }> {
   const sql = getSql();
   const existing = await findClientByEmail(data.email);
 
@@ -232,11 +232,15 @@ export async function createClientWithEnrollment(data: {
   // surface a warning so Lindsay can retry later. Only call out when we don't yet
   // have an id stored (new client, or an older client created before this wiring).
   let provisionWarning: string | undefined;
+  // True only when we create+store a brand-new member id this request — the signal the
+  // UI uses to send the welcome/set-password email exactly once (not on reuse/re-save).
+  let memberProvisioned = false;
   if (!client.memberstack_id) {
     try {
       const { id } = await provisionMember({ email: data.email });
       await setClientMemberstackId(client.id, id);
       client = { ...client, memberstack_id: id };
+      memberProvisioned = true;
     } catch (err) {
       provisionWarning = `Client saved, but Memberstack provisioning failed: ${String(err)}`;
     }
@@ -246,7 +250,7 @@ export async function createClientWithEnrollment(data: {
     goal: data.goal,
     totalSessions: data.totalSessions,
   });
-  return { client, enrollment, reusedClient, provisionWarning };
+  return { client, enrollment, reusedClient, provisionWarning, memberProvisioned };
 }
 
 export async function addEnrollment(

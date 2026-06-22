@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
       enrollment: result.enrollment,
       reusedClient: result.reusedClient,
       provisionWarning: result.provisionWarning,
+      memberProvisioned: result.memberProvisioned,
     });
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });

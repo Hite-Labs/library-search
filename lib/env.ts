@@ -22,6 +22,10 @@ const envSchema = z.object({
   MEMBERSTACK_SECRET_KEY: z.string().min(1).optional(),
   // Optional: your Memberstack app id (app_…) → enables verifyToken audience checks.
   NEXT_PUBLIC_MEMBERSTACK_APP_ID: z.string().optional(),
+  // Optional: Memberstack public/DOM key (pk_… live, pk_sb_… test). Used in the browser
+  // to send the "set your password" email on client create. Distinct from the app id
+  // above. Optional → a missing key silently disables the welcome-email step.
+  NEXT_PUBLIC_MEMBERSTACK_PUBLIC_KEY: z.string().optional(),
 
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),
