@@ -94,6 +94,30 @@ export async function provisionMember({
 }
 
 /**
+ * Merge fields into a member's metaData (backend-only data: coaching goal, totalSessions,
+ * and future values like membershipExpiresAt / lastSessionAt that drive offers/visibility).
+ * Memberstack replaces the whole metaData object on update, so we read the current value
+ * first and merge — updating one field never clobbers the others. Pass null as a value to
+ * remove a key. No-ops (returns false) when Memberstack isn't configured.
+ */
+export async function updateMemberMetaData(
+  memberstackId: string,
+  fields: Record<string, unknown>,
+): Promise<boolean> {
+  const client = getClient();
+  if (!client) return false;
+  const current = await client.members.retrieve({ id: memberstackId });
+  const existing = (current?.data?.metaData as Record<string, unknown>) ?? {};
+  const merged: Record<string, unknown> = { ...existing };
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null) delete merged[key];
+    else merged[key] = value;
+  }
+  await client.members.update({ id: memberstackId, data: { metaData: merged } });
+  return true;
+}
+
+/**
  * Verify a member JWT (from the _ms-mid cookie). Returns the trusted member id, or
  * null for any invalid/expired token — callers should degrade gracefully, never 500.
  */
