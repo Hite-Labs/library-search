@@ -46,16 +46,48 @@ export async function findMemberByEmail(email: string): Promise<{ id: string } |
 /**
  * Ensure a Memberstack member exists for this email. Dedupes first (so re-adding an
  * existing client links rather than duplicates). Returns the mem_… id and whether it
- * was newly created.
+ * was newly created. On create, fills the member's name (customFields), stashes the
+ * coaching goal + session count (metaData, backend-only), and attaches the individual
+ * free plan when MEMBERSTACK_INDIVIDUAL_PLAN_ID is set.
  */
-export async function provisionMember({ email }: { email: string }): Promise<{ id: string; created: boolean }> {
+export async function provisionMember({
+  email,
+  firstName,
+  lastName,
+  goal,
+  totalSessions,
+}: {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  goal?: string;
+  totalSessions?: number;
+}): Promise<{ id: string; created: boolean }> {
   const client = getClient();
   if (!client) throw new Error('Memberstack is not configured (MEMBERSTACK_SECRET_KEY unset)');
 
   const existing = await findMemberByEmail(email);
   if (existing) return { id: existing.id, created: false };
 
-  const res = await client.members.create({ email, password: generatePassword() });
+  // Memberstack's default name custom fields are kebab-case keys (first-name/last-name).
+  const customFields: Record<string, string> = {};
+  if (firstName) customFields['first-name'] = firstName;
+  if (lastName) customFields['last-name'] = lastName;
+
+  // App-private data Lindsay tracks — backend-only metadata, not shown in the member UI.
+  const metaData: Record<string, unknown> = {};
+  if (goal) metaData.coachingGoal = goal;
+  if (typeof totalSessions === 'number') metaData.totalSessions = totalSessions;
+
+  const planId = env.MEMBERSTACK_INDIVIDUAL_PLAN_ID;
+
+  const res = await client.members.create({
+    email,
+    password: generatePassword(),
+    ...(Object.keys(customFields).length ? { customFields } : {}),
+    ...(Object.keys(metaData).length ? { metaData } : {}),
+    ...(planId ? { plans: [{ planId }] } : {}),
+  });
   const id = res?.data?.id;
   if (!id) throw new Error('Memberstack create returned no member id');
   return { id, created: true };

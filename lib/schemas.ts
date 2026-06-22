@@ -41,7 +41,8 @@ export const SearchSchema = z.object({
 // ── Client management ────────────────────────────────────────────────────────
 
 export const CreateClientSchema = z.object({
-  name: z.string().min(1),
+  firstName: z.string().min(1),
+  lastName: z.string().default(''),
   email: z.string().email(),
   goal: z.string().default(''),
   totalSessions: z.number().int().positive().default(6),

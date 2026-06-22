@@ -138,7 +138,8 @@ export function ClientsView() {
 }
 
 function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [goal, setGoal] = useState('');
   const [totalSessions, setTotalSessions] = useState('6');
@@ -156,7 +157,8 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
+          firstName,
+          lastName,
           email,
           goal,
           totalSessions: parseInt(totalSessions, 10) || 6,
@@ -167,7 +169,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
       const msgs: string[] = [];
       if (data.reusedClient) {
         // Dedupe UX: the email matched an existing client — we added a new pack instead.
-        msgs.push(`${name || data.client.name} already exists — added a new program (pack) for them.`);
+        msgs.push(`${firstName || data.client.name} already exists — added a new program (pack) for them.`);
       }
       // Provisioning is best-effort; if it failed the client was still saved.
       if (data.provisionWarning) msgs.push(data.provisionWarning);
@@ -208,12 +210,21 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-serif text-slate mb-4">New client</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block font-label text-xs text-slate mb-1">Name</label>
-            <input
-              type="text" value={name} onChange={(e) => setName(e.target.value)} required disabled={saving}
-              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
-            />
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block font-label text-xs text-slate mb-1">First name</label>
+              <input
+                type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required disabled={saving}
+                className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block font-label text-xs text-slate mb-1">Last name</label>
+              <input
+                type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} disabled={saving}
+                className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
+              />
+            </div>
           </div>
           <div>
             <label className="block font-label text-xs text-slate mb-1">Email</label>
@@ -247,7 +258,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               className="btn-spark-outline flex-1 disabled:opacity-50">
               Cancel
             </button>
-            <button type="submit" disabled={saving || !name || !email}
+            <button type="submit" disabled={saving || !firstName || !email}
               className="btn-spark flex-1 disabled:opacity-50">
               {saving ? 'Saving…' : 'Create'}
             </button>

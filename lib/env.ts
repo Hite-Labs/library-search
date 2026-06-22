@@ -26,6 +26,10 @@ const envSchema = z.object({
   // to send the "set your password" email on client create. Distinct from the app id
   // above. Optional → a missing key silently disables the welcome-email step.
   NEXT_PUBLIC_MEMBERSTACK_PUBLIC_KEY: z.string().optional(),
+  // Optional: the FREE Memberstack plan id (pln_…) to attach to every newly-provisioned
+  // client (the "individual" plan). Dashboard → Plans → the plan → copy its id. Only free
+  // plans (pln_) can be attached on create. Unset → no plan attached.
+  MEMBERSTACK_INDIVIDUAL_PLAN_ID: z.string().optional(),
 
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),

@@ -206,13 +206,17 @@ export async function setClientMemberstackId(clientId: string, memberstackId: st
 }
 
 export async function createClientWithEnrollment(data: {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   goal: string;
   totalSessions: number;
 }): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean; provisionWarning?: string; memberProvisioned: boolean }> {
   const sql = getSql();
   const existing = await findClientByEmail(data.email);
+
+  // Our clients table stores a single display name; keep that as "First Last" (trimmed).
+  const fullName = [data.firstName, data.lastName].filter(Boolean).join(' ').trim();
 
   let client: Client;
   let reusedClient: boolean;
@@ -221,7 +225,7 @@ export async function createClientWithEnrollment(data: {
     reusedClient = true;
   } else {
     const rows = await sql`
-      INSERT INTO clients (name, email) VALUES (${data.name}, ${data.email})
+      INSERT INTO clients (name, email) VALUES (${fullName}, ${data.email})
       RETURNING *`;
     client = rows[0] as Client;
     reusedClient = false;
@@ -231,13 +235,21 @@ export async function createClientWithEnrollment(data: {
   // Never block client creation on this — if Memberstack is down, save anyway and
   // surface a warning so Lindsay can retry later. Only call out when we don't yet
   // have an id stored (new client, or an older client created before this wiring).
+  // Pass the member's name/goal/sessions through so the Memberstack profile is complete,
+  // and attach the individual plan (configured via env).
   let provisionWarning: string | undefined;
   // True only when we create+store a brand-new member id this request — the signal the
   // UI uses to send the welcome/set-password email exactly once (not on reuse/re-save).
   let memberProvisioned = false;
   if (!client.memberstack_id) {
     try {
-      const { id } = await provisionMember({ email: data.email });
+      const { id } = await provisionMember({
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        goal: data.goal,
+        totalSessions: data.totalSessions,
+      });
       await setClientMemberstackId(client.id, id);
       client = { ...client, memberstack_id: id };
       memberProvisioned = true;
