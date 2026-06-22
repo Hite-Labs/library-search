@@ -50,6 +50,10 @@ const PIPE = <span className="text-slate/40">|</span>;
 // client has no per-enrollment calendar link saved yet.
 const BOOKING_URL = process.env.NEXT_PUBLIC_BOOKING_URL ?? '';
 
+// Webflow passwordless login page. The per-client "Copy login link" button (in the header)
+// appends ?email=… so the login form can pre-fill the client's email. Empty → button hides.
+const PORTAL_LOGIN_URL = process.env.NEXT_PUBLIC_PORTAL_LOGIN_URL ?? '';
+
 // Still used by PastPackRow to tint historical-program status badges.
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
@@ -99,7 +103,14 @@ function ClientHeader({
   return (
     <div className="mt-2 mb-6">
       <h1 className="text-xl font-serif text-slate">{client.name}</h1>
-      <p className="text-sm text-slate/60">{client.email}</p>
+      <div className="flex items-center gap-3 mt-0.5">
+        <p className="text-sm text-slate/60">{client.email}</p>
+        {/* Passwordless portal login link, email pre-filled, for Lindsay to share. */}
+        <CopyButton
+          value={PORTAL_LOGIN_URL ? `${PORTAL_LOGIN_URL}?email=${encodeURIComponent(client.email)}` : ''}
+          label="Copy login link"
+        />
+      </div>
 
       {enrollment && (
         <>

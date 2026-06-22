@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, FormEvent } from 'react';
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
-import { sendWelcomeResetEmail, isMemberstackDomConfigured } from '@/lib/memberstack-dom';
 
 interface EnrollmentRow {
   id: string;
@@ -171,30 +170,15 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
         // Dedupe UX: the email matched an existing client — we added a new pack instead.
         msgs.push(`${firstName || data.client.name} already exists — added a new program (pack) for them.`);
       }
-      // Provisioning is best-effort; if it failed the client was still saved.
+      // Provisioning is best-effort; if it failed the client was still saved. The new
+      // member gets into the portal via the passwordless login link Lindsay shares (the
+      // "Copy login link" button on the client page) — the app sends no email itself.
       if (data.provisionWarning) msgs.push(data.provisionWarning);
-
-      // When a member was newly provisioned this request, send the "set your password"
-      // email from the browser (the Admin API can't send email). Best-effort: a failure
-      // here must never block the client we just created. Only once per member — so
-      // re-saving or adding a pack to an existing client won't re-email them.
-      let emailSent = false;
-      if (data.memberProvisioned && isMemberstackDomConfigured()) {
-        try {
-          await sendWelcomeResetEmail(data.client.email);
-          msgs.push(`Sent ${data.client.email} an email to set their password.`);
-          emailSent = true;
-        } catch {
-          msgs.push(
-            `Client saved, but the set-password email didn't send — they can use "Forgot password" on the portal, or you can resend later.`,
-          );
-        }
-      }
 
       if (msgs.length > 0) {
         // Keep the modal up briefly so Lindsay sees the note(s) before we refresh.
         setNotice(msgs.join(' '));
-        setTimeout(onCreated, data.provisionWarning || emailSent ? 2500 : 1500);
+        setTimeout(onCreated, data.provisionWarning ? 2500 : 1500);
       } else {
         onCreated();
       }

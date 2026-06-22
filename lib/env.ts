@@ -34,6 +34,10 @@ const envSchema = z.object({
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+  // Webflow passwordless login page. Powers the per-client "Copy login link" button
+  // (link is suffixed with ?email=… to pre-fill the client's email). Optional → button
+  // hides when unset.
+  NEXT_PUBLIC_PORTAL_LOGIN_URL: z.string().url().optional(),
 });
 
 type Env = z.infer<typeof envSchema>;
