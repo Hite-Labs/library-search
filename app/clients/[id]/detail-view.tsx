@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, FormEvent } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Nav } from '@/components/Nav';
 import { PencilIcon } from '@/components/PencilIcon';
 
@@ -279,7 +280,84 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
         <StartNewPack clientId={clientId} onCreated={load} />
 
         {past.length > 0 && <PastPacks enrollments={past} />}
+
+        <DangerZone clientId={clientId} clientName={data.client.name} />
       </div>
+    </div>
+  );
+}
+
+// Destructive: delete the client + their enrollments/session logs (cascade) and detach
+// recordings. Requires an explicit confirm. The Memberstack member is left in place — to
+// fully free the email for a fresh re-test, also remove the member in Memberstack.
+function DangerZone({ clientId, clientName }: { clientId: string; clientName: string }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, { method: 'DELETE' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Delete failed');
+      router.push('/clients');
+    } catch (err) {
+      setError(String(err));
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="mt-8 bg-white rounded-2xl border border-scarlet/25 p-5">
+      <h3 className="font-label text-xs uppercase tracking-wide text-scarlet mb-1">Danger zone</h3>
+      {!confirming ? (
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-slate/70">
+            Delete this client and all of their programs and session notes. Their portal
+            account (Memberstack) is left untouched.
+          </p>
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="btn-spark-outline shrink-0 border-scarlet/40 text-scarlet hover:bg-scarlet/10"
+          >
+            Delete client
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-slate">
+            Permanently delete <span className="font-medium">{clientName}</span> and all of
+            their programs, session notes, and recording links? This can&apos;t be undone.
+          </p>
+          {error && (
+            <p className="text-sm text-scarlet bg-scarlet/10 border border-scarlet/20 rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setConfirming(false); setError(null); }}
+              disabled={deleting}
+              className="btn-spark-outline disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="btn-spark bg-scarlet hover:bg-scarlet/90 disabled:opacity-50"
+            >
+              {deleting ? 'Deleting…' : 'Yes, delete permanently'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -300,6 +300,26 @@ export async function getEnrollment(id: string): Promise<Enrollment | null> {
   return (rows[0] as Enrollment) ?? null;
 }
 
+/**
+ * Delete a client and everything under them. Enrollments + their session_logs cascade
+ * automatically (ON DELETE CASCADE). The client's private recordings live in
+ * content_items.client_id, which has NO cascade — so we detach those rows first to avoid
+ * a foreign-key violation (the underlying R2 objects are left as-is; this is DB cleanup).
+ * Does NOT touch the Memberstack member — that's removed manually in the Memberstack
+ * dashboard if you want to fully free the email for re-provisioning.
+ * Returns false if no such client existed.
+ */
+export async function deleteClient(clientId: string): Promise<boolean> {
+  const sql = getSql();
+  const existing = await sql`SELECT id FROM clients WHERE id = ${clientId}`;
+  if (!existing[0]) return false;
+  // Detach private recordings/content from this client (no cascade on content_items).
+  await sql`UPDATE content_items SET client_id = NULL WHERE client_id = ${clientId}`;
+  // Enrollments + session_logs cascade from the client delete.
+  await sql`DELETE FROM clients WHERE id = ${clientId}`;
+  return true;
+}
+
 export async function updateEnrollment(
   id: string,
   data: { goal?: string; status?: string; nextSessionAt?: string | null; totalSessions?: number; calendarUrl?: string },
