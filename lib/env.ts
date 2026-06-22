@@ -17,7 +17,9 @@ const envSchema = z.object({
   ASSEMBLYAI_API_KEY: z.string().min(1),
 
   // Memberstack 2.0 Admin API (server-side only). sk_… = live, sk_sb_… = test.
-  MEMBERSTACK_SECRET_KEY: z.string().min(1),
+  // Optional so the app boots without it — Memberstack features (provisioning,
+  // cohort-aware search, JWT verify) simply no-op/degrade when it's absent.
+  MEMBERSTACK_SECRET_KEY: z.string().min(1).optional(),
   // Optional: your Memberstack app id (app_…) → enables verifyToken audience checks.
   NEXT_PUBLIC_MEMBERSTACK_APP_ID: z.string().optional(),
 
