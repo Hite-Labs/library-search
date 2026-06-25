@@ -488,26 +488,42 @@ function NextSessionEditor({ enrollment, onSave }: { enrollment: Enrollment; onS
   );
 }
 
+// Local 'YYYY-MM-DD' for an <input type="date"> default (today, in the operator's timezone).
+function todayLocal(): string {
+  const d = new Date();
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
+
 function SessionLogger({ enrollmentId, onLogged }: { enrollmentId: string; onLogged: () => void }) {
   const [notes, setNotes] = useState('');
   const [nextActions, setNextActions] = useState('');
   const [coachActions, setCoachActions] = useState('');
+  const [sessionDate, setSessionDate] = useState(todayLocal());
   const [saving, setSaving] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
+    // Send the chosen date as an ISO datetime; if cleared, omit it so the API keeps now().
+    const body: Record<string, unknown> = { notes, nextActions, coachActions };
+    if (sessionDate) body.sessionDate = new Date(sessionDate).toISOString();
     await fetch(`/api/enrollments/${enrollmentId}/sessions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes, nextActions, coachActions }),
+      body: JSON.stringify(body),
     });
-    setNotes(''); setNextActions(''); setCoachActions(''); setSaving(false);
+    setNotes(''); setNextActions(''); setCoachActions(''); setSessionDate(todayLocal()); setSaving(false);
     onLogged();
   }
 
   return (
     <form onSubmit={submit} className="border-t border-gold/10 pt-5 space-y-3">
       <h3 className="font-label text-xs text-plum">Log a session</h3>
+      <div>
+        <label className={INPUT_LABEL}>Session date</label>
+        <input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)}
+          className="border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+      </div>
       <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={8} placeholder="What happened this session…"
         className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-y" />
       <div>
@@ -547,44 +563,116 @@ function SessionHistory({ logs }: { logs: SessionLog[] }) {
   );
 }
 
+// Accepted client-recording uploads (DS-04/05). The R2 media_type CHECK only allows
+// audio|video|pdf, so MP4/MOV → video, MP3/WAV/M4A → audio, PDF → pdf.
+const RECORDING_ACCEPT = '.mp3,.wav,.m4a,.mp4,.mov,.pdf';
+
+function recordingMediaType(file: File): 'audio' | 'video' | 'pdf' {
+  const name = file.name.toLowerCase();
+  if (file.type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  if (file.type.startsWith('video/') || name.endsWith('.mp4') || name.endsWith('.mov')) return 'video';
+  return 'audio';
+}
+
+function recordingContentType(file: File): string {
+  if (file.name.toLowerCase().endsWith('.m4a')) return 'audio/x-m4a';
+  if (file.name.toLowerCase().endsWith('.mov')) return 'video/quicktime';
+  return file.type || 'application/octet-stream';
+}
+
 function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentId: string; recordings: Recording[]; onChange: () => void }) {
+  // 'upload' (pick a file from disk) is the default; 'url' keeps the paste-an-R2-link fallback.
   const [showAdd, setShowAdd] = useState(false);
+  const [mode, setMode] = useState<'upload' | 'url'>('upload');
   const [title, setTitle] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState('');
   const [label, setLabel] = useState('');
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   function r2KeyFromUrl(u: string): string {
     try { return new URL(u).pathname.replace(/^\//, ''); } catch { return ''; }
   }
 
-  async function attach(e: FormEvent) {
+  function reset() {
+    setTitle(''); setFile(null); setUrl(''); setLabel('');
+    setShowAdd(false); setProgress(null); setError(null);
+  }
+
+  // POST the recording metadata to the attach endpoint (mode b — creates a private
+  // client_id row with downloadable=true). Shared by both upload and URL paths.
+  async function attachRecording(args: { publicUrl: string; r2Key: string; mediaType: string }) {
+    const res = await fetch(`/api/enrollments/${enrollmentId}/recordings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, sessionLabel: label || null, ...args }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error ?? 'Failed to attach');
+  }
+
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    setSaving(true); setError(null);
-    const mediaType = /\.(mp4|mov|webm)$/i.test(url) ? 'video' : /\.pdf$/i.test(url) ? 'pdf' : 'audio';
+    setSaving(true); setError(null); setProgress(null);
     try {
-      const res = await fetch(`/api/enrollments/${enrollmentId}/recordings`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, publicUrl: url, r2Key: r2KeyFromUrl(url), mediaType, sessionLabel: label || null }),
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error ?? 'Failed to attach');
-      setTitle(''); setUrl(''); setLabel(''); setShowAdd(false);
+      if (mode === 'upload') {
+        if (!file) throw new Error('Choose a file first');
+        const mediaType = recordingMediaType(file);
+        // Step 1: presign. Step 2: PUT the file straight to R2 (reuses the library upload flow).
+        setProgress('Getting upload URL…');
+        const presignRes = await fetch('/api/upload/presign', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, contentType: recordingContentType(file), mediaType }),
+        });
+        if (!presignRes.ok) throw new Error('Failed to get upload URL');
+        const presign = await presignRes.json();
+
+        setProgress('Uploading…');
+        const putRes = await fetch(presign.uploadUrl, {
+          method: 'PUT', body: file, headers: { 'Content-Type': recordingContentType(file) },
+        });
+        if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+
+        setProgress('Saving…');
+        await attachRecording({ publicUrl: presign.publicUrl, r2Key: presign.r2Key, mediaType });
+      } else {
+        const mediaType = /\.(mp4|mov|webm)$/i.test(url) ? 'video' : /\.pdf$/i.test(url) ? 'pdf' : 'audio';
+        await attachRecording({ publicUrl: url, r2Key: r2KeyFromUrl(url), mediaType });
+      }
+      reset();
       onChange();
     } catch (err) {
-      setError(String(err));
+      setError(String(err instanceof Error ? err.message : err));
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
+
+  async function remove(id: string) {
+    setDeletingId(id); setError(null);
+    try {
+      const res = await fetch(`/api/recordings/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? 'Delete failed');
+      onChange();
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  const canSubmit = !!title && (mode === 'upload' ? !!file : !!url);
 
   return (
     <div className="border-t border-gold/10 pt-5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-label text-xs text-plum">Recordings ({recordings.length})</h3>
-        <button onClick={() => setShowAdd(!showAdd)} className="btn-spark-outline text-xs px-3 py-1.5">
-          {showAdd ? 'Cancel' : 'Attach recording'}
+        <button onClick={() => (showAdd ? reset() : setShowAdd(true))} className="btn-spark-outline text-xs px-3 py-1.5">
+          {showAdd ? 'Cancel' : 'Add recording'}
         </button>
       </div>
 
@@ -596,24 +684,58 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
                 <p className="text-sm text-slate truncate">{r.title}</p>
                 {r.session_label && <p className="text-xs text-slate/60">{r.session_label}</p>}
               </div>
-              <a href={r.public_url} target="_blank" rel="noreferrer" className="text-xs text-slate/60 hover:text-slate shrink-0 ml-2">Open</a>
+              <div className="flex items-center gap-3 shrink-0 ml-2">
+                <a href={r.public_url} target="_blank" rel="noreferrer" className="text-xs text-slate/60 hover:text-slate">Open</a>
+                <button type="button" onClick={() => remove(r.id)} disabled={deletingId === r.id}
+                  className="text-xs text-scarlet/70 hover:text-scarlet disabled:opacity-50">
+                  {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
             </div>
           ))}
         </div>
       )}
 
       {showAdd && (
-        <form onSubmit={attach} className="space-y-2 bg-petal/40 rounded-lg p-3">
+        <form onSubmit={submit} className="space-y-2 bg-petal/40 rounded-lg p-3">
+          {/* Mode toggle: upload a file (default) or paste an existing R2 link. */}
+          <div className="flex gap-1">
+            {(['upload', 'url'] as const).map((m) => (
+              <button key={m} type="button" onClick={() => setMode(m)} disabled={saving}
+                className={`px-3 py-1 rounded-lg font-label text-xs capitalize transition-colors ${
+                  mode === m ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal'
+                }`}>
+                {m === 'upload' ? 'Upload file' : 'Paste URL'}
+              </button>
+            ))}
+          </div>
+
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" required disabled={saving}
             className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
-          <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="R2 file URL (https://…)" required disabled={saving}
-            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+
+          {mode === 'upload' ? (
+            <div>
+              <input type="file" accept={RECORDING_ACCEPT} disabled={saving}
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="w-full text-sm text-slate/70 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-plum file:text-gold hover:file:bg-plum/90" />
+              {file && (
+                <p className="text-xs text-slate/60 mt-1">
+                  {file.name} · {recordingMediaType(file)} · {(file.size / 1024 / 1024).toFixed(1)} MB
+                </p>
+              )}
+            </div>
+          ) : (
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="R2 file URL (https://…)" required disabled={saving}
+              className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+          )}
+
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Session label (optional, e.g. Session 1)" disabled={saving}
             className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+          {progress && <p className="text-xs text-gold animate-pulse">{progress}</p>}
           {error && <p className="text-xs text-red-600">{error}</p>}
-          <button type="submit" disabled={saving || !title || !url}
+          <button type="submit" disabled={saving || !canSubmit}
             className="btn-spark disabled:opacity-50">
-            {saving ? 'Attaching…' : 'Attach'}
+            {saving ? 'Working…' : mode === 'upload' ? 'Upload & attach' : 'Attach'}
           </button>
         </form>
       )}

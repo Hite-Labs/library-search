@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from './env';
 import { randomUUID } from 'crypto';
@@ -52,4 +52,14 @@ export async function getPresignedGetUrl(
     Key: r2Key,
   });
   return getSignedUrl(getR2Client(), command, { expiresIn });
+}
+
+// Delete an object from R2 (used when a client recording is removed from the dashboard).
+// Idempotent: deleting a missing key is a no-op on R2's side.
+export async function deleteR2Object(r2Key: string): Promise<void> {
+  const command = new DeleteObjectCommand({
+    Bucket: env.R2_BUCKET_NAME,
+    Key: r2Key,
+  });
+  await getR2Client().send(command);
 }

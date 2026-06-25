@@ -5,6 +5,7 @@ import {
   getClientRecordings,
   deleteClient,
 } from '@/lib/db';
+import { getPresignedGetUrl } from '@/lib/r2';
 
 export const runtime = 'nodejs';
 
@@ -22,7 +23,16 @@ export async function GET(
 
   const active = data.enrollments.find((e) => e.status === 'active') ?? data.enrollments[0];
   const activeLogs = active ? await getSessionLogs(active.id) : [];
-  const recordings = await getClientRecordings(id);
+  const rawRecordings = await getClientRecordings(id);
+
+  // Swap each recording's stored public_url for a fresh time-limited signed GET URL so the
+  // dashboard "Open" link works for private objects and the raw R2 URL is never exposed (S-03).
+  const recordings = await Promise.all(
+    rawRecordings.map(async (r) => ({
+      ...r,
+      public_url: await getPresignedGetUrl(r.r2_key),
+    })),
+  );
 
   return NextResponse.json({
     client: data.client,

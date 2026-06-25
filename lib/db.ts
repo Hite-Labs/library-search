@@ -25,6 +25,11 @@ export interface ContentItem {
   program_id: string | null;
   sequence_order: number | null;
   created_at: string;
+  // Client/cohort recording columns (added via ALTER TABLE; present on recording rows).
+  client_id: string | null;
+  cohort_id: string | null;
+  downloadable: boolean;
+  session_label: string | null;
 }
 
 export interface MatchResult {
@@ -191,6 +196,13 @@ export interface EnrollmentListRow extends Enrollment {
 export async function findClientByEmail(email: string): Promise<Client | null> {
   const sql = getSql();
   const rows = await sql`SELECT * FROM clients WHERE email = ${email}`;
+  return (rows[0] as Client) ?? null;
+}
+
+/** Resolve a client from a (trusted) Memberstack member id — for the portal endpoint. */
+export async function getClientByMemberstackId(memberstackId: string): Promise<Client | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM clients WHERE memberstack_id = ${memberstackId}`;
   return (rows[0] as Client) ?? null;
 }
 
@@ -381,6 +393,26 @@ export async function getClientRecordings(clientId: string): Promise<ContentItem
   const rows = await sql`
     SELECT * FROM content_items WHERE client_id = ${clientId} ORDER BY created_at DESC`;
   return rows as ContentItem[];
+}
+
+/** A single private client recording by id (only rows scoped to a client). */
+export async function getClientRecording(id: string): Promise<ContentItem | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM content_items WHERE id = ${id} AND client_id IS NOT NULL`;
+  return (rows[0] as ContentItem) ?? null;
+}
+
+/**
+ * Delete a private client recording row. Returns the deleted row (so the caller can
+ * remove the underlying R2 object), or null if no matching client recording existed.
+ * Guarded to client_id IS NOT NULL so this can never delete public library content.
+ */
+export async function deleteClientRecording(id: string): Promise<ContentItem | null> {
+  const sql = getSql();
+  const rows = await sql`
+    DELETE FROM content_items WHERE id = ${id} AND client_id IS NOT NULL RETURNING *`;
+  return (rows[0] as ContentItem) ?? null;
 }
 
 /**

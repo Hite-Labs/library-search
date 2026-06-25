@@ -9,6 +9,7 @@ interface EnrollmentRow {
   client_id: string;
   client_name: string;
   client_email: string;
+  program_type: 'individual' | 'cohort';
   goal: string;
   status: 'active' | 'paused' | 'complete';
   total_sessions: number;
@@ -20,10 +21,19 @@ interface EnrollmentRow {
 const STATUS_FILTERS = ['active', 'paused', 'complete', 'all'] as const;
 type StatusFilter = typeof STATUS_FILTERS[number];
 
+const TYPE_FILTERS = ['all', 'individual', 'cohort'] as const;
+type TypeFilter = typeof TYPE_FILTERS[number];
+
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
   paused: 'bg-amber-100 text-amber-800',
   complete: 'bg-petal text-plum',
+};
+
+// Plan-type badge styling — visually distinct between the two program types (DS-06).
+const TYPE_STYLES: Record<string, string> = {
+  cohort: 'bg-plum text-gold',
+  individual: 'border border-plum/30 text-plum',
 };
 
 function fmtDate(d: string | null): string {
@@ -33,6 +43,7 @@ function fmtDate(d: string | null): string {
 
 export function ClientsView() {
   const [filter, setFilter] = useState<StatusFilter>('active');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [rows, setRows] = useState<EnrollmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -49,6 +60,10 @@ export function ClientsView() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Plan-type filter is applied client-side over the fetched rows (the list is small,
+  // and program_type already comes back in the response — no extra query needed).
+  const visibleRows = typeFilter === 'all' ? rows : rows.filter((r) => r.program_type === typeFilter);
 
   return (
     <div className="min-h-screen bg-petal/40">
@@ -69,7 +84,7 @@ export function ClientsView() {
         </div>
 
         {/* Status filter */}
-        <div className="flex gap-1 mb-4">
+        <div className="flex gap-1 mb-2">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f}
@@ -84,17 +99,33 @@ export function ClientsView() {
           ))}
         </div>
 
+        {/* Plan-type filter (DS-06) — applied client-side over the fetched rows. */}
+        <div className="flex gap-1 mb-4">
+          {TYPE_FILTERS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setTypeFilter(f)}
+              className={`px-3 py-1.5 rounded-lg font-label text-xs capitalize transition-colors ${
+                typeFilter === f ? 'bg-plum/10 text-plum border border-plum/30' : 'text-slate/50 hover:bg-petal'
+              }`}
+            >
+              {f === 'all' ? 'All types' : f}
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <div className="py-16 flex justify-center">
             <div className="w-6 h-6 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
           </div>
-        ) : rows.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gold/20 p-10 text-center text-sm text-slate/60">
-            No {filter === 'all' ? '' : filter} clients yet.
+            No {filter === 'all' ? '' : filter} {typeFilter === 'all' ? '' : `${typeFilter} `}clients yet.
           </div>
         ) : (
           <div className="space-y-2">
-            {rows.map((r) => (
+            {visibleRows.map((r) => (
               <Link
                 key={r.id}
                 href={`/clients/${r.client_id}`}
@@ -104,6 +135,9 @@ export function ClientsView() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-serif text-slate truncate">{r.client_name}</span>
+                      <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium capitalize ${TYPE_STYLES[r.program_type] ?? ''}`}>
+                        {r.program_type === 'cohort' ? 'Cohort' : 'Individual'}
+                      </span>
                       <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[r.status] ?? ''}`}>
                         {r.status}
                       </span>
