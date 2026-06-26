@@ -417,11 +417,11 @@ function ActiveEnrollment({
           Recordings = session Zoom calls (video). Resources = delivered files (video/audio/pdf). */}
       <ClientContentSection
         enrollmentId={enrollment.id} items={recordings} onChange={onChange}
-        kind="recording" heading="Recordings" accept={RECORDING_ACCEPT} showDescription={false}
+        kind="recording" heading="Recordings" accept={RECORDING_ACCEPT} showLabel showDescription={false}
       />
       <ClientContentSection
         enrollmentId={enrollment.id} items={resources} onChange={onChange}
-        kind="file" heading="Resources" accept={RESOURCE_ACCEPT} showDescription
+        kind="file" heading="Resources" accept={RESOURCE_ACCEPT} showLabel={false} showDescription
       />
     </div>
   );
@@ -595,7 +595,7 @@ function recordingContentType(file: File): string {
 // Resources (kind='file', video/audio/pdf, with a description) section depending on props.
 // Both post to the same /api/enrollments/[id]/recordings endpoint with the relevant `kind`.
 function ClientContentSection({
-  enrollmentId, items, onChange, kind, heading, accept, showDescription,
+  enrollmentId, items, onChange, kind, heading, accept, showLabel, showDescription,
 }: {
   enrollmentId: string;
   items: Recording[];
@@ -603,6 +603,7 @@ function ClientContentSection({
   kind: 'recording' | 'file';
   heading: string;
   accept: string;
+  showLabel: boolean;
   showDescription: boolean;
 }) {
   const noun = kind === 'file' ? 'resource' : 'recording';
@@ -767,8 +768,10 @@ function ClientContentSection({
               className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           )}
 
-          <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Session label (optional, e.g. Session 1)" disabled={saving}
-            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+          {showLabel && (
+            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Session label (optional, e.g. Session 1)" disabled={saving}
+              className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+          )}
           {showDescription && (
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
               placeholder="Description (optional — shown to the client)" disabled={saving}
