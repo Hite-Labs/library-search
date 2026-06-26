@@ -30,6 +30,9 @@ export interface ContentItem {
   cohort_id: string | null;
   downloadable: boolean;
   session_label: string | null;
+  // 'recording' = client's session Zoom calls; 'file' = standalone delivered assets
+  // (EFT/hypnotherapy audio, PDFs). Drives the portal's recordings[] vs files[] split (DS-08).
+  kind: 'recording' | 'file';
 }
 
 export interface MatchResult {
@@ -392,6 +395,19 @@ export async function getClientRecordings(clientId: string): Promise<ContentItem
   const sql = getSql();
   const rows = await sql`
     SELECT * FROM content_items WHERE client_id = ${clientId} ORDER BY created_at DESC`;
+  return rows as ContentItem[];
+}
+
+/** Client content rows of one kind (recording = Zoom sessions, file = delivered assets). */
+export async function getClientContentByKind(
+  clientId: string,
+  kind: 'recording' | 'file',
+): Promise<ContentItem[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM content_items
+    WHERE client_id = ${clientId} AND kind = ${kind}
+    ORDER BY created_at DESC`;
   return rows as ContentItem[];
 }
 

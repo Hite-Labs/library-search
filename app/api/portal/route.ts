@@ -3,7 +3,7 @@ import {
   getClientByMemberstackId,
   getClientWithEnrollments,
   getSessionLogs,
-  getClientRecordings,
+  getClientContentByKind,
   type Enrollment,
 } from '@/lib/db';
 import { getPresignedGetUrl } from '@/lib/r2';
@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
         client: { goal: '', total_sessions: null, sessions_done: null, next_session_at: null, program_type: null },
         sessions: [],
         recordings: [],
+        files: [],
       },
       { headers: cors },
     );
@@ -112,13 +113,27 @@ export async function GET(req: NextRequest) {
     session_number: total - i, // DESC array → oldest gets 1
   }));
 
-  // 5. Recordings — fresh signed GET URLs (never the raw R2 url).
-  const rawRecordings = await getClientRecordings(client.id);
+  // 5. Recordings (kind='recording') and files (kind='file') — fresh signed GET URLs
+  //    (never the raw R2 url). file_type mirrors media_type so the portal renders each item
+  //    without guessing from the URL extension (DS-08).
+  const [rawRecordings, rawFiles] = await Promise.all([
+    getClientContentByKind(client.id, 'recording'),
+    getClientContentByKind(client.id, 'file'),
+  ]);
   const recordings = await Promise.all(
     rawRecordings.map(async (r) => ({
       title: r.title,
       session_label: r.session_label,
       public_url: await getPresignedGetUrl(r.r2_key),
+      file_type: r.media_type,
+    })),
+  );
+  const files = await Promise.all(
+    rawFiles.map(async (f) => ({
+      title: f.title,
+      description: f.description || null,
+      public_url: await getPresignedGetUrl(f.r2_key),
+      file_type: f.media_type,
     })),
   );
 
@@ -133,6 +148,7 @@ export async function GET(req: NextRequest) {
       },
       sessions,
       recordings,
+      files,
     },
     { headers: cors },
   );

@@ -73,6 +73,11 @@ ALTER TABLE content_items ADD COLUMN downloadable boolean NOT NULL DEFAULT false
 ALTER TABLE content_items ADD COLUMN session_label text;
 CREATE INDEX content_items_client_id_idx ON content_items (client_id);
 
+-- Distinguishes a client's session Zoom recordings from standalone delivered files
+-- (EFT/hypnotherapy audio, PDFs) for the portal's two response arrays (DS-08).
+ALTER TABLE content_items ADD COLUMN kind text NOT NULL DEFAULT 'recording'
+  CHECK (kind IN ('recording','file'));
+
 -- ── Cohorts (group programs) ─────────────────────────────────────────────────
 
 CREATE TABLE cohorts (
