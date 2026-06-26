@@ -30,16 +30,18 @@ export async function POST(
   }
 
   if (d.contentId) {
-    // Mode (a): tag an existing content row as this client's private recording.
+    // Mode (a): tag an existing content row as this client's private recording/file.
     await attachRecordingToClient(d.contentId, {
       clientId: enrollment.client_id,
       sessionLabel: d.sessionLabel,
       enrollmentId,
+      kind: d.kind,
+      description: d.description,
     });
     return NextResponse.json({ ok: true, contentId: d.contentId });
   }
 
-  // Mode (b): create a new private recording row from a pasted R2 link.
+  // Mode (b): create a new private recording/file row from a pasted R2 link.
   const contentId = await insertClientRecording({
     title: d.title!,
     clientId: enrollment.client_id,
@@ -48,6 +50,8 @@ export async function POST(
     mediaType: d.mediaType!,
     r2Key: d.r2Key!,
     publicUrl: d.publicUrl!,
+    kind: d.kind,
+    description: d.description,
   });
   return NextResponse.json({ ok: true, contentId });
 }
