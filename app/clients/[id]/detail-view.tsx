@@ -42,7 +42,7 @@ function initialCap(s: string): string {
 }
 
 // Manrope input-label style (reserve Oswald/font-label for headers & subheaders).
-const INPUT_LABEL = 'block text-xs font-medium uppercase tracking-wide text-slate/70 mb-1';
+const INPUT_LABEL = 'block text-xs font-medium tracking-wide text-slate/70 mb-1';
 
 // Pipe separator for the metadata label line.
 const PIPE = <span className="text-slate/40">|</span>;
@@ -91,7 +91,6 @@ function ClientHeader({
   const [editing, setEditing] = useState(false);
   const isCohort = enrollment?.program_type === 'cohort';
   const typeLabel = enrollment?.program_type === 'cohort' ? 'Cohort' : 'Individual';
-  const calendarLink = enrollment?.calendar_url || BOOKING_URL;
 
   async function patch(body: Record<string, unknown>) {
     if (!enrollment) return;
@@ -102,22 +101,21 @@ function ClientHeader({
   }
 
   return (
-    <div className="mt-2 mb-6">
-      <h1 className="text-xl font-serif text-slate">{client.name}</h1>
-      <div className="flex items-center gap-3 mt-0.5">
-        <p className="text-sm text-slate/60">{client.email}</p>
+    <div className="mt-2 mb-6 grid grid-cols-12 gap-4">
+      {/* LEFT (4) — identity: name, email, small "Copy login link" text. */}
+      <div className="col-span-12 md:col-span-4 min-w-0">
+        <h1 className="text-xl font-serif text-slate">{client.name}</h1>
+        <p className="text-sm text-slate/60 mt-0.5 truncate">{client.email}</p>
         {/* Passwordless portal login link, email pre-filled, for Lindsay to share. */}
-        <CopyButton
-          value={PORTAL_LOGIN_URL ? `${PORTAL_LOGIN_URL}?email=${encodeURIComponent(client.email)}` : ''}
-          label="Copy login link"
-        />
+        <CopyLoginLink email={client.email} />
       </div>
 
+      {/* RIGHT (8) — metadata cluster (far-right) + the goal as a big heading beneath. */}
       {enrollment && (
-        <>
-          {/* Metadata label line — Oswald, regular weight, pipe-separated (no badges). */}
-          <div className="mt-3 flex items-center gap-2 font-label font-normal text-sm text-slate capitalize">
-            <span>{typeLabel}</span>
+        <div className="col-span-12 md:col-span-8">
+          {/* Metadata label line — Oswald, regular weight, pipe-separated, pushed far-right. */}
+          <div className="flex items-center gap-2 font-label font-normal text-sm text-slate capitalize">
+            <span className="ml-auto">{typeLabel}</span>
             {PIPE}
             <span>{enrollment.status}</span>
             {!isCohort && (
@@ -136,14 +134,10 @@ function ClientHeader({
             </button>
           </div>
 
-          {/* Goal value with a small label beneath. */}
-          <div className="mt-3">
-            <p className="text-base text-slate">{enrollment.goal ? initialCap(enrollment.goal) : '—'}</p>
-            <span className="font-label font-normal text-xs text-slate/60">Goal</span>
-          </div>
-
-          {/* Per-client calendar / scheduling link Lindsay can copy & send. */}
-          <CalendarLinkEditor enrollment={enrollment} onSave={(calendarUrl) => patch({ calendarUrl })} defaultUrl={calendarLink} />
+          {/* Goal — large Baskerville heading, full width, left-aligned (no label). */}
+          <h1 className="mt-3 text-3xl font-serif text-slate text-left">
+            {enrollment.goal ? initialCap(enrollment.goal) : '—'}
+          </h1>
 
           {editing && (
             <EditEnrollmentModal
@@ -153,9 +147,31 @@ function ClientHeader({
               onSave={async (body) => { await patch(body); setEditing(false); }}
             />
           )}
-        </>
+        </div>
       )}
     </div>
+  );
+}
+
+// Small text-style "Copy login link" (was a pill button). Hidden when no portal URL configured.
+function CopyLoginLink({ email }: { email: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!PORTAL_LOGIN_URL) return null;
+  const value = `${PORTAL_LOGIN_URL}?email=${encodeURIComponent(email)}`;
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch { /* clipboard blocked — no-op */ }
+      }}
+      className="mt-1 text-xs text-plum/70 hover:text-plum underline underline-offset-2"
+    >
+      {copied ? 'Copied!' : 'Copy login link'}
+    </button>
   );
 }
 
@@ -402,9 +418,11 @@ function ActiveEnrollment({
         </div>
       )}
 
-      {/* Individual-only controls: session logging/history, then next session */}
+      {/* Individual-only controls: calendar link, then session logging/history + next session */}
       {!isCohort && (
         <>
+          {/* Per-client calendar / scheduling link Lindsay can copy & send — sits above the log. */}
+          <CalendarLinkEditor enrollment={enrollment} onSave={(calendarUrl) => patch({ calendarUrl })} defaultUrl={enrollment.calendar_url || BOOKING_URL} />
           <SessionLogger enrollmentId={enrollment.id} onLogged={onChange} />
           {/* Next session sits BELOW the log (after note-taking, not before) */}
           <NextSessionEditor enrollment={enrollment} onSave={(nextSessionAt) => patch({ nextSessionAt })} />
@@ -526,7 +544,7 @@ function SessionLogger({ enrollmentId, onLogged }: { enrollmentId: string; onLog
   }
 
   return (
-    <form onSubmit={submit} className="border-t border-gold/10 pt-5 space-y-3">
+    <form onSubmit={submit} className="space-y-3">
       <h3 className="font-label text-xs text-plum">Log a session</h3>
       <div>
         <label className={INPUT_LABEL}>Session date</label>
