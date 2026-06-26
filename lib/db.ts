@@ -445,31 +445,41 @@ export async function insertClientRecording(data: {
   mediaType: 'audio' | 'video' | 'pdf';
   r2Key: string;
   publicUrl: string;
+  kind?: 'recording' | 'file';
+  description?: string;
 }): Promise<string> {
   const sql = getSql();
   const zeroVec = `[${new Array(1024).fill(0).join(',')}]`;
   const rows = await sql`
     INSERT INTO content_items
       (title, description, media_type, use_cases, mood_tags,
-       r2_key, public_url, embedding, client_id, downloadable, session_label, program_id)
+       r2_key, public_url, embedding, client_id, downloadable, session_label, program_id, kind)
     VALUES
-      (${data.title}, '', ${data.mediaType}, '', '',
+      (${data.title}, ${data.description ?? ''}, ${data.mediaType}, '', '',
        ${data.r2Key}, ${data.publicUrl}, ${zeroVec}::vector,
-       ${data.clientId}, true, ${data.sessionLabel}, ${data.enrollmentId})
+       ${data.clientId}, true, ${data.sessionLabel}, ${data.enrollmentId}, ${data.kind ?? 'recording'})
     RETURNING id`;
   return rows[0].id as string;
 }
 
-/** Tag an existing content_items row as a private downloadable recording for a client. */
+/** Tag an existing content_items row as a private downloadable recording/file for a client. */
 export async function attachRecordingToClient(
   contentId: string,
-  data: { clientId: string; sessionLabel: string | null; enrollmentId?: string | null },
+  data: {
+    clientId: string;
+    sessionLabel: string | null;
+    enrollmentId?: string | null;
+    kind?: 'recording' | 'file';
+    description?: string;
+  },
 ): Promise<void> {
   const sql = getSql();
   await sql`
     UPDATE content_items
     SET client_id = ${data.clientId}, downloadable = true,
-        session_label = ${data.sessionLabel}, program_id = ${data.enrollmentId ?? null}
+        session_label = ${data.sessionLabel}, program_id = ${data.enrollmentId ?? null},
+        kind = ${data.kind ?? 'recording'},
+        description = COALESCE(${data.description ?? null}, description)
     WHERE id = ${contentId}`;
 }
 

@@ -76,6 +76,9 @@ export const AttachRecordingSchema = z
   .object({
     sessionLabel: z.string().nullable().default(null),
     enrollmentId: z.string().uuid().nullable().default(null),
+    // 'recording' = session Zoom calls; 'file' = standalone Resources (EFT/hypno audio, PDFs).
+    kind: z.enum(['recording', 'file']).default('recording'),
+    description: z.string().default(''),
     // mode (a)
     contentId: z.string().uuid().optional(),
     // mode (b)

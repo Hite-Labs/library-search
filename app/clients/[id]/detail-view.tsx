@@ -19,7 +19,7 @@ interface Enrollment {
 }
 interface Client { id: string; name: string; email: string; }
 interface SessionLog { id: string; session_date: string; notes: string; next_actions: string; coach_actions: string; }
-interface Recording { id: string; title: string; session_label: string | null; public_url: string; media_type: string; }
+interface Recording { id: string; title: string; session_label: string | null; description: string; public_url: string; media_type: string; }
 
 interface DetailData {
   client: Client;
@@ -27,6 +27,7 @@ interface DetailData {
   activeEnrollmentId: string | null;
   activeLogs: SessionLog[];
   recordings: Recording[];
+  resources: Recording[];
 }
 
 function fmtDate(d: string | null): string {
@@ -281,7 +282,7 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
         <ClientHeader client={data.client} enrollment={active} onChange={load} />
 
         {active ? (
-          <ActiveEnrollment enrollment={active} logs={data.activeLogs} recordings={data.recordings} onChange={load} />
+          <ActiveEnrollment enrollment={active} logs={data.activeLogs} recordings={data.recordings} resources={data.resources} onChange={load} />
         ) : (
           <div className="bg-white rounded-2xl border border-gold/20 p-6 text-sm text-slate/60">
             No active program. Start a new pack below.
@@ -374,8 +375,8 @@ function DangerZone({ clientId, clientName }: { clientId: string; clientName: st
 }
 
 function ActiveEnrollment({
-  enrollment, logs, recordings, onChange,
-}: { enrollment: Enrollment; logs: SessionLog[]; recordings: Recording[]; onChange: () => void }) {
+  enrollment, logs, recordings, resources, onChange,
+}: { enrollment: Enrollment; logs: SessionLog[]; recordings: Recording[]; resources: Recording[]; onChange: () => void }) {
   const isCohort = enrollment.program_type === 'cohort';
   const suggestComplete = !isCohort && enrollment.sessions_done >= enrollment.total_sessions && enrollment.status !== 'complete';
 
@@ -411,9 +412,17 @@ function ActiveEnrollment({
         </>
       )}
 
-      {/* Private individual recordings — available in both program types
-          (a cohort member can still get a personal asset only they see). */}
-      <RecordingsSection enrollmentId={enrollment.id} recordings={recordings} onChange={onChange} />
+      {/* Private individual recordings + resources — available in both program types
+          (a cohort member can still get a personal asset only they see).
+          Recordings = session Zoom calls (video). Resources = delivered files (video/audio/pdf). */}
+      <ClientContentSection
+        enrollmentId={enrollment.id} items={recordings} onChange={onChange}
+        kind="recording" heading="Recordings" accept={RECORDING_ACCEPT} showDescription={false}
+      />
+      <ClientContentSection
+        enrollmentId={enrollment.id} items={resources} onChange={onChange}
+        kind="file" heading="Resources" accept={RESOURCE_ACCEPT} showDescription
+      />
     </div>
   );
 }
@@ -563,9 +572,11 @@ function SessionHistory({ logs }: { logs: SessionLog[] }) {
   );
 }
 
-// Accepted client-recording uploads (DS-04/05). The R2 media_type CHECK only allows
+// Recordings = session Zoom calls → video only (DS-10).
+const RECORDING_ACCEPT = '.mp4,.mov,.webm';
+// Resources = delivered assets → video/audio/pdf. The R2 media_type CHECK only allows
 // audio|video|pdf, so MP4/MOV → video, MP3/WAV/M4A → audio, PDF → pdf.
-const RECORDING_ACCEPT = '.mp3,.wav,.m4a,.mp4,.mov,.pdf';
+const RESOURCE_ACCEPT = '.mp3,.wav,.m4a,.mp4,.mov,.pdf';
 
 function recordingMediaType(file: File): 'audio' | 'video' | 'pdf' {
   const name = file.name.toLowerCase();
@@ -580,7 +591,21 @@ function recordingContentType(file: File): string {
   return file.type || 'application/octet-stream';
 }
 
-function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentId: string; recordings: Recording[]; onChange: () => void }) {
+// Shared client-content uploader. Renders a Recordings (kind='recording', video-only) or a
+// Resources (kind='file', video/audio/pdf, with a description) section depending on props.
+// Both post to the same /api/enrollments/[id]/recordings endpoint with the relevant `kind`.
+function ClientContentSection({
+  enrollmentId, items, onChange, kind, heading, accept, showDescription,
+}: {
+  enrollmentId: string;
+  items: Recording[];
+  onChange: () => void;
+  kind: 'recording' | 'file';
+  heading: string;
+  accept: string;
+  showDescription: boolean;
+}) {
+  const noun = kind === 'file' ? 'resource' : 'recording';
   // 'upload' (pick a file from disk) is the default; 'url' keeps the paste-an-R2-link fallback.
   const [showAdd, setShowAdd] = useState(false);
   const [mode, setMode] = useState<'upload' | 'url'>('upload');
@@ -588,6 +613,7 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState('');
   const [label, setLabel] = useState('');
+  const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -598,16 +624,20 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
   }
 
   function reset() {
-    setTitle(''); setFile(null); setUrl(''); setLabel('');
+    setTitle(''); setFile(null); setUrl(''); setLabel(''); setDescription('');
     setShowAdd(false); setProgress(null); setError(null);
   }
 
-  // POST the recording metadata to the attach endpoint (mode b — creates a private
-  // client_id row with downloadable=true). Shared by both upload and URL paths.
-  async function attachRecording(args: { publicUrl: string; r2Key: string; mediaType: string }) {
+  // POST the metadata to the attach endpoint (mode b — creates a private client_id row with
+  // downloadable=true), tagged with this section's `kind`. Shared by upload and URL paths.
+  async function attachItem(args: { publicUrl: string; r2Key: string; mediaType: string }) {
     const res = await fetch(`/api/enrollments/${enrollmentId}/recordings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, sessionLabel: label || null, ...args }),
+      body: JSON.stringify({
+        title, sessionLabel: label || null, kind,
+        description: showDescription ? description : '',
+        ...args,
+      }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error ?? 'Failed to attach');
@@ -619,6 +649,10 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
     try {
       if (mode === 'upload') {
         if (!file) throw new Error('Choose a file first');
+        // Recordings are video-only; reject non-video early so a wrong file can't be tagged as a recording.
+        if (kind === 'recording' && recordingMediaType(file) !== 'video') {
+          throw new Error('Recordings must be a video file');
+        }
         const mediaType = recordingMediaType(file);
         // Step 1: presign. Step 2: PUT the file straight to R2 (reuses the library upload flow).
         setProgress('Getting upload URL…');
@@ -636,10 +670,13 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
         if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
 
         setProgress('Saving…');
-        await attachRecording({ publicUrl: presign.publicUrl, r2Key: presign.r2Key, mediaType });
+        await attachItem({ publicUrl: presign.publicUrl, r2Key: presign.r2Key, mediaType });
       } else {
         const mediaType = /\.(mp4|mov|webm)$/i.test(url) ? 'video' : /\.pdf$/i.test(url) ? 'pdf' : 'audio';
-        await attachRecording({ publicUrl: url, r2Key: r2KeyFromUrl(url), mediaType });
+        if (kind === 'recording' && mediaType !== 'video') {
+          throw new Error('Recordings must be a video file');
+        }
+        await attachItem({ publicUrl: url, r2Key: r2KeyFromUrl(url), mediaType });
       }
       reset();
       onChange();
@@ -670,19 +707,20 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
   return (
     <div className="border-t border-gold/10 pt-5">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-label text-xs text-plum">Recordings ({recordings.length})</h3>
+        <h3 className="font-label text-xs text-plum">{heading} ({items.length})</h3>
         <button onClick={() => (showAdd ? reset() : setShowAdd(true))} className="btn-spark-outline text-xs px-3 py-1.5">
-          {showAdd ? 'Cancel' : 'Add recording'}
+          {showAdd ? 'Cancel' : `Add ${noun}`}
         </button>
       </div>
 
-      {recordings.length > 0 && (
+      {items.length > 0 && (
         <div className="space-y-2 mb-3">
-          {recordings.map((r) => (
+          {items.map((r) => (
             <div key={r.id} className="flex items-center justify-between border border-gold/20 rounded-lg p-2.5">
               <div className="min-w-0">
                 <p className="text-sm text-slate truncate">{r.title}</p>
                 {r.session_label && <p className="text-xs text-slate/60">{r.session_label}</p>}
+                {showDescription && r.description && <p className="text-xs text-slate/60 truncate">{r.description}</p>}
               </div>
               <div className="flex items-center gap-3 shrink-0 ml-2">
                 <a href={r.public_url} target="_blank" rel="noreferrer" className="text-xs text-slate/60 hover:text-slate">Open</a>
@@ -715,7 +753,7 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
 
           {mode === 'upload' ? (
             <div>
-              <input type="file" accept={RECORDING_ACCEPT} disabled={saving}
+              <input type="file" accept={accept} disabled={saving}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 className="w-full text-sm text-slate/70 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-plum file:text-gold hover:file:bg-plum/90" />
               {file && (
@@ -731,6 +769,11 @@ function RecordingsSection({ enrollmentId, recordings, onChange }: { enrollmentI
 
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Session label (optional, e.g. Session 1)" disabled={saving}
             className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+          {showDescription && (
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+              placeholder="Description (optional — shown to the client)" disabled={saving}
+              className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
+          )}
           {progress && <p className="text-xs text-gold animate-pulse">{progress}</p>}
           {error && <p className="text-xs text-red-600">{error}</p>}
           <button type="submit" disabled={saving || !canSubmit}
