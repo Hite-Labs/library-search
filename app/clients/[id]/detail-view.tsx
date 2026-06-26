@@ -101,7 +101,7 @@ function ClientHeader({
   }
 
   return (
-    <div className="mt-2 mb-6 flex flex-col md:flex-row gap-6">
+    <div className="mt-2 mb-6 flex flex-col md:flex-row items-start gap-6">
       {/* LEFT — identity: name, email, small "Copy login link" text. */}
       <div className="min-w-0">
         <h1 className="text-xl font-serif text-slate">{client.name}</h1>
