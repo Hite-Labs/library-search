@@ -170,6 +170,13 @@ CREATE INDEX content_items_client_id_idx ON content_items (client_id);
 `ci.client_id IS NULL` so private client recordings never appear in library search.
 Library items = `client_id IS NULL`; client recordings = `client_id` set + `downloadable=true`.
 
+**AI search isolation (DS-08, verified):** AI library search reaches content *only* through
+`match_content_items` / `matchContentItemsForMember`, both of which require `client_id IS NULL`
+(and exclude non-member cohorts). Individual client recordings/files (`client_id` set) and
+other cohorts' content are therefore structurally invisible to AI search — enforced by the
+column filter, independent of R2 folder layout. R2 storage is currently flat by media type
+(`video/`, `audio/`, `pdf/`); no physical folder separation is required for isolation.
+
 ## Backend (`lib/`)
 
 - **`lib/db.ts`** — add helpers on the existing `getSql()` singleton: `listClients(status?)`
