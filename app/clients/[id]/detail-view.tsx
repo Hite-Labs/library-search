@@ -101,20 +101,20 @@ function ClientHeader({
   }
 
   return (
-    <div className="mt-2 mb-6 grid grid-cols-12 gap-4">
-      {/* LEFT (4) — identity: name, email, small "Copy login link" text. */}
-      <div className="col-span-12 md:col-span-4 min-w-0">
+    <div className="mt-2 mb-6 flex flex-col md:flex-row gap-6">
+      {/* LEFT — identity: name, email, small "Copy login link" text. */}
+      <div className="min-w-0">
         <h1 className="text-xl font-serif text-slate">{client.name}</h1>
         <p className="text-sm text-slate/60 mt-0.5 truncate">{client.email}</p>
         {/* Passwordless portal login link, email pre-filled, for Lindsay to share. */}
         <CopyLoginLink email={client.email} />
       </div>
 
-      {/* RIGHT (8) — metadata cluster (far-right) + the goal as a big heading beneath. */}
+      {/* RIGHT — metadata cluster (far-right) + the goal as a big heading beneath. */}
       {enrollment && (
-        <div className="col-span-12 md:col-span-8">
+        <div className="flex-1 min-w-0">
           {/* Metadata label line — Oswald, regular weight, pipe-separated, pushed far-right. */}
-          <div className="flex items-center gap-2 font-label font-normal text-sm text-slate capitalize">
+          <div className="flex items-center gap-2 font-label font-normal text-[13px] text-slate capitalize">
             <span className="ml-auto">{typeLabel}</span>
             {PIPE}
             <span>{enrollment.status}</span>
