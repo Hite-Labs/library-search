@@ -33,6 +33,8 @@ export interface ContentItem {
   // 'recording' = client's session Zoom calls; 'file' = standalone delivered assets
   // (EFT/hypnotherapy audio, PDFs). Drives the portal's recordings[] vs files[] split (DS-08).
   kind: 'recording' | 'file';
+  // Cohort content tied to a specific cohort_session (nullable; cohort-wide when null).
+  cohort_session_id: string | null;
 }
 
 export interface MatchResult {
@@ -494,6 +496,9 @@ export interface Cohort {
   current_session: number;
   status: 'active' | 'complete' | 'archived';
   zoom_url: string;
+  telegram_url: string;
+  start_date: string | null;
+  session_cadence: 'weekly' | 'biweekly';
   created_at: string;
 }
 
@@ -502,6 +507,7 @@ export interface CohortSession {
   cohort_id: string;
   session_date: string | null;
   label: string;
+  prompt_text: string;
   sort_order: number;
   created_at: string;
 }
@@ -537,11 +543,15 @@ export async function createCohort(data: {
   description?: string;
   goal?: string;
   totalSessions?: number;
+  telegramUrl?: string;
+  startDate?: string | null;
+  sessionCadence?: 'weekly' | 'biweekly';
 }): Promise<Cohort> {
   const sql = getSql();
   const rows = await sql`
-    INSERT INTO cohorts (name, description, goal, total_sessions)
-    VALUES (${data.name}, ${data.description ?? ''}, ${data.goal ?? ''}, ${data.totalSessions ?? 4})
+    INSERT INTO cohorts (name, description, goal, total_sessions, telegram_url, start_date, session_cadence)
+    VALUES (${data.name}, ${data.description ?? ''}, ${data.goal ?? ''}, ${data.totalSessions ?? 4},
+            ${data.telegramUrl ?? ''}, ${data.startDate ?? null}, ${data.sessionCadence ?? 'weekly'})
     RETURNING *`;
   return rows[0] as Cohort;
 }
@@ -573,6 +583,9 @@ export async function updateCohort(
     totalSessions?: number;
     currentSession?: number;
     zoomUrl?: string;
+    telegramUrl?: string;
+    startDate?: string | null;
+    sessionCadence?: 'weekly' | 'biweekly';
   },
 ): Promise<Cohort | null> {
   const sql = getSql();
@@ -584,7 +597,10 @@ export async function updateCohort(
       status = COALESCE(${data.status ?? null}, status),
       total_sessions = COALESCE(${data.totalSessions ?? null}, total_sessions),
       current_session = COALESCE(${data.currentSession ?? null}, current_session),
-      zoom_url = COALESCE(${data.zoomUrl ?? null}, zoom_url)
+      zoom_url = COALESCE(${data.zoomUrl ?? null}, zoom_url),
+      telegram_url = COALESCE(${data.telegramUrl ?? null}, telegram_url),
+      start_date = ${data.startDate === undefined ? sql`start_date` : data.startDate},
+      session_cadence = COALESCE(${data.sessionCadence ?? null}, session_cadence)
     WHERE id = ${id}
     RETURNING *`;
   return (rows[0] as Cohort) ?? null;
@@ -600,29 +616,59 @@ export async function getCohortSessions(cohortId: string): Promise<CohortSession
 
 export async function addCohortSession(
   cohortId: string,
-  data: { label: string; sessionDate: string | null; sortOrder?: number },
+  data: { label: string; sessionDate: string | null; sortOrder?: number; promptText?: string },
 ): Promise<CohortSession> {
   const sql = getSql();
   const rows = await sql`
-    INSERT INTO cohort_sessions (cohort_id, label, session_date, sort_order)
-    VALUES (${cohortId}, ${data.label}, ${data.sessionDate}, ${data.sortOrder ?? 0})
+    INSERT INTO cohort_sessions (cohort_id, label, session_date, sort_order, prompt_text)
+    VALUES (${cohortId}, ${data.label}, ${data.sessionDate}, ${data.sortOrder ?? 0}, ${data.promptText ?? ''})
     RETURNING *`;
   return rows[0] as CohortSession;
 }
 
 export async function updateCohortSession(
   id: string,
-  data: { label?: string; sessionDate?: string | null; sortOrder?: number },
+  data: { label?: string; sessionDate?: string | null; sortOrder?: number; promptText?: string },
 ): Promise<CohortSession | null> {
   const sql = getSql();
   const rows = await sql`
     UPDATE cohort_sessions SET
       label = COALESCE(${data.label ?? null}, label),
       session_date = ${data.sessionDate === undefined ? sql`session_date` : data.sessionDate},
-      sort_order = COALESCE(${data.sortOrder ?? null}, sort_order)
+      sort_order = COALESCE(${data.sortOrder ?? null}, sort_order),
+      prompt_text = COALESCE(${data.promptText ?? null}, prompt_text)
     WHERE id = ${id}
     RETURNING *`;
   return (rows[0] as CohortSession) ?? null;
+}
+
+/**
+ * Auto-plot a cohort's schedule: generate `totalSessions` dated rows starting at
+ * `startDate`, spaced by cadence (weekly = 7d, biweekly = 14d). Each row is editable
+ * afterward (holiday shifts) via updateCohortSession. Bulk-inserted in one statement.
+ */
+export async function generateCohortSchedule(
+  cohortId: string,
+  data: { startDate: string; cadence: 'weekly' | 'biweekly'; totalSessions: number },
+): Promise<CohortSession[]> {
+  const sql = getSql();
+  const stepDays = data.cadence === 'biweekly' ? 14 : 7;
+  const base = new Date(data.startDate);
+  const rows: { label: string; date: string; sort: number }[] = [];
+  for (let n = 1; n <= data.totalSessions; n++) {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() + stepDays * (n - 1));
+    rows.push({ label: `Session ${n}`, date: d.toISOString(), sort: n });
+  }
+  const inserted = await sql.transaction(
+    rows.map(
+      (r) => sql`
+        INSERT INTO cohort_sessions (cohort_id, label, session_date, sort_order)
+        VALUES (${cohortId}, ${r.label}, ${r.date}, ${r.sort})
+        RETURNING *`,
+    ),
+  );
+  return inserted.map((res) => res[0] as CohortSession);
 }
 
 export async function deleteCohortSession(id: string): Promise<void> {
@@ -669,23 +715,26 @@ export async function getCohortContent(cohortId: string): Promise<ContentItem[]>
   return rows as ContentItem[];
 }
 
-/** Create a shared cohort content row from a pasted R2 link (zero-vector; never searched). */
+/** Create a shared cohort content row from a pasted/uploaded R2 link (zero-vector; never searched).
+ *  Pass cohortSessionId to tie the file to a specific session (else it's cohort-wide). */
 export async function insertCohortContent(data: {
   title: string;
   cohortId: string;
   mediaType: 'audio' | 'video' | 'pdf';
   r2Key: string;
   publicUrl: string;
+  cohortSessionId?: string | null;
 }): Promise<string> {
   const sql = getSql();
   const zeroVec = `[${new Array(1024).fill(0).join(',')}]`;
   const rows = await sql`
     INSERT INTO content_items
       (title, description, media_type, use_cases, mood_tags,
-       r2_key, public_url, embedding, cohort_id, downloadable)
+       r2_key, public_url, embedding, cohort_id, cohort_session_id, downloadable)
     VALUES
       (${data.title}, '', ${data.mediaType}, '', '',
-       ${data.r2Key}, ${data.publicUrl}, ${zeroVec}::vector, ${data.cohortId}, true)
+       ${data.r2Key}, ${data.publicUrl}, ${zeroVec}::vector, ${data.cohortId},
+       ${data.cohortSessionId ?? null}, true)
     RETURNING id`;
   return rows[0].id as string;
 }
@@ -698,4 +747,51 @@ export async function getCohortForEnrollment(enrollmentId: string): Promise<Coho
     JOIN enrollments e ON e.cohort_id = c.id
     WHERE e.id = ${enrollmentId}`;
   return (rows[0] as Cohort) ?? null;
+}
+
+/**
+ * Portal-shaped cohort payload for a member: the member's single active cohort (the
+ * active program_type='cohort' enrollment; most recent as tiebreak), its dated sessions
+ * with prompts, each session's files, and the member's own cohort goal. Returns null if
+ * the member has no cohort enrollment. Raw rows — the route presigns file r2_keys and
+ * applies the portal-safe projection (mirrors the individual portal path).
+ */
+export async function getCohortForPortal(memberstackId: string): Promise<{
+  cohort: Cohort;
+  memberGoal: string;
+  sessions: CohortSession[];
+  filesBySession: Map<string, ContentItem[]>;
+} | null> {
+  const sql = getSql();
+  // Pick the member's cohort enrollment: active first, else most recent.
+  const enrollRows = await sql`
+    SELECT e.cohort_id, e.goal, e.status, e.created_at
+    FROM enrollments e JOIN clients c ON c.id = e.client_id
+    WHERE c.memberstack_id = ${memberstackId} AND e.cohort_id IS NOT NULL
+    ORDER BY (e.status = 'active') DESC, e.created_at DESC
+    LIMIT 1`;
+  if (!enrollRows[0]) return null;
+  const cohortId = enrollRows[0].cohort_id as string;
+  const memberGoal = enrollRows[0].goal as string;
+
+  const cohort = await getCohort(cohortId);
+  if (!cohort) return null;
+
+  const sessions = await getCohortSessions(cohortId);
+
+  // Files tied to a specific session (cohort-wide files, cohort_session_id NULL, are
+  // surfaced elsewhere if needed; the portal groups per-session per spec §4).
+  const fileRows = (await sql`
+    SELECT * FROM content_items
+    WHERE cohort_id = ${cohortId} AND cohort_session_id IS NOT NULL
+    ORDER BY created_at DESC`) as ContentItem[];
+  const filesBySession = new Map<string, ContentItem[]>();
+  for (const f of fileRows) {
+    const key = f.cohort_session_id as string;
+    const arr = filesBySession.get(key) ?? [];
+    arr.push(f);
+    filesBySession.set(key, arr);
+  }
+
+  return { cohort, memberGoal, sessions, filesBySession };
 }

@@ -4,6 +4,7 @@ import {
   getClientWithEnrollments,
   getSessionLogs,
   getClientContentByKind,
+  getCohortForPortal,
   type Enrollment,
 } from '@/lib/db';
 import { getPresignedGetUrl } from '@/lib/r2';
@@ -65,6 +66,44 @@ function pickEnrollment(enrollments: Enrollment[]): Enrollment | null {
   );
 }
 
+// Build the portal-safe cohort object for a member (single active cohort), or null.
+// Sessions are numbered oldest=1 (matching the individual sessions projection), each with
+// its discussion prompt and files carrying fresh signed GET URLs (never the raw R2 url).
+async function buildCohortObject(memberstackId: string) {
+  const data = await getCohortForPortal(memberstackId);
+  if (!data) return null;
+  const { cohort, memberGoal, sessions, filesBySession } = data;
+
+  // getCohortSessions orders by sort_order/session_date; number oldest=1 for display.
+  const portalSessions = await Promise.all(
+    sessions.map(async (s, i) => {
+      const rawFiles = filesBySession.get(s.id) ?? [];
+      const files = await Promise.all(
+        rawFiles.map(async (f) => ({
+          title: f.title,
+          public_url: await getPresignedGetUrl(f.r2_key),
+          file_type: f.media_type,
+        })),
+      );
+      return {
+        session_number: i + 1,
+        session_date: s.session_date,
+        prompt_text: s.prompt_text,
+        files,
+      };
+    }),
+  );
+
+  return {
+    id: cohort.id,
+    name: cohort.name,
+    zoom_link: cohort.zoom_url,
+    telegram_link: cohort.telegram_url,
+    sessions: portalSessions,
+    member_goal: memberGoal,
+  };
+}
+
 // GET /api/portal — Memberstack-gated, member-scoped, portal-safe client data.
 // Verifies the _ms-mid token, resolves the client, and returns goal/progress + sessions
 // (NEVER internal notes/coach_actions) + recordings with fresh signed URLs.
@@ -86,24 +125,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'No client linked to this member' }, { status: 404, headers: cors });
   }
 
-  // 3. Pick the enrollment to reflect.
+  // 3. Cohort object (single active cohort) — independent of the individual enrollment,
+  //    so a cohort-only member (no individual pack) still gets their cohort tab.
+  const cohort = await buildCohortObject(verified.id);
+
+  // 4. Pick the individual enrollment to reflect.
   const data = await getClientWithEnrollments(client.id);
   const enrollment = data ? pickEnrollment(data.enrollments) : null;
 
   if (!enrollment) {
-    // Linked client but no enrollment yet — return an empty-but-valid portal payload.
+    // Linked client but no individual enrollment — return an empty-but-valid individual
+    // payload, but still surface the cohort object if the member has one.
     return NextResponse.json(
       {
         client: { goal: '', total_sessions: null, sessions_done: null, next_session_at: null, program_type: null },
         sessions: [],
         recordings: [],
         files: [],
+        cohort,
       },
       { headers: cors },
     );
   }
 
-  // 4. Sessions — portal-safe projection. Logs come back session_date DESC; number them
+  // 5. Sessions — portal-safe projection. Logs come back session_date DESC; number them
   //    so the OLDEST session = 1. Strip notes and coach_actions entirely.
   const logs = await getSessionLogs(enrollment.id);
   const total = logs.length;
@@ -113,7 +158,7 @@ export async function GET(req: NextRequest) {
     session_number: total - i, // DESC array → oldest gets 1
   }));
 
-  // 5. Recordings (kind='recording') and files (kind='file') — fresh signed GET URLs
+  // 6. Recordings (kind='recording') and files (kind='file') — fresh signed GET URLs
   //    (never the raw R2 url). file_type mirrors media_type so the portal renders each item
   //    without guessing from the URL extension (DS-08).
   const [rawRecordings, rawFiles] = await Promise.all([
@@ -149,6 +194,7 @@ export async function GET(req: NextRequest) {
       sessions,
       recordings,
       files,
+      cohort,
     },
     { headers: cors },
   );
