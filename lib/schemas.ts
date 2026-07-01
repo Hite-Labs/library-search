@@ -99,6 +99,9 @@ export const CreateCohortSchema = z.object({
   description: z.string().default(''),
   goal: z.string().default(''),
   totalSessions: z.number().int().positive().default(4),
+  telegramUrl: z.string().optional(),
+  startDate: z.string().datetime().nullable().optional(),
+  sessionCadence: z.enum(['weekly', 'biweekly']).optional(),
 });
 
 export const UpdateCohortSchema = z.object({
@@ -109,18 +112,29 @@ export const UpdateCohortSchema = z.object({
   totalSessions: z.number().int().positive().optional(),
   currentSession: z.number().int().nonnegative().optional(),
   zoomUrl: z.string().optional(),
+  telegramUrl: z.string().optional(),
+  startDate: z.string().datetime().nullable().optional(),
+  sessionCadence: z.enum(['weekly', 'biweekly']).optional(),
 });
 
 export const CohortSessionSchema = z.object({
   label: z.string().default(''),
   sessionDate: z.string().datetime().nullable().default(null),
   sortOrder: z.number().int().default(0),
+  promptText: z.string().default(''),
 });
 
 export const UpdateCohortSessionSchema = z.object({
   label: z.string().optional(),
   sessionDate: z.string().datetime().nullable().optional(),
   sortOrder: z.number().int().optional(),
+  promptText: z.string().optional(),
+});
+
+export const GenerateScheduleSchema = z.object({
+  startDate: z.string().datetime(),
+  cadence: z.enum(['weekly', 'biweekly']),
+  totalSessions: z.number().int().positive(),
 });
 
 export const AddCohortMemberSchema = z.object({
@@ -134,6 +148,7 @@ export const CohortContentSchema = z.object({
   publicUrl: z.string().url(),
   r2Key: z.string().min(1),
   mediaType: z.enum(['audio', 'video', 'pdf']),
+  cohortSessionId: z.string().uuid().nullable().default(null),
 });
 
 export type LoginInput = z.infer<typeof LoginSchema>;

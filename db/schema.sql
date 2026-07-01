@@ -112,6 +112,21 @@ CREATE INDEX enrollments_cohort_id_idx ON enrollments (cohort_id);
 ALTER TABLE content_items ADD COLUMN cohort_id uuid REFERENCES cohorts(id);
 CREATE INDEX content_items_cohort_id_idx ON content_items (cohort_id);
 
+-- Cohort-level async chat link (Telegram), surfaced prominently in the portal cohort tab.
+ALTER TABLE cohorts ADD COLUMN telegram_url text NOT NULL DEFAULT '';
+-- Scheduler inputs: auto-plot cohort_sessions on creation, still editable per-row after.
+ALTER TABLE cohorts ADD COLUMN start_date timestamptz;
+ALTER TABLE cohorts ADD COLUMN session_cadence text NOT NULL DEFAULT 'weekly'
+  CHECK (session_cadence IN ('weekly','biweekly'));
+
+-- Per-session discussion prompt shown in the portal for that session.
+ALTER TABLE cohort_sessions ADD COLUMN prompt_text text NOT NULL DEFAULT '';
+
+-- Files tied to a specific cohort session (e.g. that week's recording); nullable so
+-- cohort-wide files (cohort_session_id NULL) keep working as today.
+ALTER TABLE content_items ADD COLUMN cohort_session_id uuid REFERENCES cohort_sessions(id);
+CREATE INDEX content_items_cohort_session_id_idx ON content_items (cohort_session_id);
+
 CREATE OR REPLACE FUNCTION match_content_items(
   query_embedding vector(1024),
   match_threshold float,
