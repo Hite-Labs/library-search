@@ -506,7 +506,7 @@ export interface CohortSession {
   id: string;
   cohort_id: string;
   session_date: string | null;
-  label: string;
+  title: string;
   prompt_text: string;
   sort_order: number;
   created_at: string;
@@ -616,24 +616,24 @@ export async function getCohortSessions(cohortId: string): Promise<CohortSession
 
 export async function addCohortSession(
   cohortId: string,
-  data: { label: string; sessionDate: string | null; sortOrder?: number; promptText?: string },
+  data: { title: string; sessionDate: string | null; sortOrder?: number; promptText?: string },
 ): Promise<CohortSession> {
   const sql = getSql();
   const rows = await sql`
-    INSERT INTO cohort_sessions (cohort_id, label, session_date, sort_order, prompt_text)
-    VALUES (${cohortId}, ${data.label}, ${data.sessionDate}, ${data.sortOrder ?? 0}, ${data.promptText ?? ''})
+    INSERT INTO cohort_sessions (cohort_id, title, session_date, sort_order, prompt_text)
+    VALUES (${cohortId}, ${data.title}, ${data.sessionDate}, ${data.sortOrder ?? 0}, ${data.promptText ?? ''})
     RETURNING *`;
   return rows[0] as CohortSession;
 }
 
 export async function updateCohortSession(
   id: string,
-  data: { label?: string; sessionDate?: string | null; sortOrder?: number; promptText?: string },
+  data: { title?: string; sessionDate?: string | null; sortOrder?: number; promptText?: string },
 ): Promise<CohortSession | null> {
   const sql = getSql();
   const rows = await sql`
     UPDATE cohort_sessions SET
-      label = COALESCE(${data.label ?? null}, label),
+      title = COALESCE(${data.title ?? null}, title),
       session_date = ${data.sessionDate === undefined ? sql`session_date` : data.sessionDate},
       sort_order = COALESCE(${data.sortOrder ?? null}, sort_order),
       prompt_text = COALESCE(${data.promptText ?? null}, prompt_text)
@@ -654,17 +654,19 @@ export async function generateCohortSchedule(
   const sql = getSql();
   const stepDays = data.cadence === 'biweekly' ? 14 : 7;
   const base = new Date(data.startDate);
-  const rows: { label: string; date: string; sort: number }[] = [];
+  // title is left blank on auto-generate — the coach names sessions afterward, and both
+  // dashboard and portal fall back to "Session {n}" (the auto badge) when title is empty.
+  const rows: { date: string; sort: number }[] = [];
   for (let n = 1; n <= data.totalSessions; n++) {
     const d = new Date(base);
     d.setUTCDate(d.getUTCDate() + stepDays * (n - 1));
-    rows.push({ label: `Session ${n}`, date: d.toISOString(), sort: n });
+    rows.push({ date: d.toISOString(), sort: n });
   }
   const inserted = await sql.transaction(
     rows.map(
       (r) => sql`
-        INSERT INTO cohort_sessions (cohort_id, label, session_date, sort_order)
-        VALUES (${cohortId}, ${r.label}, ${r.date}, ${r.sort})
+        INSERT INTO cohort_sessions (cohort_id, title, session_date, sort_order)
+        VALUES (${cohortId}, '', ${r.date}, ${r.sort})
         RETURNING *`,
     ),
   );
