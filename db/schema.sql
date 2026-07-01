@@ -97,7 +97,7 @@ CREATE TABLE cohort_sessions (                      -- the fixed dated schedule
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cohort_id    uuid NOT NULL REFERENCES cohorts(id) ON DELETE CASCADE,
   session_date timestamptz,
-  label        text NOT NULL DEFAULT '',
+  title        text NOT NULL DEFAULT '',            -- free-text session name (e.g. "Morning Alignment")
   sort_order   integer NOT NULL DEFAULT 0,
   created_at   timestamptz NOT NULL DEFAULT now()
 );
