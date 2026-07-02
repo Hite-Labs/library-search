@@ -22,7 +22,7 @@ interface Cohort {
   zoom_url: string; telegram_url: string;
   start_date: string | null; session_cadence: 'weekly' | 'biweekly';
 }
-interface CohortSession { id: string; session_date: string | null; label: string; sort_order: number; prompt_text: string; }
+interface CohortSession { id: string; session_date: string | null; title: string; sort_order: number; prompt_text: string; }
 interface Member { enrollment_id: string; client_id: string; client_name: string; client_email: string; goal: string; status: string; }
 interface Content { id: string; title: string; public_url: string; media_type: string; cohort_session_id: string | null; }
 interface DetailData { cohort: Cohort; sessions: CohortSession[]; roster: Member[]; content: Content[]; }
@@ -282,7 +282,7 @@ function TelegramEditor({ cohort, onSave }: { cohort: Cohort; onSave: (url: stri
 }
 
 function ScheduleSection({ cohortId, cohort, sessions, onChange }: { cohortId: string; cohort: Cohort; sessions: CohortSession[]; onChange: () => void }) {
-  const [label, setLabel] = useState('');
+  const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [showGen, setShowGen] = useState(false);
@@ -292,9 +292,9 @@ function ScheduleSection({ cohortId, cohort, sessions, onChange }: { cohortId: s
     setSaving(true);
     await fetch(`/api/cohorts/${cohortId}/sessions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label, sessionDate: date ? new Date(date).toISOString() : null, sortOrder: sessions.length }),
+      body: JSON.stringify({ title, sessionDate: date ? new Date(date).toISOString() : null, sortOrder: sessions.length }),
     });
-    setLabel(''); setDate(''); setSaving(false);
+    setTitle(''); setDate(''); setSaving(false);
     onChange();
   }
 
@@ -326,8 +326,8 @@ function ScheduleSection({ cohortId, cohort, sessions, onChange }: { cohortId: s
       )}
       <form onSubmit={add} className="flex gap-2 items-end">
         <div className="flex-1">
-          <label className={INPUT_LABEL}>Label</label>
-          <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Session 1: Intro" disabled={saving}
+          <label className={INPUT_LABEL}>Title</label>
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Morning Alignment" disabled={saving}
             className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
         </div>
         <div>
@@ -335,7 +335,7 @@ function ScheduleSection({ cohortId, cohort, sessions, onChange }: { cohortId: s
           <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} disabled={saving}
             className="border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
         </div>
-        <button type="submit" disabled={saving || !label}
+        <button type="submit" disabled={saving || !title}
           className="btn-spark px-3 py-1.5 disabled:opacity-50">Add</button>
       </form>
     </div>
@@ -407,29 +407,40 @@ function GenerateSchedule({ cohortId, cohort, hasSessions, onDone }: {
   );
 }
 
-// One schedule row: editable date + discussion prompt, saved on blur / explicit save.
+// One schedule row: editable title + date + discussion prompt, saved on explicit save.
+// Title is the free-text session name; empty falls back to the auto "Session N" badge
+// (which the portal computes from session_number), so a blank title still reads sensibly.
 function SessionRow({ cohortId, session, index, onChange, onRemove }: {
   cohortId: string; session: CohortSession; index: number; onChange: () => void; onRemove: () => void;
 }) {
+  const [title, setTitle] = useState(session.title);
   const [date, setDate] = useState(toLocalInput(session.session_date));
   const [prompt, setPrompt] = useState(session.prompt_text);
   const [saving, setSaving] = useState(false);
-  const dirty = date !== toLocalInput(session.session_date) || prompt !== session.prompt_text;
+  const dirty = title !== session.title || date !== toLocalInput(session.session_date) || prompt !== session.prompt_text;
 
   async function save() {
     setSaving(true);
     await fetch(`/api/cohorts/${cohortId}/sessions/${session.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionDate: date ? new Date(date).toISOString() : null, promptText: prompt }),
+      body: JSON.stringify({ title, sessionDate: date ? new Date(date).toISOString() : null, promptText: prompt }),
     });
     setSaving(false);
     onChange();
   }
 
+  function cancel() {
+    setTitle(session.title);
+    setDate(toLocalInput(session.session_date));
+    setPrompt(session.prompt_text);
+  }
+
   return (
     <div className="border border-gold/20 rounded-lg p-3 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-slate">{session.label || `Session ${index + 1}`}</span>
+        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving}
+          placeholder={`Session ${index + 1}`}
+          className="flex-1 min-w-0 border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
         <div className="flex items-center gap-2 shrink-0">
           <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} disabled={saving}
             className="border border-slate/20 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-gold" />
@@ -444,8 +455,7 @@ function SessionRow({ cohortId, session, index, onChange, onRemove }: {
           <button onClick={save} disabled={saving} className="btn-spark text-xs px-3 py-1 disabled:opacity-50">
             {saving ? 'Saving…' : 'Save'}
           </button>
-          <button onClick={() => { setDate(toLocalInput(session.session_date)); setPrompt(session.prompt_text); }}
-            className="btn-spark-outline text-xs px-2 py-1">Cancel</button>
+          <button onClick={cancel} className="btn-spark-outline text-xs px-2 py-1">Cancel</button>
         </div>
       )}
     </div>
@@ -522,7 +532,7 @@ function SharedContentSection({ cohortId, content, sessions, onChange }: { cohor
   const sessionLabel = (id: string | null) => {
     if (!id) return null;
     const idx = sessions.findIndex((s) => s.id === id);
-    return idx >= 0 ? sessions[idx].label || `Session ${idx + 1}` : null;
+    return idx >= 0 ? sessions[idx].title || `Session ${idx + 1}` : null;
   };
 
   return (
@@ -586,7 +596,7 @@ function SharedContentSection({ cohortId, content, sessions, onChange }: { cohor
               className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold bg-white">
               <option value="">Cohort-wide (no specific session)</option>
               {sessions.map((s, i) => (
-                <option key={s.id} value={s.id}>{s.label || `Session ${i + 1}`}</option>
+                <option key={s.id} value={s.id}>{s.title || `Session ${i + 1}`}</option>
               ))}
             </select>
           </div>
@@ -626,7 +636,7 @@ function CohortPreview({ cohort, sessions, content }: { cohort: Cohort; sessions
         {sessions.map((s, i) => (
           <div key={s.id} className="border border-gold/20 rounded-lg p-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate">{s.label || `Session ${i + 1}`}</span>
+              <span className="text-sm text-slate">{s.title || `Session ${i + 1}`}</span>
               <span className="text-xs text-slate/60">{fmtDateTime(s.session_date)}</span>
             </div>
             {s.prompt_text && <p className="text-sm text-slate/80 mt-2 whitespace-pre-wrap">{s.prompt_text}</p>}

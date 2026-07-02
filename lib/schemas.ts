@@ -118,14 +118,14 @@ export const UpdateCohortSchema = z.object({
 });
 
 export const CohortSessionSchema = z.object({
-  label: z.string().default(''),
+  title: z.string().default(''),
   sessionDate: z.string().datetime().nullable().default(null),
   sortOrder: z.number().int().default(0),
   promptText: z.string().default(''),
 });
 
 export const UpdateCohortSessionSchema = z.object({
-  label: z.string().optional(),
+  title: z.string().optional(),
   sessionDate: z.string().datetime().nullable().optional(),
   sortOrder: z.number().int().optional(),
   promptText: z.string().optional(),
