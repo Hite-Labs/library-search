@@ -31,6 +31,17 @@ const nextConfig: NextConfig = {
           { key: 'Access-Control-Allow-Headers', value: 'Content-Type' },
         ],
       },
+      {
+        // portal.js / portal.staging.js are loaded cross-origin by a plain <script src>
+        // tag on the Webflow portal page. A script-tag load isn't CORS-restricted, but we
+        // set ACAO:* explicitly + nosniff so the content-type is honored. The runtime
+        // fetch() these scripts make to /api/portal is CORS'd in that route handler.
+        source: '/:file(portal\\.js|portal\\.staging\\.js)',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
     ];
   },
 };
