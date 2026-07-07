@@ -54,13 +54,13 @@
 
   function hideAll() {
     [
-      'client-goal',
-      'sessions-list',
-      'sessions-empty',
-      'recordings-list',
-      'recordings-empty',
-      'files-list',
-      'files-empty',
+      'ind-goal',
+      'ind-sessions-list',
+      'ind-sessions-empty',
+      'ind-recordings-list',
+      'ind-recordings-empty',
+      'ind-files-list',
+      'ind-files-empty',
       'cohort-my-goal',
       'cohort-sessions-list',
       'cohort-sessions-empty',
@@ -71,10 +71,10 @@
     ].forEach(function (name) {
       hide(byField(name));
     });
-    eachEl('[data-field="sessions-completed"]', hide);
-    eachEl('[data-field="sessions-total"]', hide);
-    eachEl('[data-field="next-session-display"]', hide);
-    eachEl('[data-field="next-session-schedule"]', hide);
+    eachEl('[data-field="ind-sessions-completed"]', hide);
+    eachEl('[data-field="ind-sessions-total"]', hide);
+    eachEl('[data-field="ind-next-session-display"]', hide);
+    eachEl('[data-field="ind-next-session-schedule"]', hide);
   }
 
   function showError(message) {
@@ -202,21 +202,21 @@
 
   function renderNextSession(value) {
     if (!value || isNaN(new Date(value).getTime())) {
-      eachEl('[data-field="next-session-display"]', hide);
-      eachEl('[data-field="next-session-schedule"]', show);
+      eachEl('[data-field="ind-next-session-display"]', hide);
+      eachEl('[data-field="ind-next-session-schedule"]', show);
       return;
     }
 
     var d = new Date(value);
 
-    eachEl('[data-field="next-session-date"]', function (el) {
+    eachEl('[data-field="ind-next-session-date"]', function (el) {
       el.textContent = d.toLocaleDateString(undefined, {
         month: 'long',
         day: 'numeric'
       });
     });
 
-    eachEl('[data-field="next-session-time"]', function (el) {
+    eachEl('[data-field="ind-next-session-time"]', function (el) {
       el.textContent = d.toLocaleTimeString(undefined, {
         hour: 'numeric',
         minute: '2-digit',
@@ -224,14 +224,14 @@
       });
     });
 
-    eachEl('[data-field="next-session-display"]', show);
-    eachEl('[data-field="next-session-schedule"]', hide);
+    eachEl('[data-field="ind-next-session-display"]', show);
+    eachEl('[data-field="ind-next-session-schedule"]', hide);
   }
 
   function renderClient(client) {
     client = client || {};
 
-    var goalEl = byField('client-goal');
+    var goalEl = byField('ind-goal');
     if (goalEl) {
       goalEl.textContent = client.goal || '';
       show(goalEl);
@@ -239,14 +239,14 @@
 
     var doneText =
       client.sessions_done == null ? '0' : String(client.sessions_done);
-    eachEl('[data-field="sessions-completed"]', function (el) {
+    eachEl('[data-field="ind-sessions-completed"]', function (el) {
       el.textContent = doneText;
       show(el);
     });
 
     var totalText =
       client.total_sessions == null ? '0' : String(client.total_sessions);
-    eachEl('[data-field="sessions-total"]', function (el) {
+    eachEl('[data-field="ind-sessions-total"]', function (el) {
       el.textContent = totalText;
       show(el);
     });
@@ -293,14 +293,14 @@
   }
 
   function fillSessionCard(card, session) {
-    setField(card, 'session_number', session.session_number);
-    setField(card, 'session_date', formatDate(session.session_date));
-    setField(card, 'next_actions', session.next_actions);
+    setField(card, 'ind-session-number', session.session_number);
+    setField(card, 'ind-session-date', formatDate(session.session_date));
+    setField(card, 'ind-session-notes', session.next_actions);
   }
 
   function fillRecordingCard(card, recording) {
-    setField(card, 'recording-title', recording.title);
-    setField(card, 'recording-label', recording.session_label || '');
+    setField(card, 'ind-recording-title', recording.title);
+    setField(card, 'ind-recording-label', recording.session_label || '');
 
     var url = recording.public_url || '';
     var fileType = recording.file_type || 'video';
@@ -317,8 +317,8 @@
   }
 
   function fillFileCard(card, file) {
-    setField(card, 'file-title', file.title);
-    setField(card, 'file-description', file.description || '');
+    setField(card, 'ind-file-title', file.title);
+    setField(card, 'ind-file-description', file.description || '');
 
     var url = file.public_url || '';
     var fileType = file.file_type || 'audio';
@@ -467,20 +467,20 @@
     if (data.client) renderClient(data.client);
 
     renderList(
-      byField('sessions-list'),
-      byField('sessions-empty'),
+      byField('ind-sessions-list'),
+      byField('ind-sessions-empty'),
       data.sessions,
       fillSessionCard
     );
     renderList(
-      byField('recordings-list'),
-      byField('recordings-empty'),
+      byField('ind-recordings-list'),
+      byField('ind-recordings-empty'),
       data.recordings,
       fillRecordingCard
     );
     renderList(
-      byField('files-list'),
-      byField('files-empty'),
+      byField('ind-files-list'),
+      byField('ind-files-empty'),
       data.files,
       fillFileCard
     );
