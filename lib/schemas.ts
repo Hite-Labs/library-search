@@ -151,9 +151,28 @@ export const CohortContentSchema = z.object({
   cohortSessionId: z.string().uuid().nullable().default(null),
 });
 
+// ── Library (public content browser) ─────────────────────────────────────────
+
+// Every field is optional — PATCH semantics, omitted fields are left untouched.
+// modality and durationSeconds are explicitly nullable so they can be cleared.
+//
+// mediaType is deliberately NOT editable: it determines the R2 key prefix, which
+// Webflow url field the media lands in (audio-url vs video-url), and which player
+// branch renders. Changing it would desynchronise all three from the object that's
+// actually stored, so a mis-typed file gets re-uploaded rather than edited.
+export const UpdateLibraryItemSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  useCases: z.string().optional(),
+  modality: z.string().nullable().optional(),
+  moodTags: z.string().optional(),
+  durationSeconds: z.number().int().nonnegative().nullable().optional(),
+});
+
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type PresignInput = z.infer<typeof PresignSchema>;
 export type AnalyzeInput = z.infer<typeof AnalyzeSchema>;
 export type FinalizeUploadInput = z.infer<typeof FinalizeUploadSchema>;
 export type SuggestInput = z.infer<typeof SuggestSchema>;
 export type SearchInput = z.infer<typeof SearchSchema>;
+export type UpdateLibraryItemInput = z.infer<typeof UpdateLibraryItemSchema>;
