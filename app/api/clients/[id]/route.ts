@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server';
-import {
-  getClientWithEnrollments,
-  getSessionLogs,
-  getClientContentByKind,
-  deleteClient,
-} from '@/lib/db';
-import { getPresignedGetUrl } from '@/lib/r2';
+import { getClientWithEnrollments, deleteClient } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
-// GET /api/clients/[id] — client + all enrollments (active + history), with the
-// active enrollment's session logs, plus the client's recordings (L-02).
+/**
+ * GET /api/clients/[id] — the person and the programs they're in.
+ *
+ * Deliberately slim: each program tab loads its own body (logs, recordings, resources)
+ * from GET /api/enrollments/[id]/detail when it's first opened. Fetching all of it here
+ * would mean signing R2 urls for every program on every page load, most of which the
+ * user never looks at.
+ *
+ * `activeEnrollmentId` is only a hint for which tab to open first.
+ */
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -22,26 +24,11 @@ export async function GET(
   }
 
   const active = data.enrollments.find((e) => e.status === 'active') ?? data.enrollments[0];
-  const activeLogs = active ? await getSessionLogs(active.id) : [];
-
-  // Split client content by kind: recordings (session Zoom calls) vs resources (delivered
-  // files — EFT/hypno audio, PDFs). Each gets a fresh time-limited signed GET URL so the
-  // dashboard "Open" link works for private objects and the raw R2 URL is never exposed (S-03).
-  const [rawRecordings, rawResources] = await Promise.all([
-    getClientContentByKind(id, 'recording'),
-    getClientContentByKind(id, 'file'),
-  ]);
-  const sign = (rows: Awaited<ReturnType<typeof getClientContentByKind>>) =>
-    Promise.all(rows.map(async (r) => ({ ...r, public_url: await getPresignedGetUrl(r.r2_key) })));
-  const [recordings, resources] = await Promise.all([sign(rawRecordings), sign(rawResources)]);
 
   return NextResponse.json({
     client: data.client,
     enrollments: data.enrollments,
     activeEnrollmentId: active?.id ?? null,
-    activeLogs,
-    recordings,
-    resources,
   });
 }
 

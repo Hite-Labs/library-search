@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listEnrollments, createClientWithEnrollment } from '@/lib/db';
+import { listClientsWithEnrollments, createClientWithEnrollment } from '@/lib/db';
 import { CreateClientSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
 
-// GET /api/clients?status=active — list enrollments (with client info) for the dashboard (L-07)
+// GET /api/clients?status=active — one row per PERSON, each carrying their enrollments.
+// A person matches the status filter if any of their enrollments does.
 export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get('status') ?? undefined;
-  const enrollments = await listEnrollments(status);
-  return NextResponse.json({ enrollments });
+  const clients = await listClientsWithEnrollments(status);
+  return NextResponse.json({ clients });
 }
 
 // POST /api/clients — create a client + first enrollment (dedupes by email)
@@ -24,7 +25,9 @@ export async function POST(req: NextRequest) {
       ok: true,
       client: result.client,
       enrollment: result.enrollment,
+      cohortEnrollment: result.cohortEnrollment,
       reusedClient: result.reusedClient,
+      alreadyMember: result.alreadyMember,
       provisionWarning: result.provisionWarning,
       memberProvisioned: result.memberProvisioned,
     });

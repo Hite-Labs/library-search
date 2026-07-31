@@ -43,12 +43,22 @@ export async function findMemberByEmail(email: string): Promise<{ id: string } |
   }
 }
 
+/** Which portal panel(s) this member should be entitled to. */
+export type PlanType = 'individual' | 'cohort' | 'both';
+
 /**
  * Ensure a Memberstack member exists for this email. Dedupes first (so re-adding an
  * existing client links rather than duplicates). Returns the mem_… id and whether it
  * was newly created. On create, fills the member's name (customFields), stashes the
- * coaching goal + session count (metaData, backend-only), and attaches the individual
- * free plan when MEMBERSTACK_INDIVIDUAL_PLAN_ID is set.
+ * coaching goal + session count (metaData, backend-only), and attaches the free plan(s)
+ * matching `planType`.
+ *
+ * The plan matters: public/portal.js decides which panel to show from the member's
+ * planConnections, so a cohort member given the individual plan would land on an
+ * individual panel with no data, and one given no plan sees only the upsell.
+ *
+ * Plan ids come from MEMBERSTACK_INDIVIDUAL_PLAN_ID / MEMBERSTACK_COHORT_PLAN_ID; either
+ * being unset simply omits that plan (provisioning still succeeds).
  */
 export async function provisionMember({
   email,
@@ -56,12 +66,14 @@ export async function provisionMember({
   lastName,
   goal,
   totalSessions,
+  planType = 'individual',
 }: {
   email: string;
   firstName?: string;
   lastName?: string;
   goal?: string;
   totalSessions?: number;
+  planType?: PlanType;
 }): Promise<{ id: string; created: boolean }> {
   const client = getClient();
   if (!client) throw new Error('Memberstack is not configured (MEMBERSTACK_SECRET_KEY unset)');
@@ -79,14 +91,20 @@ export async function provisionMember({
   if (goal) metaData.coachingGoal = goal;
   if (typeof totalSessions === 'number') metaData.totalSessions = totalSessions;
 
-  const planId = env.MEMBERSTACK_INDIVIDUAL_PLAN_ID;
+  // 'both' attaches both plans, which is what lets the portal show its plan-tab header.
+  const wantsIndividual = planType === 'individual' || planType === 'both';
+  const wantsCohort = planType === 'cohort' || planType === 'both';
+  const planIds = [
+    wantsIndividual ? env.MEMBERSTACK_INDIVIDUAL_PLAN_ID : undefined,
+    wantsCohort ? env.MEMBERSTACK_COHORT_PLAN_ID : undefined,
+  ].filter((id): id is string => Boolean(id));
 
   const res = await client.members.create({
     email,
     password: generatePassword(),
     ...(Object.keys(customFields).length ? { customFields } : {}),
     ...(Object.keys(metaData).length ? { metaData } : {}),
-    ...(planId ? { plans: [{ planId }] } : {}),
+    ...(planIds.length ? { plans: planIds.map((planId) => ({ planId })) } : {}),
   });
   const id = res?.data?.id;
   if (!id) throw new Error('Memberstack create returned no member id');
