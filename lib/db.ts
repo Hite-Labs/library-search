@@ -1087,6 +1087,41 @@ export async function removeCohortMember(
   return (rows[0] as Enrollment) ?? null;
 }
 
+/** What the dashboard says a person should be entitled to, derived from enrollments. */
+export interface ClientEntitlement {
+  client_id: string;
+  name: string;
+  email: string;
+  memberstack_id: string | null;
+  /** Has at least one non-complete individual enrollment. */
+  wantsIndividual: boolean;
+  /** Has at least one non-complete cohort enrollment. */
+  wantsCohort: boolean;
+}
+
+/**
+ * Every client with the plans their enrollments imply — the dashboard half of
+ * reconciliation against Memberstack.
+ *
+ * 'complete' enrollments are excluded deliberately: a finished pack shouldn't keep
+ * granting portal access, so a member still holding that plan is real drift worth
+ * surfacing. Paused DOES still count as entitled — a pause is temporary, and revoking
+ * access mid-pause would be wrong.
+ */
+export async function listClientEntitlements(): Promise<ClientEntitlement[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT
+      c.id AS client_id, c.name, c.email, c.memberstack_id,
+      COALESCE(bool_or(e.program_type = 'individual' AND e.status <> 'complete'), false) AS "wantsIndividual",
+      COALESCE(bool_or(e.program_type = 'cohort'     AND e.status <> 'complete'), false) AS "wantsCohort"
+    FROM clients c
+    LEFT JOIN enrollments e ON e.client_id = c.id
+    GROUP BY c.id, c.name, c.email, c.memberstack_id
+    ORDER BY c.name`;
+  return rows as ClientEntitlement[];
+}
+
 /**
  * Cohorts a given person could join: active only, minus the ones they're already in.
  * Feeds the "Join a cohort" picker on the client detail page — the cohort counterpart of

@@ -135,6 +135,87 @@ export async function updateMemberMetaData(
   return true;
 }
 
+/** A Memberstack member reduced to what reconciliation cares about. */
+export interface MemberPlanState {
+  id: string;
+  email: string;
+  /** Active connections only — a cancelled/expired plan grants no portal access. */
+  hasIndividualPlan: boolean;
+  hasCohortPlan: boolean;
+}
+
+/**
+ * Every Memberstack member with their active plan state, for reconciling against the
+ * dashboard's enrollments. Pages through the Admin API (100 at a time) until exhausted.
+ *
+ * Returns null when Memberstack isn't configured, so callers can show "unavailable"
+ * rather than an empty list — an empty list would falsely read as "no members exist",
+ * which in a reconciliation view means "delete everything".
+ *
+ * A plan connection counts only when `active` is true AND its status isn't a terminal
+ * one: Memberstack keeps cancelled connections on the member, and treating those as
+ * live access would hide real drift.
+ */
+export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> {
+  const client = getClient();
+  if (!client) return null;
+
+  const individualId = env.MEMBERSTACK_INDIVIDUAL_PLAN_ID;
+  const cohortId = env.MEMBERSTACK_COHORT_PLAN_ID;
+
+  const out: MemberPlanState[] = [];
+  let after: number | undefined = undefined;
+
+  // Bounded loop: 200 pages × 100 = 20k members, far beyond this use case, but it
+  // guarantees termination if the cursor ever fails to advance.
+  for (let page = 0; page < 200; page++) {
+    const res = await client.members.list({ limit: 100, ...(after ? { after } : {}) });
+    const members = res?.data ?? [];
+
+    for (const m of members) {
+      const conns = Array.isArray(m.planConnections) ? m.planConnections : [];
+      const activePlanIds = new Set(
+        conns
+          .filter((c): c is Exclude<typeof c, string> => typeof c !== 'string')
+          .filter((c) => c.active && !/cancel|expired/i.test(c.status ?? ''))
+          .map((c) => c.planId),
+      );
+      out.push({
+        id: m.id,
+        email: m.auth?.email ?? '',
+        hasIndividualPlan: individualId ? activePlanIds.has(individualId) : false,
+        hasCohortPlan: cohortId ? activePlanIds.has(cohortId) : false,
+      });
+    }
+
+    if (!res?.hasNextPage || members.length === 0) break;
+    after = res.endCursor;
+  }
+
+  return out;
+}
+
+/**
+ * Attach or detach one of the two coaching plans on a member. Used by the reconciliation
+ * view to fix drift in either direction. Returns false when Memberstack isn't configured
+ * or the plan id for that type isn't set.
+ */
+export async function setMemberPlan(
+  memberstackId: string,
+  planType: 'individual' | 'cohort',
+  attached: boolean,
+): Promise<boolean> {
+  const client = getClient();
+  if (!client) return false;
+  const planId =
+    planType === 'individual' ? env.MEMBERSTACK_INDIVIDUAL_PLAN_ID : env.MEMBERSTACK_COHORT_PLAN_ID;
+  if (!planId) return false;
+
+  if (attached) await client.members.addFreePlan({ id: memberstackId, data: { planId } });
+  else await client.members.removeFreePlan({ id: memberstackId, data: { planId } });
+  return true;
+}
+
 /**
  * Verify a member JWT (from the _ms-mid cookie). Returns the trusted member id, or
  * null for any invalid/expired token — callers should degrade gracefully, never 500.
