@@ -1,7 +1,7 @@
 'use client';
 
 import { use, useState, useEffect } from 'react';
-import { LoginForm } from '../../upload/login-form';
+import { LoginForm } from '@/components/LoginForm';
 import { CohortDetailView } from './detail-view';
 
 export default function CohortDetailPage({ params }: { params: Promise<{ id: string }> }) {

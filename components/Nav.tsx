@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 const LINKS = [
-  { href: '/upload', label: 'Upload' },
+  // Upload lives inside Library now — it's the same task as browsing what's there.
   { href: '/library', label: 'Library' },
   { href: '/clients', label: 'Clients' },
   { href: '/cohorts', label: 'Cohorts' },
@@ -43,7 +43,7 @@ export function Nav() {
           type="button"
           onClick={async () => {
             await fetch('/api/auth/logout', { method: 'POST' });
-            window.location.href = '/upload';
+            window.location.href = '/library';
           }}
           className="font-label text-xs text-petal/60 hover:text-gold transition-colors"
         >

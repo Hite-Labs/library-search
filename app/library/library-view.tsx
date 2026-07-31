@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Nav } from '@/components/Nav';
 import { LibraryList } from './library-list';
 import { LibraryDetail } from './library-detail';
+import { UploadPanel } from './upload-panel';
 
 export interface LibraryItem {
   id: string;
@@ -40,12 +41,17 @@ export function LibraryView() {
   const [query, setQuery] = useState('');
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all');
 
+  const loadItems = useCallback(async () => {
+    const res = await fetch('/api/library');
+    const data = await res.json();
+    return (data.items ?? []) as LibraryItem[];
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/library')
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled) setItems(data.items ?? []);
+    loadItems()
+      .then((rows) => {
+        if (!cancelled) setItems(rows);
       })
       .catch(() => {
         if (!cancelled) setItems([]);
@@ -56,7 +62,21 @@ export function LibraryView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadItems]);
+
+  // A new upload lands at the top of the list and opens in the detail panel, so
+  // what you just added is immediately in front of you.
+  const handleUploaded = useCallback(
+    async (neonId: string) => {
+      try {
+        setItems(await loadItems());
+        setSelectedId(neonId);
+      } catch {
+        // The item saved fine even if the refresh failed; leave the list alone.
+      }
+    },
+    [loadItems],
+  );
 
   // Load the selected item's full row (transcript included).
   //
@@ -113,13 +133,17 @@ export function LibraryView() {
     <div className="min-h-screen bg-petal/40">
       <Nav />
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-6">
+        <div className="mb-4">
           <h1 className="text-xl font-serif text-slate">Library</h1>
           <p className="text-sm text-slate/60 mt-0.5">
-            Everything uploaded to the searchable content library
+            Add content and browse everything in the searchable library
             {!loading && items.length > 0 && ` — ${items.length} item${items.length === 1 ? '' : 's'}`}
           </p>
         </div>
+
+        {/* Upload sits at the top of the library it feeds: drop a file, review the
+            auto-filled details, save, and the new item drops into the list below. */}
+        <UploadPanel onUploaded={handleUploaded} />
 
         {items.length >= LIST_CAP && (
           <div className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
