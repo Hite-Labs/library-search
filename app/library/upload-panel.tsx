@@ -4,22 +4,25 @@ import { useState, FormEvent } from 'react';
 import { FilePicker } from '@/components/upload/FilePicker';
 import { TagInput } from '@/components/upload/TagInput';
 import { SuggestButton } from '@/components/upload/SuggestButton';
-import { Nav } from '@/components/Nav';
 
 const MEDIA_TYPES = ['audio', 'video', 'pdf'] as const;
 type MediaType = typeof MEDIA_TYPES[number];
 
 const MODALITIES = ['Hypnosis', 'EFT', 'Tapping', 'Meditation', 'Other'] as const;
 
-interface SuccessResult {
-  neonId: string;
-  webflowItemId: string;
-  publicUrl: string;
-}
-
 interface StepError {
   step: string;
   error: string;
+}
+
+interface UploadPanelProps {
+  /**
+   * Called with the new item's Neon id once it's saved. The Library view uses this
+   * to refresh the list and select the new row, so the thing you just uploaded is
+   * immediately in front of you — which is the whole reason upload lives here now
+   * rather than on its own page.
+   */
+  onUploaded: (neonId: string) => void;
 }
 
 function getContentType(file: File): string {
@@ -33,7 +36,7 @@ function mediaTypeForFile(file: File): MediaType {
   return 'audio';
 }
 
-export function UploadForm() {
+export function UploadPanel({ onUploaded }: UploadPanelProps) {
   const [file, setFile] = useState<File | null>(null);
   const [mediaType, setMediaType] = useState<MediaType>('audio');
 
@@ -55,13 +58,15 @@ export function UploadForm() {
   const [analyzed, setAnalyzed] = useState(false); // fields are ready to review
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
-  const [success, setSuccess] = useState<SuccessResult | null>(null);
+  // Just the title of the last saved item — the ids that used to be shown here are
+  // all visible in the detail panel of the row this creates.
+  const [savedTitle, setSavedTitle] = useState<string | null>(null);
   const [stepError, setStepError] = useState<StepError | null>(null);
 
   function onFileChange(f: File | null) {
     setFile(f);
     setAnalyzed(false);
-    setSuccess(null);
+    setSavedTitle(null);
     setStepError(null);
     setTranscript(null);
     setR2Key(null);
@@ -74,7 +79,7 @@ export function UploadForm() {
     if (!file) return;
     setAnalyzing(true);
     setStepError(null);
-    setSuccess(null);
+    setSavedTitle(null);
 
     try {
       // Step 1: presign
@@ -135,7 +140,7 @@ export function UploadForm() {
     if (!file) return;
     setAnalyzing(true);
     setStepError(null);
-    setSuccess(null);
+    setSavedTitle(null);
     try {
       setProgress('Getting upload URL…');
       const presignRes = await fetch('/api/upload/presign', {
@@ -196,12 +201,12 @@ export function UploadForm() {
       if (!finalizeData.ok) {
         throw { step: finalizeData.step ?? 'finalize', error: finalizeData.error ?? 'Unknown error' };
       }
-      setSuccess({
-        neonId: finalizeData.neonId,
-        webflowItemId: finalizeData.webflowItemId,
-        publicUrl: finalizeData.publicUrl,
-      });
+      // Collapse back to the dropzone and hand the new row to the Library view,
+      // which refreshes the list and selects it.
+      const savedFor = title;
       resetAll();
+      setSavedTitle(savedFor);
+      onUploaded(finalizeData.neonId);
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'step' in err) setStepError(err as StepError);
       else setStepError({ step: 'unknown', error: String(err) });
@@ -230,66 +235,55 @@ export function UploadForm() {
   const isPdf = mediaType === 'pdf';
 
   return (
-    <div className="min-h-screen">
-      <Nav />
-      <div className="max-w-2xl mx-auto py-10 px-4">
-        <div className="mb-8">
-          <h1 className="text-xl font-serif text-slate">Upload Content</h1>
-          <p className="text-sm text-slate/60 mt-0.5">Add a new item to the content library</p>
+    <div className="mb-6">
+      {savedTitle && (
+        <div className="mb-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-800">
+          Added <span className="font-medium">{savedTitle}</span> to the library.
         </div>
+      )}
 
-        {success && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-xl p-4 text-sm">
-            <p className="font-medium text-green-800 mb-2">Upload complete</p>
-            <div className="space-y-1 text-green-700 font-mono text-xs">
-              <p>R2 URL: <a href={success.publicUrl} target="_blank" rel="noreferrer" className="underline">{success.publicUrl}</a></p>
-              <p>Webflow ID: {success.webflowItemId}</p>
-              <p>Neon ID: {success.neonId}</p>
-            </div>
-          </div>
-        )}
+      {stepError && (
+        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-4 text-sm">
+          <p className="font-medium text-red-800">Error at step: {stepError.step}</p>
+          <p className="text-red-600 mt-1 font-mono text-xs">{stepError.error}</p>
+        </div>
+      )}
 
-        {stepError && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 text-sm">
-            <p className="font-medium text-red-800">Error at step: {stepError.step}</p>
-            <p className="text-red-600 mt-1 font-mono text-xs">{stepError.error}</p>
-          </div>
-        )}
+      {/* Collapsed: just the dropzone. Expands into the review form after analyze,
+          then collapses again once the item is saved. */}
+      {!analyzed && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gold/20 p-5 space-y-4">
+          <FilePicker value={file} onChange={onFileChange} disabled={busy} />
 
-        {/* Step 1: pick a file and analyze (or upload, for PDFs) */}
-        {!analyzed && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gold/20 p-6 space-y-5">
-            <FilePicker value={file} onChange={onFileChange} disabled={busy} />
+          {file && (
+            <button
+              type="button"
+              onClick={isPdf ? handlePdfUpload : handleAnalyze}
+              disabled={busy}
+              className="btn-spark w-full disabled:opacity-50"
+            >
+              {busy
+                ? 'Working…'
+                : isPdf
+                  ? 'Upload PDF & continue'
+                  : 'Upload & analyze'}
+            </button>
+          )}
 
-            {file && (
-              <button
-                type="button"
-                onClick={isPdf ? handlePdfUpload : handleAnalyze}
-                disabled={busy}
-                className="btn-spark w-full disabled:opacity-50"
-              >
-                {busy
-                  ? 'Working…'
-                  : isPdf
-                    ? 'Upload PDF & continue'
-                    : 'Upload & analyze'}
-              </button>
-            )}
+          {progress && (
+            <p className="text-sm text-gold text-center animate-pulse">{progress}</p>
+          )}
+          {!isPdf && file && !busy && (
+            <p className="text-xs text-slate/60 text-center">
+              We&apos;ll transcribe the recording and pre-fill the details for you to review.
+            </p>
+          )}
+        </div>
+      )}
 
-            {progress && (
-              <p className="text-sm text-gold text-center animate-pulse">{progress}</p>
-            )}
-            {!isPdf && file && !busy && (
-              <p className="text-xs text-slate/60 text-center">
-                We&apos;ll transcribe the recording and pre-fill the details for you to review.
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Step 2: review auto-filled fields and save */}
-        {analyzed && (
-          <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-gold/20 p-6 space-y-5">
+      {/* Expanded: review the auto-filled fields and save */}
+      {analyzed && (
+        <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-gold/20 p-6 space-y-5">
             <div className="bg-petal/40 border border-gold/20 rounded-lg px-3 py-2 text-xs text-slate/60">
               {isPdf
                 ? 'PDF uploaded. Fill in the details below.'
@@ -416,9 +410,8 @@ export function UploadForm() {
                 {saving ? 'Saving…' : 'Save to Library'}
               </button>
             </div>
-          </form>
-        )}
-      </div>
+        </form>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { LoginForm } from '../upload/login-form';
+import { LoginForm } from '@/components/LoginForm';
 import { CohortsView } from './cohorts-view';
 
 export default function CohortsPage() {
