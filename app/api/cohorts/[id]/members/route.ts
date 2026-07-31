@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCohort, addCohortMember } from '@/lib/db';
+import { getCohort, addCohortMember, removeCohortMember } from '@/lib/db';
 import { AddCohortMemberSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
@@ -35,4 +35,23 @@ export async function POST(
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
   }
+}
+
+// DELETE /api/cohorts/[id]/members?enrollmentId=… — remove a member from this cohort.
+// Deletes the cohort enrollment only: the person's client record, their individual packs,
+// and their Memberstack plan are all left alone (see removeCohortMember).
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const enrollmentId = new URL(req.url).searchParams.get('enrollmentId');
+  if (!enrollmentId) {
+    return NextResponse.json({ error: 'enrollmentId is required' }, { status: 400 });
+  }
+  const removed = await removeCohortMember(id, enrollmentId);
+  if (!removed) {
+    return NextResponse.json({ error: 'Not a member of this cohort' }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, enrollment: removed });
 }

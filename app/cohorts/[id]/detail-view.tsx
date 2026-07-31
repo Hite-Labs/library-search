@@ -679,6 +679,26 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  // Removing drops the cohort enrollment only — the person's record, their individual
+  // packs, and their Memberstack plan all stay. Confirmed because it's destructive.
+  async function remove(m: Member) {
+    if (!window.confirm(
+      `Remove ${m.client_name} from this cohort?\n\nTheir client record and any individual packs are kept — only their place in this cohort is removed.`,
+    )) return;
+    setRemovingId(m.enrollment_id); setError(null); setNotice(null);
+    try {
+      const res = await fetch(
+        `/api/cohorts/${cohortId}/members?enrollmentId=${encodeURIComponent(m.enrollment_id)}`,
+        { method: 'DELETE' },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error ?? 'Failed to remove member');
+      setNotice(`${m.client_name} removed from this cohort.`);
+      onChange();
+    } catch (err) { setError(String(err)); } finally { setRemovingId(null); }
+  }
 
   // Load the picker list once, when the form is first opened.
   useEffect(() => {
@@ -741,17 +761,31 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
         </button>
       </div>
 
+      {/* Outside the add-form so removal feedback shows even when the form is closed. */}
+      {!showAdd && notice && <p className="text-xs text-slate/70 mb-3">{notice}</p>}
+      {!showAdd && error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+
       {roster.length > 0 && (
         <div className="space-y-2 mb-3">
+          {/* Link and Remove are siblings, not nested — a button inside the Link would
+              navigate as well as fire its own handler. */}
           {roster.map((m) => (
-            <Link key={m.enrollment_id} href={`/clients/${m.client_id}`}
-              className="flex items-center justify-between border border-gold/20 rounded-lg p-3 hover:border-gold/50 transition-colors">
-              <div className="min-w-0">
+            <div key={m.enrollment_id}
+              className="flex items-center justify-between border border-gold/20 rounded-lg hover:border-gold/50 transition-colors">
+              <Link href={`/clients/${m.client_id}`} className="flex-1 min-w-0 p-3">
                 <p className="text-sm text-slate truncate">{m.client_name}</p>
                 <p className="text-xs text-slate/60 truncate">{m.goal || m.client_email}</p>
-              </div>
-              <span className="text-xs text-slate/60 shrink-0 ml-2">View →</span>
-            </Link>
+              </Link>
+              <button
+                type="button"
+                onClick={() => remove(m)}
+                disabled={removingId === m.enrollment_id}
+                aria-label={`Remove ${m.client_name} from this cohort`}
+                className="text-xs text-slate/50 hover:text-red-600 disabled:opacity-40 px-3 py-3 shrink-0 transition-colors"
+              >
+                {removingId === m.enrollment_id ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
           ))}
         </div>
       )}
