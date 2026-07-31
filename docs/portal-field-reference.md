@@ -66,6 +66,7 @@ repeated card (the list's first child is the template).
 | `ind-recordings-empty` | empty | — | shown when `recordings[]` empty | |
 | `ind-recording-title` | item | `recordings[].title` | title | |
 | `ind-recording-label` | item | `recordings[].session_label` | session label | blank if none |
+| `ind-recording-date` | item | `recordings[].recorded_at` | `"Year Month Day"` | ⚠️ currently `content_items.created_at` (when it was uploaded), not a true recorded-on date — accurate for recordings added near the session, same-day for a bulk backfill. Field name is future-proof: add a real column later and only the API line changes. |
 | _(recording card click)_ | — | `recordings[].public_url` + `.file_type` | opens modal (video/audio) or new tab (pdf) | whole card is clickable; default type `video` |
 | `ind-files-list` | list | `data.files[]` | repeater of file cards | |
 | `ind-files-empty` | empty | — | shown when `files[]` empty | |
@@ -88,38 +89,49 @@ Source object: `data.cohort` (object or null) + `data.cohort.sessions[]`.
 | `cohort-my-goal` | text | `cohort.member_goal` | member's cohort goal | ✅ |
 | `cohort-zoom-link` | href | `cohort.zoom_link` | sets `href` (only if url present) | ✅ |
 | `cohort-telegram-link` | href | `cohort.telegram_link` | sets `href` | ✅ |
+| `cohort-sessions-completed` | text | `cohort.sessions_done` | number | ✅ from `cohorts.current_session` (group progress, advanced manually by the coach); `"0"` if null; `eachEl` |
+| `cohort-sessions-total` | text | `cohort.total_sessions` | number | ✅ `"0"` if null; `eachEl` |
+| `cohort-session-display` | toggle | (computed) | the "next session" block; shown only when a future session exists | ✅ derived — no cohort-level `next_session_at` column; the script picks the earliest session still ahead. No `-schedule` counterpart: cohort dates are coach-set, so the block just hides. |
+| `cohort-next-session-date` | text | (computed) | `"Month Day"` | ✅ only meaningful inside `-display` |
+| `cohort-next-session-time` | text | (computed) | `"h:mm AM/PM TZ"` | ✅ local time + tz abbrev |
 | `cohort-sessions-list` | list | `cohort.sessions[]` | repeater of cohort session cards | ✅ |
 | `cohort-sessions-empty` | empty | — | shown when no sessions | ✅ |
 | `cohort-session-number` | item | `sessions[].session_number` | `"Session N"` | ✅ |
+| `cohort-session-title` | item | `sessions[].title` | free-text session name | ✅ |
 | `cohort-session-prompt` | item | `sessions[].prompt_text` | discussion prompt | ✅ |
 | `cohort-session-locked` | toggle | (computed) | shown when `today < session_date` | ✅ lock logic |
 | `cohort-session-unlocked` | toggle | (computed) | shown when session date has passed | ✅ |
 | `cohort-session-date` | item | `sessions[].session_date` | `"Year Month Day"` | ✅ only set on unlocked cards |
+| `cohort-files-list` | list | `cohort.files[]` | repeater of cohort-wide files | ✅ |
+| `cohort-files-empty` | empty | — | shown when no cohort-wide files | ✅ |
+| `cohort-file-title` | item | `files[].title` | title | ✅ |
+| `cohort-my-files-list` | list | `cohort.my_files[]` | repeater of this member's private cohort files | ✅ |
+| `cohort-my-files-empty` | empty | — | shown when the member has none | ✅ |
+| `cohort-my-file-title` | item | `my_files[].title` | title | ✅ |
+| `cohort-my-file-description` | item | `my_files[].description` | description | ✅ blank if none |
 
-**Lock rule (current):** a session is locked until its own `session_date` passes. (There's also
-an intended "whole cohort ended → unlock everything" rule, but it depends on a field the API
-doesn't send yet — see §D.)
+**Lock rule:** a session is locked until its own `session_date` passes — UNLESS `cohort.end_date`
+has passed, which unlocks every session at once. `end_date` is optional; leave it empty for an
+open-ended cohort and locking stays purely per-session.
+
+**The three cohort file shapes** are one table (`content_items`) distinguished by which columns
+are set — no separate tables:
+
+| Columns set | Shows up as |
+|---|---|
+| `cohort_id` + `cohort_session_id` | that session's files (inside the session card) |
+| `cohort_id`, `client_id` NULL | `cohort.files[]` — cohort-wide, everyone sees them |
+| `cohort_id` + `client_id` | `cohort.my_files[]` — private to that member |
 
 ---
 
-## D. ⚠️ Cohort GAPS — script reads these, API does NOT send them
+## D. Remaining gap — per-session recordings
 
-These render **blank / empty / non-functional** today. Not bugs in Webflow — the data isn't in
-the response. Each with its fix path:
+One item from the original gap list is still open, by choice:
 
 | Field / behavior | Symptom | Fix path |
 |---|---|---|
-| `cohort-session-title` ← `session.title` | title blank; unlocked card title falls back to `"Session N"` | **Easiest.** `title` column EXISTS on `cohort_sessions`; the route's `buildCohortObject` projection just drops it. Add `title` to the emitted per-session object in `app/api/portal/route.ts`. |
-| `session.recording_url` + `session.file_type` | unlocked cohort sessions are never clickable (no play) | API returns no per-session recording. Needs a recording source wired to cohort sessions, then emitted. |
-| `cohort.end_date` | "cohort ended unlocks all" branch never fires; locking is purely per-session-date | No `end_date` column on the cohort. Add column + emit it, or drop the branch from the script. |
-| `cohort-files-list` ← `cohort.files[]` | list always shows empty state | API groups files per-session only; no cohort-wide `files[]` returned. Add a query for `cohort_session_id IS NULL` files + emit. |
-| `cohort-my-files-list` ← `cohort.my_files[]` | list always shows empty state | No per-member cohort-files concept in the API. Needs design + query. |
-| `session.files[]` (gap other direction) | API DOES attach per-session files, script never renders them | `filesBySession` → `cohort.sessions[].files[]` IS in the payload, but `fillCohortSessionCard` doesn't render them. Add rendering in the script if per-session files should show. |
-
-**Item/empty sub-fields of those two dead lists** (won't populate until the lists get data):
-- Under `cohort-files-list`: `cohort-files-empty` (empty state), `cohort-file-title` (item).
-- Under `cohort-my-files-list`: `cohort-my-files-empty` (empty state), `cohort-my-file-title` and
-  `cohort-my-file-description` (item fields).
+| `session.recording_url` + `session.file_type` | unlocked cohort session cards are never clickable (no play button) | The API sends `sessions[].files[]`, but `fillCohortSessionCard` reads `session.recording_url`, which is never emitted. Either render `files[]` inside the session card, or promote the first file to `recording_url`. Deferred — decide the intended UX first (one recording per session vs. a file list). |
 
 ---
 
@@ -190,6 +202,7 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
   ],
   "recordings": [
     { "title": "string", "session_label": "string|null",
+      "recorded_at": "2026-06-01T18:22:00Z",  // = content_items.created_at (upload time)
       "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
   ],
   "files": [
@@ -207,17 +220,29 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
   "name": "string",
   "zoom_link": "https://…|null",     // from cohort.zoom_url
   "telegram_link": "https://…|null", // from cohort.telegram_url
+  "end_date": "2026-08-01T23:59:59Z|null",  // passed → every session unlocks
+  "sessions_done": 2,                // from cohorts.current_session
+  "total_sessions": 4,
   "member_goal": "string",
   "sessions": [
     { "session_number": 1,
       "session_date": "2026-06-01|null",
+      "title": "string",
       "prompt_text": "string",
-      "files": [                     // ⚠️ present in payload, not rendered by script yet (§D)
-        { "title": "string", "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
+      "files": [                     // ⚠️ in the payload; session cards don't render it yet (§D)
+        { "title": "string", "description": "string|null",
+          "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
       ] }
+  ],
+  "files": [                         // cohort-wide (client_id NULL)
+    { "title": "string", "description": "string|null",
+      "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
+  ],
+  "my_files": [                      // private to this member within the cohort
+    { "title": "string", "description": "string|null",
+      "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
   ]
-  // NOTE: no `end_date`, no per-session `title`/`recording_url`/`file_type`,
-  //       no top-level `files`/`my_files` — see §D.
+  // NOTE: still no per-session `recording_url`/`file_type` — see §D.
 }
 ```
 

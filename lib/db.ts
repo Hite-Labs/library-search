@@ -775,6 +775,7 @@ export interface Cohort {
   zoom_url: string;
   telegram_url: string;
   start_date: string | null;
+  end_date: string | null;
   session_cadence: 'weekly' | 'biweekly';
   created_at: string;
 }
@@ -822,13 +823,15 @@ export async function createCohort(data: {
   totalSessions?: number;
   telegramUrl?: string;
   startDate?: string | null;
+  endDate?: string | null;
   sessionCadence?: 'weekly' | 'biweekly';
 }): Promise<Cohort> {
   const sql = getSql();
   const rows = await sql`
-    INSERT INTO cohorts (name, description, goal, total_sessions, telegram_url, start_date, session_cadence)
+    INSERT INTO cohorts (name, description, goal, total_sessions, telegram_url, start_date, end_date, session_cadence)
     VALUES (${data.name}, ${data.description ?? ''}, ${data.goal ?? ''}, ${data.totalSessions ?? 4},
-            ${data.telegramUrl ?? ''}, ${data.startDate ?? null}, ${data.sessionCadence ?? 'weekly'})
+            ${data.telegramUrl ?? ''}, ${data.startDate ?? null}, ${data.endDate ?? null},
+            ${data.sessionCadence ?? 'weekly'})
     RETURNING *`;
   return rows[0] as Cohort;
 }
@@ -862,6 +865,7 @@ export async function updateCohort(
     zoomUrl?: string;
     telegramUrl?: string;
     startDate?: string | null;
+    endDate?: string | null;
     sessionCadence?: 'weekly' | 'biweekly';
   },
 ): Promise<Cohort | null> {
@@ -877,6 +881,7 @@ export async function updateCohort(
       zoom_url = COALESCE(${data.zoomUrl ?? null}, zoom_url),
       telegram_url = COALESCE(${data.telegramUrl ?? null}, telegram_url),
       start_date = ${data.startDate === undefined ? sql`start_date` : data.startDate},
+      end_date = ${data.endDate === undefined ? sql`end_date` : data.endDate},
       session_cadence = COALESCE(${data.sessionCadence ?? null}, session_cadence)
     WHERE id = ${id}
     RETURNING *`;
@@ -1106,11 +1111,13 @@ export async function getCohortForPortal(memberstackId: string): Promise<{
   memberGoal: string;
   sessions: CohortSession[];
   filesBySession: Map<string, ContentItem[]>;
+  cohortFiles: ContentItem[];
+  myFiles: ContentItem[];
 } | null> {
   const sql = getSql();
   // Pick the member's cohort enrollment: active first, else most recent.
   const enrollRows = await sql`
-    SELECT e.cohort_id, e.goal, e.status, e.created_at
+    SELECT e.cohort_id, e.goal, e.status, e.created_at, e.client_id
     FROM enrollments e JOIN clients c ON c.id = e.client_id
     WHERE c.memberstack_id = ${memberstackId} AND e.cohort_id IS NOT NULL
     ORDER BY (e.status = 'active') DESC, e.created_at DESC
@@ -1118,25 +1125,43 @@ export async function getCohortForPortal(memberstackId: string): Promise<{
   if (!enrollRows[0]) return null;
   const cohortId = enrollRows[0].cohort_id as string;
   const memberGoal = enrollRows[0].goal as string;
+  const clientId = enrollRows[0].client_id as string;
 
   const cohort = await getCohort(cohortId);
   if (!cohort) return null;
 
   const sessions = await getCohortSessions(cohortId);
 
-  // Files tied to a specific session (cohort-wide files, cohort_session_id NULL, are
-  // surfaced elsewhere if needed; the portal groups per-session per spec §4).
-  const fileRows = (await sql`
-    SELECT * FROM content_items
-    WHERE cohort_id = ${cohortId} AND cohort_session_id IS NOT NULL
-    ORDER BY created_at DESC`) as ContentItem[];
+  // Three cohort content shapes, distinguished by which columns are set:
+  //   cohort_session_id set              → that session's files (grouped per session)
+  //   no session, client_id NULL         → cohort-wide files, everyone in the cohort sees them
+  //   no session, client_id = the member → private to this member within the cohort
+  const [sessionFileRows, cohortFileRows, myFileRows] = await Promise.all([
+    sql`SELECT * FROM content_items
+        WHERE cohort_id = ${cohortId} AND cohort_session_id IS NOT NULL
+        ORDER BY created_at DESC`,
+    sql`SELECT * FROM content_items
+        WHERE cohort_id = ${cohortId} AND cohort_session_id IS NULL AND client_id IS NULL
+        ORDER BY created_at DESC`,
+    sql`SELECT * FROM content_items
+        WHERE cohort_id = ${cohortId} AND cohort_session_id IS NULL AND client_id = ${clientId}
+        ORDER BY created_at DESC`,
+  ]);
+
   const filesBySession = new Map<string, ContentItem[]>();
-  for (const f of fileRows) {
+  for (const f of sessionFileRows as ContentItem[]) {
     const key = f.cohort_session_id as string;
     const arr = filesBySession.get(key) ?? [];
     arr.push(f);
     filesBySession.set(key, arr);
   }
 
-  return { cohort, memberGoal, sessions, filesBySession };
+  return {
+    cohort,
+    memberGoal,
+    sessions,
+    filesBySession,
+    cohortFiles: cohortFileRows as ContentItem[],
+    myFiles: myFileRows as ContentItem[],
+  };
 }
