@@ -1058,6 +1058,53 @@ export async function addCohortMember(data: {
   };
 }
 
+/**
+ * Remove someone from a cohort by deleting their cohort enrollment.
+ *
+ * Deliberately narrow: scoped to `program_type = 'cohort'` and the given cohort, so this
+ * can never delete an individual pack. The person's client record and any other
+ * enrollments are untouched, and their Memberstack plan is left alone — the dashboard
+ * owns enrollment, not plan state, and revoking a plan here could lock someone out of an
+ * individual pack they still have.
+ *
+ * Content uploaded against the cohort stays on the cohort (it belongs to the group, not
+ * the departing member); anything scoped to them personally keeps its client_id and
+ * simply stops being reachable through this cohort.
+ *
+ * Returns the deleted enrollment, or null if they weren't a member.
+ */
+export async function removeCohortMember(
+  cohortId: string,
+  enrollmentId: string,
+): Promise<Enrollment | null> {
+  const sql = getSql();
+  const rows = await sql`
+    DELETE FROM enrollments
+    WHERE id = ${enrollmentId}
+      AND cohort_id = ${cohortId}
+      AND program_type = 'cohort'
+    RETURNING *`;
+  return (rows[0] as Enrollment) ?? null;
+}
+
+/**
+ * Cohorts a given person could join: active only, minus the ones they're already in.
+ * Feeds the "Join a cohort" picker on the client detail page — the cohort counterpart of
+ * the existing-client picker used when adding members from the cohort side.
+ */
+export async function getJoinableCohorts(clientId: string): Promise<Cohort[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM cohorts c
+    WHERE c.status = 'active'
+      AND NOT EXISTS (
+        SELECT 1 FROM enrollments e
+        WHERE e.cohort_id = c.id AND e.client_id = ${clientId}
+      )
+    ORDER BY c.created_at DESC`;
+  return rows as Cohort[];
+}
+
 export async function getCohortContent(cohortId: string): Promise<ContentItem[]> {
   const sql = getSql();
   const rows = await sql`

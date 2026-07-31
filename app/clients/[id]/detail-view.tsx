@@ -303,7 +303,7 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
           onChange={load}
         />
 
-        <StartNewPack clientId={clientId} onCreated={load} />
+        <AddProgram clientId={clientId} onCreated={load} />
 
         <DangerZone clientId={clientId} clientName={data.client.name} />
       </div>
@@ -922,40 +922,139 @@ function ClientContentSection({
   );
 }
 
-function StartNewPack({ clientId, onCreated }: { clientId: string; onCreated: () => void }) {
-  const [open, setOpen] = useState(false);
+interface JoinableCohort { id: string; name: string; goal: string; total_sessions: number }
+
+/**
+ * Person-level "add a program" control. Offers both program types, because this sits under
+ * the tabs and belongs to the person, not to whichever tab happens to be open: a new
+ * individual pack (goal + session count), or joining an existing active cohort.
+ *
+ * Cohorts are joined, never created here — creating one is a coach-level act with its own
+ * schedule and roster, so the picker only lists active cohorts the person isn't already in.
+ */
+function AddProgram({ clientId, onCreated }: { clientId: string; onCreated: () => void }) {
+  const [open, setOpen] = useState<null | 'pack' | 'cohort'>(null);
   const [goal, setGoal] = useState('');
   const [totalSessions, setTotalSessions] = useState('6');
+  const [cohorts, setCohorts] = useState<JoinableCohort[]>([]);
+  const [pickedCohortId, setPickedCohortId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function submit(e: FormEvent) {
+  // Load joinable cohorts when the cohort form opens. Refetched each time, since the
+  // set changes as cohorts are created, archived, or joined elsewhere.
+  useEffect(() => {
+    if (open !== 'cohort') return;
+    fetch(`/api/cohorts/picker?clientId=${encodeURIComponent(clientId)}`)
+      .then((r) => r.json())
+      .then((d) => setCohorts(d.cohorts ?? []))
+      .catch(() => setCohorts([]));
+  }, [open, clientId]);
+
+  function close() {
+    setOpen(null); setGoal(''); setTotalSessions('6');
+    setPickedCohortId(null); setError(null);
+  }
+
+  async function createPack(e: FormEvent) {
     e.preventDefault();
-    setSaving(true);
-    await fetch(`/api/clients/${clientId}/enrollments`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal, totalSessions: parseInt(totalSessions, 10) || 6 }),
-    });
-    setGoal(''); setTotalSessions('6'); setSaving(false); setOpen(false);
-    onCreated();
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/enrollments`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goal, totalSessions: parseInt(totalSessions, 10) || 6 }),
+      });
+      if (!res.ok) throw new Error('Failed to create pack');
+      close();
+      onCreated();
+    } catch (err) { setError(String(err)); } finally { setSaving(false); }
+  }
+
+  async function joinCohort(e: FormEvent) {
+    e.preventDefault();
+    if (!pickedCohortId) return;
+    setSaving(true); setError(null);
+    try {
+      // Same endpoint the cohort roster uses — one code path for joining, so Memberstack
+      // provisioning and the duplicate check behave identically from both directions.
+      const res = await fetch(`/api/cohorts/${pickedCohortId}/members`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, goal }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error ?? 'Failed to join cohort');
+      if (data.alreadyMember) throw new Error('Already a member of that cohort.');
+      close();
+      onCreated();
+    } catch (err) { setError(String(err)); } finally { setSaving(false); }
+  }
+
+  if (!open) {
+    return (
+      <div className="mt-4 flex gap-4">
+        <button onClick={() => setOpen('pack')} className="text-sm text-plum hover:text-plum/80 font-medium">
+          + Start a new pack
+        </button>
+        <button onClick={() => setOpen('cohort')} className="text-sm text-plum hover:text-plum/80 font-medium">
+          + Join a cohort
+        </button>
+      </div>
+    );
   }
 
   return (
     <div className="mt-4">
-      {!open ? (
-        <button onClick={() => setOpen(true)} className="text-sm text-plum hover:text-plum/80 font-medium">
-          + Start a new pack
-        </button>
-      ) : (
-        <form onSubmit={submit} className="bg-white rounded-2xl border border-gold/20 p-4 space-y-3">
+      {open === 'pack' ? (
+        <form onSubmit={createPack} className="bg-white rounded-2xl border border-gold/20 p-4 space-y-3">
           <h3 className="font-label text-xs text-plum">Start a new program (pack)</h3>
           <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2} placeholder="Goal for this pack"
             className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
           <input type="number" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)} min="1"
             className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+          {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex gap-2">
-            <button type="button" onClick={() => setOpen(false)} className="btn-spark-outline flex-1">Cancel</button>
+            <button type="button" onClick={close} className="btn-spark-outline flex-1">Cancel</button>
             <button type="submit" disabled={saving} className="btn-spark flex-1 disabled:opacity-50">
               {saving ? 'Creating…' : 'Create pack'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <form onSubmit={joinCohort} className="bg-white rounded-2xl border border-gold/20 p-4 space-y-3">
+          <h3 className="font-label text-xs text-plum">Join a cohort</h3>
+          {cohorts.length === 0 ? (
+            <p className="text-xs text-slate/60">
+              No active cohorts available to join — either none are active, or this person is already in all of them.
+            </p>
+          ) : (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {cohorts.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setPickedCohortId(c.id)}
+                  className={`w-full text-left border rounded-lg px-3 py-2 transition-colors ${
+                    pickedCohortId === c.id
+                      ? 'border-gold bg-petal/60'
+                      : 'border-gold/20 hover:border-gold/50'
+                  }`}
+                >
+                  <p className="text-sm text-slate truncate">{c.name}</p>
+                  <p className="text-xs text-slate/60 truncate">
+                    {c.goal || `${c.total_sessions} sessions`}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+          <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2}
+            placeholder="This person's goal for the cohort (optional)"
+            className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={close} className="btn-spark-outline flex-1">Cancel</button>
+            <button type="submit" disabled={saving || !pickedCohortId} className="btn-spark flex-1 disabled:opacity-50">
+              {saving ? 'Joining…' : 'Join cohort'}
             </button>
           </div>
         </form>
