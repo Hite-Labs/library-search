@@ -75,6 +75,9 @@
     eachEl('[data-field="ind-sessions-total"]', hide);
     eachEl('[data-field="ind-next-session-display"]', hide);
     eachEl('[data-field="ind-next-session-schedule"]', hide);
+    eachEl('[data-field="cohort-session-display"]', hide);
+    eachEl('[data-field="cohort-sessions-completed"]', hide);
+    eachEl('[data-field="cohort-sessions-total"]', hide);
   }
 
   function showError(message) {
@@ -301,6 +304,7 @@
   function fillRecordingCard(card, recording) {
     setField(card, 'ind-recording-title', recording.title);
     setField(card, 'ind-recording-label', recording.session_label || '');
+    setField(card, 'ind-recording-date', formatDate(recording.recorded_at));
 
     var url = recording.public_url || '';
     var fileType = recording.file_type || 'video';
@@ -424,6 +428,44 @@
     });
   }
 
+  // The cohort's next session is derived, not a stored field: the earliest scheduled
+  // session still in the future. Mirrors renderNextSession on the individual side, but
+  // there's no "schedule a session" counterpart — cohort dates are fixed by the coach,
+  // so when nothing is upcoming the whole block simply hides.
+  function renderCohortNextSession(sessions) {
+    var now = new Date();
+    var next = null;
+
+    (sessions || []).forEach(function (s) {
+      if (!s.session_date) return;
+      var d = new Date(s.session_date);
+      if (isNaN(d.getTime()) || d < now) return;
+      if (!next || d < next) next = d;
+    });
+
+    if (!next) {
+      eachEl('[data-field="cohort-session-display"]', hide);
+      return;
+    }
+
+    eachEl('[data-field="cohort-next-session-date"]', function (el) {
+      el.textContent = next.toLocaleDateString(undefined, {
+        month: 'long',
+        day: 'numeric'
+      });
+    });
+
+    eachEl('[data-field="cohort-next-session-time"]', function (el) {
+      el.textContent = next.toLocaleTimeString(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short'
+      });
+    });
+
+    eachEl('[data-field="cohort-session-display"]', show);
+  }
+
   function renderCohort(cohort) {
     if (!cohort) return;
     cohort = cohort || {};
@@ -433,6 +475,22 @@
       goalEl.textContent = cohort.member_goal || '';
       show(goalEl);
     }
+
+    var cohortDone =
+      cohort.sessions_done == null ? '0' : String(cohort.sessions_done);
+    eachEl('[data-field="cohort-sessions-completed"]', function (el) {
+      el.textContent = cohortDone;
+      show(el);
+    });
+
+    var cohortTotal =
+      cohort.total_sessions == null ? '0' : String(cohort.total_sessions);
+    eachEl('[data-field="cohort-sessions-total"]', function (el) {
+      el.textContent = cohortTotal;
+      show(el);
+    });
+
+    renderCohortNextSession(cohort.sessions);
 
     setLink(document, 'cohort-zoom-link', cohort.zoom_link);
     setLink(document, 'cohort-telegram-link', cohort.telegram_link);

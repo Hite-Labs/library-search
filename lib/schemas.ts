@@ -109,6 +109,7 @@ export const CreateCohortSchema = z.object({
   totalSessions: z.number().int().positive().default(4),
   telegramUrl: z.string().optional(),
   startDate: z.string().datetime().nullable().optional(),
+  endDate: z.string().datetime().nullable().optional(),
   sessionCadence: z.enum(['weekly', 'biweekly']).optional(),
 });
 
@@ -122,6 +123,7 @@ export const UpdateCohortSchema = z.object({
   zoomUrl: z.string().optional(),
   telegramUrl: z.string().optional(),
   startDate: z.string().datetime().nullable().optional(),
+  endDate: z.string().datetime().nullable().optional(),
   sessionCadence: z.enum(['weekly', 'biweekly']).optional(),
 });
 

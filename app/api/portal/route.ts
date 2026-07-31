@@ -6,6 +6,7 @@ import {
   getClientContentByKind,
   getCohortForPortal,
   type Enrollment,
+  type ContentItem,
 } from '@/lib/db';
 import { getPresignedGetUrl } from '@/lib/r2';
 import { verifyMemberToken } from '@/lib/memberstack';
@@ -72,34 +73,44 @@ function pickEnrollment(enrollments: Enrollment[]): Enrollment | null {
 async function buildCohortObject(memberstackId: string) {
   const data = await getCohortForPortal(memberstackId);
   if (!data) return null;
-  const { cohort, memberGoal, sessions, filesBySession } = data;
+  const { cohort, memberGoal, sessions, filesBySession, cohortFiles, myFiles } = data;
+
+  // Shared projection for a cohort file card (portal-safe: signed URL, never the r2 key).
+  const toPortalFile = async (f: ContentItem) => ({
+    title: f.title,
+    description: f.description || null,
+    public_url: await getPresignedGetUrl(f.r2_key),
+    file_type: f.media_type,
+  });
 
   // getCohortSessions orders by sort_order/session_date; number oldest=1 for display.
-  const portalSessions = await Promise.all(
-    sessions.map(async (s, i) => {
-      const rawFiles = filesBySession.get(s.id) ?? [];
-      const files = await Promise.all(
-        rawFiles.map(async (f) => ({
-          title: f.title,
-          public_url: await getPresignedGetUrl(f.r2_key),
-          file_type: f.media_type,
-        })),
-      );
-      return {
+  const [portalSessions, portalCohortFiles, portalMyFiles] = await Promise.all([
+    Promise.all(
+      sessions.map(async (s, i) => ({
         session_number: i + 1,
         session_date: s.session_date,
+        title: s.title,
         prompt_text: s.prompt_text,
-        files,
-      };
-    }),
-  );
+        files: await Promise.all((filesBySession.get(s.id) ?? []).map(toPortalFile)),
+      })),
+    ),
+    Promise.all(cohortFiles.map(toPortalFile)),
+    Promise.all(myFiles.map(toPortalFile)),
+  ]);
 
   return {
     id: cohort.id,
     name: cohort.name,
     zoom_link: cohort.zoom_url,
     telegram_link: cohort.telegram_url,
+    end_date: cohort.end_date,
+    // Group progress, advanced manually by the coach — the cohort counterpart of the
+    // individual pack's sessions_done / total_sessions.
+    sessions_done: cohort.current_session,
+    total_sessions: cohort.total_sessions,
     sessions: portalSessions,
+    files: portalCohortFiles,
+    my_files: portalMyFiles,
     member_goal: memberGoal,
   };
 }
@@ -165,10 +176,14 @@ export async function GET(req: NextRequest) {
     getClientContentByKind(client.id, 'recording'),
     getClientContentByKind(client.id, 'file'),
   ]);
+  // recorded_at: content_items has no true "session recorded" date, so this is created_at
+  // (when the recording was added). Accurate when uploaded near the session; for a bulk
+  // backfill every card shows the same day. Swap in a real column later without renaming.
   const recordings = await Promise.all(
     rawRecordings.map(async (r) => ({
       title: r.title,
       session_label: r.session_label,
+      recorded_at: r.created_at,
       public_url: await getPresignedGetUrl(r.r2_key),
       file_type: r.media_type,
     })),

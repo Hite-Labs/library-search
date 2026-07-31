@@ -20,7 +20,7 @@ interface Cohort {
   id: string; name: string; description: string; goal: string;
   total_sessions: number; current_session: number; status: 'active' | 'complete' | 'archived';
   zoom_url: string; telegram_url: string;
-  start_date: string | null; session_cadence: 'weekly' | 'biweekly';
+  start_date: string | null; end_date: string | null; session_cadence: 'weekly' | 'biweekly';
 }
 interface CohortSession { id: string; session_date: string | null; title: string; sort_order: number; prompt_text: string; }
 interface Member { enrollment_id: string; client_id: string; client_name: string; client_email: string; goal: string; status: string; }
@@ -183,11 +183,15 @@ function EditCohortModal({
   const [goal, setGoal] = useState(cohort.goal);
   const [totalSessions, setTotalSessions] = useState(String(cohort.total_sessions));
   const [status, setStatus] = useState(cohort.status);
+  const [endDate, setEndDate] = useState(cohort.end_date ? cohort.end_date.slice(0, 10) : '');
 
   function save() {
     const body: Record<string, unknown> = { goal, status };
     const n = parseInt(totalSessions, 10);
     if (n > 0) body.totalSessions = n;
+    // End of the chosen day, so the portal's "cohort ended" unlock fires after that
+    // day's session rather than at midnight before it. Empty clears the date.
+    body.endDate = endDate ? new Date(`${endDate}T23:59:59`).toISOString() : null;
     onSave(body);
   }
 
@@ -204,6 +208,11 @@ function EditCohortModal({
           <div>
             <label className={INPUT_LABEL}>Number of sessions</label>
             <input type="number" min="1" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)}
+              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+          </div>
+          <div>
+            <label className={INPUT_LABEL}>End date <span className="font-normal normal-case text-slate/50">(optional — unlocks all sessions once passed)</span></label>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
               className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           </div>
           <div>

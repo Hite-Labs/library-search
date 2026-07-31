@@ -127,6 +127,21 @@ ALTER TABLE cohort_sessions ADD COLUMN prompt_text text NOT NULL DEFAULT '';
 ALTER TABLE content_items ADD COLUMN cohort_session_id uuid REFERENCES cohort_sessions(id);
 CREATE INDEX content_items_cohort_session_id_idx ON content_items (cohort_session_id);
 
+-- Cohort end date: when the whole program finishes. Drives the portal's "cohort ended →
+-- unlock every session" rule, which otherwise never fires. Nullable — an open-ended cohort
+-- simply locks per-session-date as before.
+ALTER TABLE cohorts ADD COLUMN end_date timestamptz;
+
+-- Per-member cohort files. No new column needed: content_items already carries both
+-- cohort_id and client_id, so the three cohort content shapes are distinguished by which
+-- are set —
+--   cohort_id + cohort_session_id  → that session's shared files
+--   cohort_id, client_id NULL      → cohort-wide files (everyone sees them)
+--   cohort_id + client_id          → private to that member within the cohort
+-- This index serves the last case (the portal's `my_files` query).
+CREATE INDEX content_items_cohort_client_idx ON content_items (cohort_id, client_id)
+  WHERE cohort_id IS NOT NULL AND client_id IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION match_content_items(
   query_embedding vector(1024),
   match_threshold float,
