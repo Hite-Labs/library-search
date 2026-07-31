@@ -1,10 +1,6 @@
 'use client';
 
-const MEDIA_BADGES: Record<string, { label: string; className: string }> = {
-  audio: { label: 'Audio', className: 'bg-violet-100 text-violet-700' },
-  video: { label: 'Video', className: 'bg-blue-100 text-blue-700' },
-  pdf: { label: 'Written', className: 'bg-amber-100 text-amber-700' },
-};
+import { MEDIA_BADGES } from '@/components/MediaBadge';
 
 interface ResultCardProps {
   title: string;

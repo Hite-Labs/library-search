@@ -158,6 +158,127 @@ export async function matchContentItemsForMember(
   return rows as MatchResult[];
 }
 
+// ── Public library browser (admin) ───────────────────────────────────────────
+
+/**
+ * Row shape for the library browser list. Deliberately omits two columns that
+ * ContentItem/`SELECT *` would drag along: `embedding` (vector(1024) — absent from
+ * the ContentItem interface but very much present on the wire, ~20KB per row) and
+ * `transcript` (routinely 12k+ characters). The transcript is replaced by its
+ * length so the list can flag "has a transcript" without shipping the text; the
+ * full transcript comes back only from getLibraryItem.
+ */
+export interface LibraryListItem {
+  id: string;
+  webflow_item_id: string | null;
+  title: string;
+  description: string;
+  media_type: 'audio' | 'video' | 'pdf';
+  use_cases: string;
+  modality: string | null;
+  mood_tags: string;
+  duration_seconds: number | null;
+  r2_key: string;
+  public_url: string;
+  content_page_url: string | null;
+  created_at: string;
+  transcript_length: number;
+}
+
+/** getLibraryItem/updateLibraryItem return the list shape plus the full transcript. */
+export type LibraryItemDetail = LibraryListItem & { transcript: string | null };
+
+/**
+ * Everything in the public content library, newest first.
+ *
+ * "Public library" is exactly the match_content_items definition — client_id IS NULL
+ * AND cohort_id IS NULL — so private client recordings and cohort-shared files never
+ * appear here.
+ *
+ * LIMIT 1000 is a safety cap, not pagination: the whole list is fetched once and
+ * filtered client-side. Callers should tell the user when the cap is hit, since a
+ * silently truncated library defeats the point of the page.
+ */
+export async function listLibraryItems(): Promise<LibraryListItem[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, webflow_item_id, title, description, media_type,
+           use_cases, modality, mood_tags, duration_seconds,
+           r2_key, public_url, content_page_url, created_at,
+           COALESCE(length(transcript), 0) AS transcript_length
+    FROM content_items
+    WHERE client_id IS NULL AND cohort_id IS NULL
+    ORDER BY created_at DESC
+    LIMIT 1000
+  `;
+  return rows as LibraryListItem[];
+}
+
+/**
+ * One public-library item including its full transcript, for the detail panel.
+ * The client_id/cohort_id guard means this can never be used to read a private
+ * client recording or cohort file by guessing its id.
+ */
+export async function getLibraryItem(id: string): Promise<LibraryItemDetail | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, webflow_item_id, title, description, media_type,
+           use_cases, modality, mood_tags, duration_seconds,
+           r2_key, public_url, content_page_url, created_at,
+           transcript,
+           COALESCE(length(transcript), 0) AS transcript_length
+    FROM content_items
+    WHERE id = ${id} AND client_id IS NULL AND cohort_id IS NULL
+  `;
+  return (rows[0] as LibraryItemDetail) ?? null;
+}
+
+/**
+ * Update a public-library item's metadata and rewrite its embedding in one statement.
+ *
+ * The embedding is a required argument rather than an optional one on purpose: the
+ * editable fields ARE the embedding's source text (see buildEmbeddingText), so a
+ * metadata write without a fresh vector would leave search matching on text the
+ * dashboard no longer shows — a silent, invisible drift.
+ *
+ * COALESCE keeps existing values for omitted fields (same idiom as updateEnrollment
+ * / updateCohort). modality and duration_seconds are handled with the sql-fragment
+ * form instead, because both are legitimately nullable and COALESCE couldn't tell
+ * "leave this alone" apart from "clear it".
+ */
+export async function updateLibraryItem(
+  id: string,
+  data: {
+    title?: string;
+    description?: string;
+    useCases?: string;
+    modality?: string | null;
+    moodTags?: string;
+    durationSeconds?: number | null;
+  },
+  embedding: number[],
+): Promise<LibraryItemDetail | null> {
+  const sql = getSql();
+  const embeddingStr = `[${embedding.join(',')}]`;
+  const rows = await sql`
+    UPDATE content_items SET
+      title = COALESCE(${data.title ?? null}, title),
+      description = COALESCE(${data.description ?? null}, description),
+      use_cases = COALESCE(${data.useCases ?? null}, use_cases),
+      mood_tags = COALESCE(${data.moodTags ?? null}, mood_tags),
+      modality = ${data.modality === undefined ? sql`modality` : data.modality},
+      duration_seconds = ${data.durationSeconds === undefined ? sql`duration_seconds` : data.durationSeconds},
+      embedding = ${embeddingStr}::vector
+    WHERE id = ${id} AND client_id IS NULL AND cohort_id IS NULL
+    RETURNING id, webflow_item_id, title, description, media_type,
+              use_cases, modality, mood_tags, duration_seconds,
+              r2_key, public_url, content_page_url, created_at,
+              transcript,
+              COALESCE(length(transcript), 0) AS transcript_length
+  `;
+  return (rows[0] as LibraryItemDetail) ?? null;
+}
+
 // ── Client management (coaching) ─────────────────────────────────────────────
 
 export interface Client {

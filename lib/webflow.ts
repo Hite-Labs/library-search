@@ -110,9 +110,65 @@ export async function createCmsItem(data: {
   return item.id as string;
 }
 
+/**
+ * Patch an existing CMS item's editable metadata, mirroring createCmsItem's field
+ * mapping so an edited item and a freshly-created one end up shaped identically.
+ *
+ * This exists rather than callers reaching for patchCmsItem directly because
+ * Webflow's Option fields (media-type, modality) take option UUIDs, not names.
+ * The name→id maps are module-private and lazily fetched, so resolving them here
+ * keeps that knowledge inside this module.
+ *
+ * Notably does NOT touch the slug. slugify() appends a random suffix, so
+ * re-slugifying on a title edit would change the live Webflow URL and orphan every
+ * stored content_page_url and every existing search result link. The slug is frozen
+ * once the item is created.
+ *
+ * media-type and the audio-url/video-url fields are likewise never patched — they
+ * describe the stored object, which editing metadata doesn't change.
+ *
+ * Pass undefined for any field to leave Webflow's value alone. An empty modality
+ * clears the field rather than attempting (and failing) to resolve an option id.
+ */
+export async function updateCmsItem(
+  itemId: string,
+  data: {
+    title?: string;
+    description?: string;
+    durationSeconds?: number | null;
+    useCases?: string;
+    modality?: string | null;
+    moodTags?: string;
+  },
+): Promise<void> {
+  const fieldData: Record<string, string | number | null> = {};
+
+  if (data.title !== undefined) fieldData.name = data.title;
+  if (data.description !== undefined) fieldData.description = data.description;
+  if (data.durationSeconds !== undefined) fieldData.duration = data.durationSeconds;
+  if (data.useCases !== undefined) fieldData['use-cases'] = data.useCases;
+  if (data.moodTags !== undefined) fieldData['mood-tags'] = data.moodTags;
+
+  if (data.modality !== undefined) {
+    if (!data.modality) {
+      // Clearing is fine; sending an unresolvable option name is not.
+      fieldData.modality = null;
+    } else {
+      await fetchOptionIds();
+      const modalityId = modalityOptions![data.modality.toLowerCase()];
+      if (!modalityId) throw new Error(`Unknown modality option: ${data.modality}`);
+      fieldData.modality = modalityId;
+    }
+  }
+
+  if (Object.keys(fieldData).length === 0) return;
+  await patchCmsItem(itemId, fieldData);
+}
+
 export async function patchCmsItem(
   itemId: string,
-  fieldData: Record<string, string | null>,
+  // Widened to include numbers: the `duration` field is an integer, not a string.
+  fieldData: Record<string, string | number | null>,
 ): Promise<void> {
   const res = await fetch(
     `${BASE_URL}/collections/${env.WEBFLOW_COLLECTION_ID}/items/${itemId}`,
