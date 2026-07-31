@@ -9,6 +9,8 @@ const LINKS = [
   { href: '/library', label: 'Library' },
   { href: '/clients', label: 'Clients' },
   { href: '/cohorts', label: 'Cohorts' },
+  // Dashboard-vs-Memberstack drift check. Read occasionally, not part of daily flow.
+  { href: '/reconcile', label: 'Access' },
 ];
 
 export function Nav() {

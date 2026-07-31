@@ -39,6 +39,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/api/clients') ||
     pathname.startsWith('/api/enrollments') ||
     pathname.startsWith('/api/cohorts') ||
+    pathname.startsWith('/api/reconcile') ||
     pathname.startsWith('/api/library');
 
   if (!isProtectedApi) return NextResponse.next();
@@ -62,6 +63,7 @@ export const config = {
     '/api/enrollments/:path*',
     '/api/cohorts/:path*',
     '/api/cohorts',
+    '/api/reconcile',
     // Both entries are required: '/api/library/:path*' does not match the bare
     // '/api/library' list route, and the matcher gates whether proxy() runs at all.
     '/api/library/:path*',
