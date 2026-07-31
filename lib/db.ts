@@ -1,6 +1,6 @@
 import { neon, NeonQueryFunction } from '@neondatabase/serverless';
 import { env } from './env';
-import { provisionMember } from './memberstack';
+import { provisionMember, PlanType } from './memberstack';
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 function getSql(): NeonQueryFunction<false, false> {
@@ -312,13 +312,6 @@ export interface SessionLog {
   created_at: string;
 }
 
-// Row for the clients list view: one enrollment joined with its client + last-session date.
-export interface EnrollmentListRow extends Enrollment {
-  client_name: string;
-  client_email: string;
-  last_session_at: string | null;
-}
-
 export async function findClientByEmail(email: string): Promise<Client | null> {
   const sql = getSql();
   const rows = await sql`SELECT * FROM clients WHERE email = ${email}`;
@@ -343,13 +336,79 @@ export async function setClientMemberstackId(clientId: string, memberstackId: st
   await sql`UPDATE clients SET memberstack_id = ${memberstackId} WHERE id = ${clientId}`;
 }
 
+/**
+ * Ensure a client has a linked Memberstack member, so they can reach the portal.
+ *
+ * Idempotent twice over: it no-ops when the client already has a `memberstack_id`, and
+ * `provisionMember` itself dedupes by email, so an existing member is linked rather than
+ * duplicated.
+ *
+ * Never throws. Provisioning is best-effort by design — Memberstack being down must not
+ * block creating a client — so a failure comes back as `provisionWarning` for the UI to
+ * surface, and the caller carries on.
+ *
+ * `planType` decides which portal panel(s) the member is entitled to; it should match the
+ * program they're being enrolled in (see provisionMember).
+ */
+export async function ensureMemberProvisioned(
+  client: Client,
+  opts: {
+    firstName?: string;
+    lastName?: string;
+    goal?: string;
+    totalSessions?: number;
+    planType?: PlanType;
+  } = {},
+): Promise<{ client: Client; provisionWarning?: string; memberProvisioned: boolean }> {
+  if (client.memberstack_id) return { client, memberProvisioned: false };
+
+  try {
+    const { id } = await provisionMember({
+      email: client.email,
+      firstName: opts.firstName,
+      lastName: opts.lastName,
+      goal: opts.goal,
+      totalSessions: opts.totalSessions,
+      planType: opts.planType ?? 'individual',
+    });
+    await setClientMemberstackId(client.id, id);
+    return { client: { ...client, memberstack_id: id }, memberProvisioned: true };
+  } catch (err) {
+    return {
+      client,
+      memberProvisioned: false,
+      provisionWarning: `Client saved, but Memberstack provisioning failed: ${String(err)}`,
+    };
+  }
+}
+
+/**
+ * Create (or reuse) a client and enrol them in one or both program types.
+ *
+ * `programType` drives everything: which enrollments get created, and which Memberstack
+ * plan(s) the member is provisioned with — a cohort-only person needs the cohort plan or
+ * the portal shows them nothing but the upsell.
+ *
+ * Cohort enrolment is dupe-guarded, so picking a cohort the person is already in adds the
+ * individual pack (for 'both') without creating a second cohort row.
+ */
 export async function createClientWithEnrollment(data: {
   firstName: string;
   lastName: string;
   email: string;
   goal: string;
   totalSessions: number;
-}): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean; provisionWarning?: string; memberProvisioned: boolean }> {
+  programType?: 'individual' | 'cohort' | 'both';
+  cohortId?: string;
+}): Promise<{
+  client: Client;
+  enrollment: Enrollment | null;
+  cohortEnrollment?: Enrollment | null;
+  reusedClient: boolean;
+  alreadyMember?: boolean;
+  provisionWarning?: string;
+  memberProvisioned: boolean;
+}> {
   const sql = getSql();
   const existing = await findClientByEmail(data.email);
 
@@ -370,37 +429,47 @@ export async function createClientWithEnrollment(data: {
   }
 
   // Provision (or link) a Memberstack member so the client can access the portal.
-  // Never block client creation on this — if Memberstack is down, save anyway and
-  // surface a warning so Lindsay can retry later. Only call out when we don't yet
-  // have an id stored (new client, or an older client created before this wiring).
-  // Pass the member's name/goal/sessions through so the Memberstack profile is complete,
-  // and attach the individual plan (configured via env).
-  let provisionWarning: string | undefined;
-  // True only when we create+store a brand-new member id this request — the signal the
-  // UI uses to send the welcome/set-password email exactly once (not on reuse/re-save).
-  let memberProvisioned = false;
-  if (!client.memberstack_id) {
-    try {
-      const { id } = await provisionMember({
-        email: data.email,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        goal: data.goal,
-        totalSessions: data.totalSessions,
-      });
-      await setClientMemberstackId(client.id, id);
-      client = { ...client, memberstack_id: id };
-      memberProvisioned = true;
-    } catch (err) {
-      provisionWarning = `Client saved, but Memberstack provisioning failed: ${String(err)}`;
+  // `memberProvisioned` is true only when a brand-new member id was created and stored
+  // this request — the signal the UI uses to send the welcome/set-password email exactly
+  // once (not on reuse or re-save).
+  const programType = data.programType ?? 'individual';
+  const provisioned = await ensureMemberProvisioned(client, {
+    firstName: data.firstName,
+    lastName: data.lastName,
+    goal: data.goal,
+    totalSessions: data.totalSessions,
+    planType: programType,
+  });
+  client = provisioned.client;
+  const provisionWarning = provisioned.provisionWarning;
+  const memberProvisioned = provisioned.memberProvisioned;
+
+  const wantsIndividual = programType === 'individual' || programType === 'both';
+  const wantsCohort = programType === 'cohort' || programType === 'both';
+
+  const enrollment = wantsIndividual
+    ? await addEnrollment(client.id, { goal: data.goal, totalSessions: data.totalSessions })
+    : null;
+
+  let cohortEnrollment: Enrollment | null = null;
+  let alreadyMember = false;
+  if (wantsCohort && data.cohortId) {
+    if (await isCohortMember(client.id, data.cohortId)) {
+      alreadyMember = true;
+    } else {
+      cohortEnrollment = await addCohortEnrollment(client.id, data.cohortId, data.goal);
     }
   }
 
-  const enrollment = await addEnrollment(client.id, {
-    goal: data.goal,
-    totalSessions: data.totalSessions,
-  });
-  return { client, enrollment, reusedClient, provisionWarning, memberProvisioned };
+  return {
+    client,
+    enrollment,
+    cohortEnrollment,
+    reusedClient,
+    alreadyMember,
+    provisionWarning,
+    memberProvisioned,
+  };
 }
 
 export async function addEnrollment(
@@ -416,21 +485,87 @@ export async function addEnrollment(
   return rows[0] as Enrollment;
 }
 
-export async function listEnrollments(statusFilter?: string): Promise<EnrollmentListRow[]> {
+
+/** One enrollment as it appears nested inside a ClientListRow. */
+export interface ClientListEnrollment {
+  id: string;
+  program_type: 'individual' | 'cohort';
+  goal: string;
+  status: 'active' | 'paused' | 'complete';
+  total_sessions: number;
+  sessions_done: number;
+  cohort_id: string | null;
+  cohort_name: string | null;
+  last_session_at: string | null;
+}
+
+/** A person, with every program they're enrolled in. One row per human. */
+export interface ClientListRow {
+  id: string;
+  name: string;
+  email: string;
+  any_active: boolean;
+  program_types: ('individual' | 'cohort')[];
+  enrollments: ClientListEnrollment[];
+}
+
+/**
+ * The Clients list, grained by PERSON rather than by enrollment.
+ *
+ * This replaced an enrollment-grained query that returned one row per enrollment, so
+ * somebody with an individual pack and a cohort place appeared twice — two rows, same
+ * name, both linking to the same client. Aggregating here means the list matches how
+ * Lindsay thinks about her clients: one human, expandable to the programs they're in.
+ *
+ * `statusFilter` keeps a person if ANY of their enrollments matches, but the nested
+ * enrollments array is filtered to match too — otherwise "active" would expand to reveal
+ * completed packs. Done as two whole queries because Neon's tagged-template driver can't
+ * concatenate SQL fragments (same reason listCohorts branches this way).
+ */
+export async function listClientsWithEnrollments(statusFilter?: string): Promise<ClientListRow[]> {
   const sql = getSql();
   const rows = statusFilter
     ? await sql`
-        SELECT e.*, c.name AS client_name, c.email AS client_email,
-               (SELECT max(sl.session_date) FROM session_logs sl WHERE sl.enrollment_id = e.id) AS last_session_at
-        FROM enrollments e JOIN clients c ON c.id = e.client_id
+        SELECT c.id, c.name, c.email,
+               bool_or(e.status = 'active') AS any_active,
+               array_agg(DISTINCT e.program_type) AS program_types,
+               json_agg(json_build_object(
+                 'id', e.id, 'program_type', e.program_type, 'goal', e.goal,
+                 'status', e.status, 'total_sessions', e.total_sessions,
+                 'sessions_done', e.sessions_done, 'cohort_id', e.cohort_id,
+                 'cohort_name', co.name,
+                 'last_session_at', (SELECT max(sl.session_date) FROM session_logs sl WHERE sl.enrollment_id = e.id)
+               ) ORDER BY e.created_at DESC) AS enrollments
+        FROM clients c
+        JOIN enrollments e ON e.client_id = c.id
+        LEFT JOIN cohorts co ON co.id = e.cohort_id
         WHERE e.status = ${statusFilter}
-        ORDER BY e.created_at DESC`
+        GROUP BY c.id, c.name, c.email
+        ORDER BY max(e.created_at) DESC`
     : await sql`
-        SELECT e.*, c.name AS client_name, c.email AS client_email,
-               (SELECT max(sl.session_date) FROM session_logs sl WHERE sl.enrollment_id = e.id) AS last_session_at
-        FROM enrollments e JOIN clients c ON c.id = e.client_id
-        ORDER BY e.created_at DESC`;
-  return rows as EnrollmentListRow[];
+        SELECT c.id, c.name, c.email,
+               bool_or(e.status = 'active') AS any_active,
+               array_agg(DISTINCT e.program_type) AS program_types,
+               json_agg(json_build_object(
+                 'id', e.id, 'program_type', e.program_type, 'goal', e.goal,
+                 'status', e.status, 'total_sessions', e.total_sessions,
+                 'sessions_done', e.sessions_done, 'cohort_id', e.cohort_id,
+                 'cohort_name', co.name,
+                 'last_session_at', (SELECT max(sl.session_date) FROM session_logs sl WHERE sl.enrollment_id = e.id)
+               ) ORDER BY e.created_at DESC) AS enrollments
+        FROM clients c
+        JOIN enrollments e ON e.client_id = c.id
+        LEFT JOIN cohorts co ON co.id = e.cohort_id
+        GROUP BY c.id, c.name, c.email
+        ORDER BY max(e.created_at) DESC`;
+  return rows as ClientListRow[];
+}
+
+/** Minimal client list for the cohort roster's existing-person picker. */
+export async function listClientsForPicker(): Promise<Pick<Client, 'id' | 'name' | 'email'>[]> {
+  const sql = getSql();
+  const rows = await sql`SELECT id, name, email FROM clients ORDER BY name`;
+  return rows as Pick<Client, 'id' | 'name' | 'email'>[];
 }
 
 export async function getClientWithEnrollments(
@@ -535,6 +670,27 @@ export async function getClientContentByKind(
 }
 
 /** A single private client recording by id (only rows scoped to a client). */
+/**
+ * A single enrollment's content — the per-program view of getClientContentByKind.
+ *
+ * Content is scoped by `program_id` (which holds the enrollment id) as well as client, so
+ * an individual pack's recordings don't bleed into the cohort tab and vice versa. Uploads
+ * have set program_id since the client-content feature shipped; verified 2026-07-31 that
+ * no legacy client rows are missing it, so no backfill is needed.
+ */
+export async function getEnrollmentContentByKind(
+  enrollmentId: string,
+  clientId: string,
+  kind: 'recording' | 'file',
+): Promise<ContentItem[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM content_items
+    WHERE client_id = ${clientId} AND program_id = ${enrollmentId} AND kind = ${kind}
+    ORDER BY created_at DESC`;
+  return rows as ContentItem[];
+}
+
 export async function getClientRecording(id: string): Promise<ContentItem | null> {
   const sql = getSql();
   const rows = await sql`
@@ -800,35 +956,101 @@ export async function deleteCohortSession(id: string): Promise<void> {
 }
 
 /**
- * Add a member to a cohort: reuse the client (dedupe by email) or create one,
- * then create a program_type='cohort' enrollment linked to the cohort.
+ * Create a cohort enrollment. Separate from addEnrollment because that one has no
+ * cohort_id parameter, and a cohort enrollment carries no session count of its own —
+ * progress belongs to the cohort, so total_sessions stays 0.
+ */
+export async function addCohortEnrollment(
+  clientId: string,
+  cohortId: string,
+  goal: string,
+): Promise<Enrollment> {
+  const sql = getSql();
+  const rows = await sql`
+    INSERT INTO enrollments (client_id, program_type, cohort_id, goal, total_sessions)
+    VALUES (${clientId}, 'cohort', ${cohortId}, ${goal}, 0)
+    RETURNING *`;
+  return rows[0] as Enrollment;
+}
+
+/** Is this client already enrolled in this cohort? */
+export async function isCohortMember(clientId: string, cohortId: string): Promise<boolean> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT 1 FROM enrollments WHERE client_id = ${clientId} AND cohort_id = ${cohortId} LIMIT 1`;
+  return rows.length > 0;
+}
+
+/**
+ * Add someone to a cohort, either by picking an existing client (`clientId`) or by
+ * name + email.
+ *
+ * Three things this now does that the free-text version didn't:
+ *  - resolves an existing person first, so adding a current 1:1 client to a cohort
+ *    reuses their record instead of creating a second one;
+ *  - refuses to enrol the same person twice (`alreadyMember`);
+ *  - provisions Memberstack, so a cohort-only person can actually reach the portal —
+ *    previously only the individual create path did this, leaving them locked out.
  */
 export async function addCohortMember(data: {
   cohortId: string;
-  name: string;
-  email: string;
+  clientId?: string;
+  name?: string;
+  email?: string;
   goal: string;
-}): Promise<{ client: Client; enrollment: Enrollment; reusedClient: boolean }> {
+}): Promise<{
+  client: Client;
+  enrollment: Enrollment | null;
+  reusedClient: boolean;
+  alreadyMember: boolean;
+  provisionWarning?: string;
+  memberProvisioned: boolean;
+}> {
   const sql = getSql();
-  const existing = await findClientByEmail(data.email);
 
-  let client: Client;
-  let reusedClient: boolean;
-  if (existing) {
-    client = existing;
+  // Resolve the person: explicit pick → existing email → create.
+  let client: Client | null = null;
+  let reusedClient = false;
+
+  if (data.clientId) {
+    const rows = await sql`SELECT * FROM clients WHERE id = ${data.clientId}`;
+    client = (rows[0] as Client) ?? null;
+    if (!client) throw new Error('Client not found');
     reusedClient = true;
   } else {
-    const rows = await sql`
-      INSERT INTO clients (name, email) VALUES (${data.name}, ${data.email}) RETURNING *`;
-    client = rows[0] as Client;
-    reusedClient = false;
+    if (!data.email || !data.name) throw new Error('Provide either clientId, or name + email');
+    const existing = await findClientByEmail(data.email);
+    if (existing) {
+      client = existing;
+      reusedClient = true;
+    } else {
+      const rows = await sql`
+        INSERT INTO clients (name, email) VALUES (${data.name}, ${data.email}) RETURNING *`;
+      client = rows[0] as Client;
+    }
   }
 
-  const enrollRows = await sql`
-    INSERT INTO enrollments (client_id, program_type, cohort_id, goal, total_sessions)
-    VALUES (${client.id}, 'cohort', ${data.cohortId}, ${data.goal}, 0)
-    RETURNING *`;
-  return { client, enrollment: enrollRows[0] as Enrollment, reusedClient };
+  if (await isCohortMember(client.id, data.cohortId)) {
+    return { client, enrollment: null, reusedClient, alreadyMember: true, memberProvisioned: false };
+  }
+
+  const provisioned = await ensureMemberProvisioned(client, {
+    firstName: client.name.split(' ')[0],
+    lastName: client.name.split(' ').slice(1).join(' ') || undefined,
+    goal: data.goal,
+    planType: 'cohort',
+  });
+  client = provisioned.client;
+
+  const enrollment = await addCohortEnrollment(client.id, data.cohortId, data.goal);
+  return {
+    client,
+    enrollment,
+    reusedClient,
+    alreadyMember: false,
+    provisionWarning: provisioned.provisionWarning,
+    memberProvisioned: provisioned.memberProvisioned,
+  };
 }
 
 export async function getCohortContent(cohortId: string): Promise<ContentItem[]> {

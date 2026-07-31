@@ -30,6 +30,10 @@ const envSchema = z.object({
   // client (the "individual" plan). Dashboard → Plans → the plan → copy its id. Only free
   // plans (pln_) can be attached on create. Unset → no plan attached.
   MEMBERSTACK_INDIVIDUAL_PLAN_ID: z.string().optional(),
+  // Optional: the FREE Memberstack plan id for cohort members. The portal script gates
+  // its cohort panel on this plan (see public/portal.js), so a cohort-only person needs
+  // it to see anything but the upsell. Unset → no plan attached for cohort members.
+  MEMBERSTACK_COHORT_PLAN_ID: z.string().optional(),
 
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),

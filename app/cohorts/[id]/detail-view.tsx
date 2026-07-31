@@ -655,8 +655,15 @@ function CohortPreview({ cohort, sessions, content }: { cohort: Cohort; sessions
   );
 }
 
+interface PickerClient { id: string; name: string; email: string }
+
 function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roster: Member[]; onChange: () => void }) {
   const [showAdd, setShowAdd] = useState(false);
+  // Adding an existing person is the common case — creating a brand-new one is the fallback.
+  const [mode, setMode] = useState<'existing' | 'new'>('existing');
+  const [people, setPeople] = useState<PickerClient[]>([]);
+  const [search, setSearch] = useState('');
+  const [pickedId, setPickedId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [goal, setGoal] = useState('');
@@ -664,19 +671,54 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Load the picker list once, when the form is first opened.
+  useEffect(() => {
+    if (!showAdd || people.length > 0) return;
+    fetch('/api/clients/picker')
+      .then((r) => r.json())
+      .then((d) => setPeople(d.clients ?? []))
+      .catch(() => setPeople([]));
+  }, [showAdd, people.length]);
+
+  const alreadyIn = new Set(roster.map((m) => m.client_id));
+  const q = search.trim().toLowerCase();
+  const matches = people
+    .filter((p) => !alreadyIn.has(p.id))
+    .filter((p) => !q || p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
+    .slice(0, 8);
+
+  function resetForm() {
+    setPickedId(null); setSearch(''); setName(''); setEmail(''); setGoal('');
+  }
+
   async function add(e: FormEvent) {
     e.preventDefault();
     setSaving(true); setError(null); setNotice(null);
     try {
+      const payload = mode === 'existing'
+        ? { clientId: pickedId, goal }
+        : { name, email, goal };
       const res = await fetch(`/api/cohorts/${cohortId}/members`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, goal }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error ?? 'Failed to add member');
-      if (data.reusedClient) setNotice(`${name} already existed — linked their record to this cohort.`);
-      setName(''); setEmail(''); setGoal('');
-      if (!data.reusedClient) setShowAdd(false);
+
+      const who = data.client?.name ?? name;
+      if (data.alreadyMember) {
+        setNotice(`${who} is already in this cohort.`);
+        setSaving(false);
+        return;
+      }
+      const msgs: string[] = [];
+      if (data.reusedClient && mode === 'new') {
+        msgs.push(`${who} already existed — linked their record to this cohort.`);
+      }
+      if (data.provisionWarning) msgs.push(data.provisionWarning);
+      resetForm();
+      if (msgs.length) setNotice(msgs.join(' '));
+      else setShowAdd(false);
       onChange();
     } catch (err) { setError(String(err)); } finally { setSaving(false); }
   }
@@ -707,16 +749,70 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
 
       {showAdd && (
         <form onSubmit={add} className="space-y-2 bg-petal/40 rounded-lg p-3">
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required disabled={saving}
-            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required disabled={saving}
-            className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
-          <input type="text" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Individual goal (optional)" disabled={saving}
+          <div className="flex gap-1">
+            {(['existing', 'new'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setMode(m); resetForm(); setError(null); setNotice(null); }}
+                className={`px-3 py-1 rounded-lg font-label text-xs transition-colors ${
+                  mode === m ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal border border-gold/20'
+                }`}
+              >
+                {m === 'existing' ? 'Existing client' : 'New person'}
+              </button>
+            ))}
+          </div>
+
+          {mode === 'existing' ? (
+            <>
+              <input
+                type="text" value={search} onChange={(e) => { setSearch(e.target.value); setPickedId(null); }}
+                placeholder="Search clients by name or email" disabled={saving}
+                className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
+              />
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {matches.length === 0 ? (
+                  <p className="text-xs text-slate/60 px-1 py-2">
+                    {people.length === 0 ? 'Loading clients…' : 'No matching clients not already in this cohort.'}
+                  </p>
+                ) : (
+                  matches.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setPickedId(p.id)}
+                      className={`w-full text-left px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                        pickedId === p.id
+                          ? 'bg-white border-gold text-slate'
+                          : 'bg-white/60 border-transparent hover:border-gold/40 text-slate/80'
+                      }`}
+                    >
+                      {p.name}
+                      <span className="text-xs text-slate/50 ml-2">{p.email}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" disabled={saving}
+                className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" disabled={saving}
+                className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+            </>
+          )}
+
+          <input type="text" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Their goal in this cohort (optional)" disabled={saving}
             className="w-full border border-slate/20 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           {error && <p className="text-xs text-red-600">{error}</p>}
           {notice && <p className="text-xs text-amber-700">{notice}</p>}
-          <button type="submit" disabled={saving || !name || !email}
-            className="btn-spark disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={saving || (mode === 'existing' ? !pickedId : !name || !email)}
+            className="btn-spark disabled:opacity-50"
+          >
             {saving ? 'Adding…' : 'Add member'}
           </button>
         </form>

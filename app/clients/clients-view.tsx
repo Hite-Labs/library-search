@@ -4,25 +4,31 @@ import { useState, useEffect, useCallback, FormEvent } from 'react';
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
 
-interface EnrollmentRow {
+interface ClientEnrollment {
   id: string;
-  client_id: string;
-  client_name: string;
-  client_email: string;
   program_type: 'individual' | 'cohort';
   goal: string;
   status: 'active' | 'paused' | 'complete';
   total_sessions: number;
   sessions_done: number;
-  next_session_at: string | null;
+  cohort_id: string | null;
+  cohort_name: string | null;
   last_session_at: string | null;
+}
+
+// One row per person. Someone in an individual pack AND a cohort is a single row
+// with two program badges, not two rows that both link to the same client.
+interface ClientRow {
+  id: string;
+  name: string;
+  email: string;
+  any_active: boolean;
+  program_types: ('individual' | 'cohort')[];
+  enrollments: ClientEnrollment[];
 }
 
 const STATUS_FILTERS = ['active', 'paused', 'complete', 'all'] as const;
 type StatusFilter = typeof STATUS_FILTERS[number];
-
-const TYPE_FILTERS = ['all', 'individual', 'cohort'] as const;
-type TypeFilter = typeof TYPE_FILTERS[number];
 
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
@@ -43,27 +49,23 @@ function fmtDate(d: string | null): string {
 
 export function ClientsView() {
   const [filter, setFilter] = useState<StatusFilter>('active');
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [rows, setRows] = useState<EnrollmentRow[]>([]);
+  const [rows, setRows] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     const qs = filter === 'all' ? '' : `?status=${filter}`;
     const res = await fetch(`/api/clients${qs}`);
     const data = await res.json();
-    setRows(data.enrollments ?? []);
+    setRows(data.clients ?? []);
     setLoading(false);
   }, [filter]);
 
   useEffect(() => {
     load();
   }, [load]);
-
-  // Plan-type filter is applied client-side over the fetched rows (the list is small,
-  // and program_type already comes back in the response — no extra query needed).
-  const visibleRows = typeFilter === 'all' ? rows : rows.filter((r) => r.program_type === typeFilter);
 
   return (
     <div className="min-h-screen bg-petal/40">
@@ -99,60 +101,90 @@ export function ClientsView() {
           ))}
         </div>
 
-        {/* Plan-type filter (DS-06) — applied client-side over the fetched rows. */}
-        <div className="flex gap-1 mb-4">
-          {TYPE_FILTERS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setTypeFilter(f)}
-              className={`px-3 py-1.5 rounded-lg font-label text-xs capitalize transition-colors ${
-                typeFilter === f ? 'bg-plum/10 text-plum border border-plum/30' : 'text-slate/50 hover:bg-petal'
-              }`}
-            >
-              {f === 'all' ? 'All types' : f}
-            </button>
-          ))}
-        </div>
-
         {loading ? (
           <div className="py-16 flex justify-center">
             <div className="w-6 h-6 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
           </div>
-        ) : visibleRows.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gold/20 p-10 text-center text-sm text-slate/60">
-            No {filter === 'all' ? '' : filter} {typeFilter === 'all' ? '' : `${typeFilter} `}clients yet.
+            No {filter === 'all' ? '' : filter} clients yet.
           </div>
         ) : (
           <div className="space-y-2">
-            {visibleRows.map((r) => (
-              <Link
-                key={r.id}
-                href={`/clients/${r.client_id}`}
-                className="block bg-white rounded-xl border border-gold/20 p-4 hover:border-gold/50 hover:shadow-sm transition-all"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-serif text-slate truncate">{r.client_name}</span>
-                      <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium capitalize ${TYPE_STYLES[r.program_type] ?? ''}`}>
-                        {r.program_type === 'cohort' ? 'Cohort' : 'Individual'}
+            {rows.map((r) => {
+              const expanded = expandedId === r.id;
+              return (
+                <div key={r.id} className="bg-white rounded-xl border border-gold/20 overflow-hidden">
+                  {/* Person row: identity only. The programs live in the expansion, so
+                      one human is one row no matter how many packs they're in. */}
+                  <div className="flex items-center gap-3 p-4">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(expanded ? null : r.id)}
+                      className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                      aria-expanded={expanded}
+                    >
+                      <span
+                        className={`text-slate/40 text-xs transition-transform ${expanded ? 'rotate-90' : ''}`}
+                        aria-hidden
+                      >
+                        ▶
                       </span>
-                      <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[r.status] ?? ''}`}>
-                        {r.status}
+                      {r.any_active && (
+                        <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" title="Has an active program" />
+                      )}
+                      <span className="font-serif text-slate truncate">{r.name}</span>
+                      {r.program_types.map((t) => (
+                        <span
+                          key={t}
+                          className={`font-label text-xs px-2 py-0.5 rounded-full font-medium capitalize ${TYPE_STYLES[t] ?? ''}`}
+                        >
+                          {t === 'cohort' ? 'Cohort' : 'Individual'}
+                        </span>
+                      ))}
+                      <span className="text-xs text-slate/50 shrink-0">
+                        {r.enrollments.length} program{r.enrollments.length === 1 ? '' : 's'}
                       </span>
+                    </button>
+                    <Link
+                      href={`/clients/${r.id}`}
+                      className="font-label text-xs text-plum hover:text-slate transition-colors shrink-0"
+                    >
+                      Open →
+                    </Link>
+                  </div>
+
+                  {expanded && (
+                    <div className="border-t border-gold/10 divide-y divide-gold/10">
+                      {r.enrollments.map((e) => (
+                        <div key={e.id} className="flex items-center justify-between gap-4 px-4 py-3 bg-petal/20">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium capitalize ${TYPE_STYLES[e.program_type] ?? ''}`}>
+                                {e.program_type === 'cohort' ? 'Cohort' : 'Individual'}
+                              </span>
+                              {e.cohort_name && (
+                                <span className="text-xs text-slate/60 truncate">{e.cohort_name}</span>
+                              )}
+                              <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[e.status] ?? ''}`}>
+                                {e.status}
+                              </span>
+                            </div>
+                            <p className="text-sm text-slate/60 truncate mt-0.5">{e.goal || 'No goal set'}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-medium text-plum">
+                              {e.sessions_done} of {e.total_sessions}
+                            </p>
+                            <p className="text-xs text-slate/60 mt-0.5">last: {fmtDate(e.last_session_at)}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <p className="text-sm text-slate/60 truncate mt-0.5">{r.goal || 'No goal set'}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-medium text-plum">
-                      {r.sessions_done} of {r.total_sessions}
-                    </p>
-                    <p className="text-xs text-slate/60 mt-0.5">last: {fmtDate(r.last_session_at)}</p>
-                  </div>
+                  )}
                 </div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -176,9 +208,23 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [email, setEmail] = useState('');
   const [goal, setGoal] = useState('');
   const [totalSessions, setTotalSessions] = useState('6');
+  const [programType, setProgramType] = useState<'individual' | 'cohort' | 'both'>('individual');
+  const [cohortId, setCohortId] = useState('');
+  const [cohorts, setCohorts] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const needsCohort = programType === 'cohort' || programType === 'both';
+
+  // Only fetch the cohort list when a cohort actually has to be picked.
+  useEffect(() => {
+    if (!needsCohort || cohorts.length > 0) return;
+    fetch('/api/cohorts')
+      .then((r) => r.json())
+      .then((d) => setCohorts(d.cohorts ?? []))
+      .catch(() => setCohorts([]));
+  }, [needsCohort, cohorts.length]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -195,6 +241,8 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
           email,
           goal,
           totalSessions: parseInt(totalSessions, 10) || 6,
+          programType,
+          ...(needsCohort && cohortId ? { cohortId } : {}),
         }),
       });
       const data = await res.json();
@@ -203,6 +251,9 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
       if (data.reusedClient) {
         // Dedupe UX: the email matched an existing client — we added a new pack instead.
         msgs.push(`${firstName || data.client.name} already exists — added a new program (pack) for them.`);
+      }
+      if (data.alreadyMember) {
+        msgs.push('They were already in that cohort, so no duplicate cohort place was created.');
       }
       // Provisioning is best-effort; if it failed the client was still saved. The new
       // member gets into the portal via the passwordless login link Lindsay shares (the
@@ -260,13 +311,51 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
             />
           </div>
           <div>
-            <label className="block font-label text-xs text-slate mb-1">Sessions in package</label>
-            <input
-              type="number" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)}
-              min="1" disabled={saving}
-              className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
-            />
+            <label className="block font-label text-xs text-slate mb-1">Program</label>
+            <div className="flex gap-1">
+              {(['individual', 'cohort', 'both'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setProgramType(p)}
+                  disabled={saving}
+                  className={`px-3 py-1.5 rounded-lg font-label text-xs capitalize transition-colors ${
+                    programType === p ? 'bg-plum text-gold' : 'text-slate/70 hover:bg-petal border border-gold/20'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {needsCohort && (
+            <div>
+              <label className="block font-label text-xs text-slate mb-1">Cohort</label>
+              <select
+                value={cohortId} onChange={(e) => setCohortId(e.target.value)} disabled={saving}
+                className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold"
+              >
+                <option value="">Select a cohort…</option>
+                {cohorts.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Session count belongs to an individual pack; a cohort's progress is the
+              cohort's, so this is meaningless for cohort-only clients. */}
+          {programType !== 'cohort' && (
+            <div>
+              <label className="block font-label text-xs text-slate mb-1">Sessions in package</label>
+              <input
+                type="number" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)}
+                min="1" disabled={saving}
+                className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
+              />
+            </div>
+          )}
 
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
           {notice && <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{notice}</p>}
@@ -276,7 +365,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               className="btn-spark-outline flex-1 disabled:opacity-50">
               Cancel
             </button>
-            <button type="submit" disabled={saving || !firstName || !email}
+            <button type="submit" disabled={saving || !firstName || !email || (needsCohort && !cohortId)}
               className="btn-spark flex-1 disabled:opacity-50">
               {saving ? 'Saving…' : 'Create'}
             </button>

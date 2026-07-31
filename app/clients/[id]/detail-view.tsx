@@ -21,11 +21,18 @@ interface Client { id: string; name: string; email: string; }
 interface SessionLog { id: string; session_date: string; notes: string; next_actions: string; coach_actions: string; }
 interface Recording { id: string; title: string; session_label: string | null; description: string; public_url: string; media_type: string; }
 
+// GET /api/clients/[id] — the person and their programs. Each program's body is
+// fetched separately when its tab is opened.
 interface DetailData {
   client: Client;
   enrollments: Enrollment[];
   activeEnrollmentId: string | null;
-  activeLogs: SessionLog[];
+}
+
+// GET /api/enrollments/[id]/detail — one program's body.
+interface EnrollmentDetail {
+  enrollment: Enrollment;
+  logs: SessionLog[];
   recordings: Recording[];
   resources: Recording[];
 }
@@ -55,7 +62,7 @@ const BOOKING_URL = process.env.NEXT_PUBLIC_BOOKING_URL ?? '';
 // appends ?email=… so the login form can pre-fill the client's email. Empty → button hides.
 const PORTAL_LOGIN_URL = process.env.NEXT_PUBLIC_PORTAL_LOGIN_URL ?? '';
 
-// Still used by PastPackRow to tint historical-program status badges.
+// Tints program status badges.
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
   paused: 'bg-amber-100 text-amber-800',
@@ -85,15 +92,19 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 
 // Page header: client identity + active-enrollment metadata (type | status | progress),
 // the goal, the per-client calendar link, and a pencil that opens the edit popup.
-function ClientHeader({
-  client, enrollment, onChange,
-}: { client: Client; enrollment: Enrollment | null; onChange: () => void }) {
+/**
+ * The selected program's status/progress line and its goal.
+ *
+ * Program-scoped, not person-scoped — the client's name/email live in IdentityCard
+ * above, so this describes only the enrollment whose tab is open.
+ */
+function EnrollmentHeader({
+  enrollment, onChange,
+}: { enrollment: Enrollment; onChange: () => void }) {
   const [editing, setEditing] = useState(false);
-  const isCohort = enrollment?.program_type === 'cohort';
-  const typeLabel = enrollment?.program_type === 'cohort' ? 'Cohort' : 'Individual';
+  const isCohort = enrollment.program_type === 'cohort';
 
   async function patch(body: Record<string, unknown>) {
-    if (!enrollment) return;
     await fetch(`/api/enrollments/${enrollment.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
@@ -101,53 +112,42 @@ function ClientHeader({
   }
 
   return (
-    <div className="mt-2 mb-6 flex flex-col md:flex-row items-end gap-6">
-      {/* LEFT — identity: name, email, small "Copy login link" text. */}
-      <div className="min-w-0">
-        <h1 className="text-xl font-serif text-slate">{client.name}</h1>
-        <p className="text-sm text-slate/60 mt-0.5 truncate">{client.email}</p>
-        {/* Passwordless portal login link, email pre-filled, for Lindsay to share. */}
-        <CopyLoginLink email={client.email} />
+    <div>
+      {/* Metadata label line — Oswald, regular weight, pipe-separated. */}
+      <div className="flex items-center gap-2 font-label font-normal text-[13px] text-slate capitalize">
+        <span>{enrollment.status}</span>
+        {!isCohort && (
+          <>
+            {PIPE}
+            <span>Session {enrollment.sessions_done} of {enrollment.total_sessions}</span>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label="Edit program details"
+          className="ml-1 text-slate/50 hover:text-gold transition-colors"
+        >
+          <PencilIcon />
+        </button>
       </div>
 
-      {/* RIGHT — metadata cluster (far-right) + the goal as a big heading beneath. */}
-      {enrollment && (
-        <div className="flex-1 min-w-0">
-          {/* Metadata label line — Oswald, regular weight, pipe-separated, pushed far-right. */}
-          <div className="flex items-center gap-2 font-label font-normal text-[13px] text-slate capitalize">
-            <span className="ml-auto">{typeLabel}</span>
-            {PIPE}
-            <span>{enrollment.status}</span>
-            {!isCohort && (
-              <>
-                {PIPE}
-                <span>Session {enrollment.sessions_done} of {enrollment.total_sessions}</span>
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              aria-label="Edit program details"
-              className="ml-1 text-slate/50 hover:text-gold transition-colors"
-            >
-              <PencilIcon />
-            </button>
-          </div>
+      {/* Goal — for a cohort this is THEIR goal within the group, not the cohort's
+          shared theme (which CohortInfo shows separately). */}
+      <p className={`${INPUT_LABEL} mt-3`}>
+        {isCohort ? 'Their goal in this cohort' : 'Goal'}
+      </p>
+      <h1 className="text-3xl font-serif text-slate text-left">
+        {enrollment.goal ? initialCap(enrollment.goal) : '—'}
+      </h1>
 
-          {/* Goal — large Baskerville heading, full width, left-aligned (no label). */}
-          <h1 className="mt-3 text-3xl font-serif text-slate text-left">
-            {enrollment.goal ? initialCap(enrollment.goal) : '—'}
-          </h1>
-
-          {editing && (
-            <EditEnrollmentModal
-              enrollment={enrollment}
-              isCohort={isCohort}
-              onClose={() => setEditing(false)}
-              onSave={async (body) => { await patch(body); setEditing(false); }}
-            />
-          )}
-        </div>
+      {editing && (
+        <EditEnrollmentModal
+          enrollment={enrollment}
+          isCohort={isCohort}
+          onClose={() => setEditing(false)}
+          onSave={async (body) => { await patch(body); setEditing(false); }}
+        />
       )}
     </div>
   );
@@ -287,29 +287,138 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
     );
   }
 
-  const active = data.enrollments.find((e) => e.id === data.activeEnrollmentId) ?? null;
-  const past = data.enrollments.filter((e) => e.id !== data.activeEnrollmentId);
-
   return (
     <div className="min-h-screen bg-petal/40">
       <Nav />
       <div className="max-w-3xl mx-auto px-4 py-8">
         <Link href="/clients" className="text-sm text-slate/60 hover:text-slate">← All clients</Link>
-        <ClientHeader client={data.client} enrollment={active} onChange={load} />
 
-        {active ? (
-          <ActiveEnrollment enrollment={active} logs={data.activeLogs} recordings={data.recordings} resources={data.resources} onChange={load} />
-        ) : (
-          <div className="bg-white rounded-2xl border border-gold/20 p-6 text-sm text-slate/60">
-            No active program. Start a new pack below.
-          </div>
-        )}
+        {/* Person-level identity — one card, always visible, independent of program. */}
+        <IdentityCard client={data.client} />
+
+        {/* Programs the person is in. The selected tab drives everything below it. */}
+        <ProgramTabs
+          enrollments={data.enrollments}
+          initialId={data.activeEnrollmentId}
+          onChange={load}
+        />
 
         <StartNewPack clientId={clientId} onCreated={load} />
 
-        {past.length > 0 && <PastPacks enrollments={past} />}
-
         <DangerZone clientId={clientId} clientName={data.client.name} />
+      </div>
+    </div>
+  );
+}
+
+// The person: name, email, portal login link. Bound to the human, not to any program.
+function IdentityCard({ client }: { client: Client }) {
+  return (
+    <div className="mt-2 mb-4 bg-white rounded-2xl border border-gold/20 p-6">
+      <h1 className="text-xl font-serif text-slate">{client.name}</h1>
+      <p className="text-sm text-slate/60 mt-0.5 truncate">{client.email}</p>
+      {/* Passwordless portal login link, email pre-filled, for Lindsay to share. */}
+      <CopyLoginLink email={client.email} />
+    </div>
+  );
+}
+
+/**
+ * A tab per program the client is in, with the selected one's body beneath.
+ *
+ * Only tabs for programs they actually have are rendered — someone with just an
+ * individual pack sees a single tab, not an empty "Cohort" one. Each tab lazy-loads its
+ * own detail on first activation and caches it, mirroring how CohortInfo already fetches
+ * on expand.
+ */
+function ProgramTabs({
+  enrollments, initialId, onChange,
+}: { enrollments: Enrollment[]; initialId: string | null; onChange: () => void }) {
+  const [selectedId, setSelectedId] = useState<string | null>(initialId ?? enrollments[0]?.id ?? null);
+  const [details, setDetails] = useState<Record<string, EnrollmentDetail>>({});
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  const loadDetail = useCallback(async (id: string) => {
+    setLoadingId(id);
+    try {
+      const res = await fetch(`/api/enrollments/${id}/detail`);
+      if (res.ok) {
+        const d = (await res.json()) as EnrollmentDetail;
+        setDetails((prev) => ({ ...prev, [id]: d }));
+      }
+    } finally {
+      setLoadingId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedId && !details[selectedId]) loadDetail(selectedId);
+  }, [selectedId, details, loadDetail]);
+
+  // After a mutation the parent refetches the client; the open tab's cached body is now
+  // stale, so drop it and refetch just that one.
+  const refreshSelected = useCallback(() => {
+    if (selectedId) loadDetail(selectedId);
+    onChange();
+  }, [selectedId, loadDetail, onChange]);
+
+  if (enrollments.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-gold/20 p-6 text-sm text-slate/60">
+        No programs yet. Start one below.
+      </div>
+    );
+  }
+
+  const selected = enrollments.find((e) => e.id === selectedId) ?? null;
+  const detail = selectedId ? details[selectedId] : undefined;
+
+  return (
+    <div>
+      {/* Tab rail. The active tab shares the body's white surface so the two read as
+          one card; inactive tabs sit back on the page background. */}
+      <div className="flex gap-1">
+        {enrollments.map((e) => {
+          const isSelected = e.id === selectedId;
+          const label = e.program_type === 'cohort' ? 'Cohort' : 'Individual';
+          return (
+            <button
+              key={e.id}
+              type="button"
+              onClick={() => setSelectedId(e.id)}
+              className={`font-label text-xs px-4 py-2 rounded-t-xl border border-b-0 transition-colors ${
+                isSelected
+                  ? 'bg-white border-gold/20 text-plum'
+                  : 'bg-petal/60 border-transparent text-slate/60 hover:text-slate'
+              }`}
+            >
+              {label}
+              {e.status !== 'active' && (
+                <span className="ml-2 text-[10px] opacity-70 capitalize">{e.status}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="bg-white rounded-2xl rounded-tl-none border border-gold/20 p-6 space-y-6">
+        {selected && (
+          <EnrollmentHeader enrollment={selected} onChange={refreshSelected} />
+        )}
+
+        {loadingId === selectedId && !detail ? (
+          <div className="py-8 flex justify-center">
+            <div className="w-6 h-6 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
+          </div>
+        ) : selected && detail ? (
+          <ActiveEnrollment
+            enrollment={selected}
+            logs={detail.logs}
+            recordings={detail.recordings}
+            resources={detail.resources}
+            onChange={refreshSelected}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -403,8 +512,9 @@ function ActiveEnrollment({
     onChange();
   }
 
+  // The tab body supplies the card; this is just its contents.
   return (
-    <div className="bg-white rounded-2xl border border-gold/20 p-6 space-y-6">
+    <div className="space-y-6">
       {/* Cohort members inherit the cohort's schedule + progress (no individual counter/logger). */}
       {isCohort && <CohortInfo enrollmentId={enrollment.id} />}
 
@@ -430,16 +540,21 @@ function ActiveEnrollment({
         </>
       )}
 
-      {/* Private individual recordings + resources — available in both program types
-          (a cohort member can still get a personal asset only they see).
-          Recordings = session Zoom calls (video). Resources = delivered files (video/audio/pdf). */}
-      <ClientContentSection
-        enrollmentId={enrollment.id} items={recordings} onChange={onChange}
-        kind="recording" heading="Recordings" accept={RECORDING_ACCEPT} showLabel showDescription={false}
-      />
+      {/* Recordings are session Zoom calls, so they only exist for individual work.
+          A cohort member's personal assets come through Resources below. */}
+      {!isCohort && (
+        <ClientContentSection
+          enrollmentId={enrollment.id} items={recordings} onChange={onChange}
+          kind="recording" heading="Recordings" accept={RECORDING_ACCEPT} showLabel showDescription={false}
+        />
+      )}
+
+      {/* Private per-person files, scoped to THIS program — for a cohort member these are
+          their own resources within the group, not the cohort's shared content. */}
       <ClientContentSection
         enrollmentId={enrollment.id} items={resources} onChange={onChange}
-        kind="file" heading="Resources" accept={RESOURCE_ACCEPT} showLabel={false} showDescription
+        kind="file" heading={isCohort ? 'Their resources in this cohort' : 'Resources'}
+        accept={RESOURCE_ACCEPT} showLabel={false} showDescription
       />
     </div>
   );
@@ -844,61 +959,6 @@ function StartNewPack({ clientId, onCreated }: { clientId: string; onCreated: ()
             </button>
           </div>
         </form>
-      )}
-    </div>
-  );
-}
-
-function PastPacks({ enrollments }: { enrollments: Enrollment[] }) {
-  return (
-    <div className="mt-8">
-      <h2 className="font-label text-xs text-plum mb-3">Past programs ({enrollments.length})</h2>
-      <div className="space-y-2">
-        {enrollments.map((e) => <PastPackRow key={e.id} enrollment={e} />)}
-      </div>
-    </div>
-  );
-}
-
-function PastPackRow({ enrollment }: { enrollment: Enrollment }) {
-  const [open, setOpen] = useState(false);
-  const [logs, setLogs] = useState<SessionLog[] | null>(null);
-
-  async function toggle() {
-    setOpen(!open);
-    if (!open && logs === null) {
-      const res = await fetch(`/api/enrollments/${enrollment.id}/sessions`);
-      const data = await res.json();
-      setLogs(data.logs ?? []);
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-xl border border-gold/20 hover:border-gold/50 transition-all">
-      <button onClick={toggle} className="w-full flex items-center justify-between p-4 text-left">
-        <div>
-          <span className={`font-label text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[enrollment.status]}`}>{enrollment.status}</span>
-          <span className="text-sm text-slate ml-2">{enrollment.goal || 'No goal'}</span>
-        </div>
-        <span className="text-sm text-slate/60">{enrollment.sessions_done}/{enrollment.total_sessions} · {open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div className="px-4 pb-4 space-y-2">
-          {logs === null ? (
-            <p className="text-xs text-slate/60">Loading…</p>
-          ) : logs.length === 0 ? (
-            <p className="text-xs text-slate/60">No session logs.</p>
-          ) : (
-            logs.map((l) => (
-              <div key={l.id} className="border border-gold/20 rounded-lg p-3">
-                <p className="text-xs text-slate/60 mb-1">{fmtDate(l.session_date)}</p>
-                <p className="text-sm text-slate whitespace-pre-wrap">{l.notes}</p>
-                {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Client actions:</span> {l.next_actions}</p>}
-                {l.coach_actions && <p className="text-xs text-slate/60 mt-1"><span className="font-medium">Coach actions:</span> {l.coach_actions}</p>}
-              </div>
-            ))
-          )}
-        </div>
       )}
     </div>
   );

@@ -40,13 +40,21 @@ export const SearchSchema = z.object({
 
 // ── Client management ────────────────────────────────────────────────────────
 
-export const CreateClientSchema = z.object({
-  firstName: z.string().min(1),
-  lastName: z.string().default(''),
-  email: z.string().email(),
-  goal: z.string().default(''),
-  totalSessions: z.number().int().positive().default(6),
-});
+// programType decides which enrollment(s) are created and which Memberstack plan(s)
+// the member is given. 'cohort' and 'both' need a cohortId to enrol into.
+export const CreateClientSchema = z
+  .object({
+    firstName: z.string().min(1),
+    lastName: z.string().default(''),
+    email: z.string().email(),
+    goal: z.string().default(''),
+    totalSessions: z.number().int().positive().default(6),
+    programType: z.enum(['individual', 'cohort', 'both']).default('individual'),
+    cohortId: z.string().uuid().optional(),
+  })
+  .refine((d) => d.programType === 'individual' || Boolean(d.cohortId), {
+    message: 'Pick a cohort when the program type is cohort or both',
+  });
 
 export const AddEnrollmentSchema = z.object({
   goal: z.string().default(''),
@@ -137,11 +145,21 @@ export const GenerateScheduleSchema = z.object({
   totalSessions: z.number().int().positive(),
 });
 
-export const AddCohortMemberSchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  goal: z.string().default(''),
-});
+// Two modes, mirroring AttachRecordingSchema:
+// (a) pick an existing person by clientId
+// (b) create/dedupe from name + email
+// name/email are optional so mode (a) can omit them entirely; the refine enforces that
+// one complete mode is present.
+export const AddCohortMemberSchema = z
+  .object({
+    clientId: z.string().uuid().optional(),
+    name: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+    goal: z.string().default(''),
+  })
+  .refine((d) => d.clientId || (d.name && d.email), {
+    message: 'Provide either clientId, or name + email',
+  });
 
 export const CohortContentSchema = z.object({
   title: z.string().min(1),
