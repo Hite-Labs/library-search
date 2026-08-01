@@ -86,13 +86,24 @@ async function buildCohortObject(memberstackId: string) {
   // getCohortSessions orders by sort_order/session_date; number oldest=1 for display.
   const [portalSessions, portalCohortFiles, portalMyFiles] = await Promise.all([
     Promise.all(
-      sessions.map(async (s, i) => ({
-        session_number: i + 1,
-        session_date: s.session_date,
-        title: s.title,
-        prompt_text: s.prompt_text,
-        files: await Promise.all((filesBySession.get(s.id) ?? []).map(toPortalFile)),
-      })),
+      sessions.map(async (s, i) => {
+        // One recording per session: the newest playable (audio/video) file attached to it.
+        // `kind` can't be used to pick it — insertCohortContent never sets that column, so
+        // every cohort row carries the 'recording' default. filesBySession is already
+        // created_at DESC, so the first match is the most recent upload. PDFs are never
+        // the recording; they stay in files[] as attachments alongside any older media.
+        const sessionFiles = filesBySession.get(s.id) ?? [];
+        const recording = sessionFiles.find((f) => f.media_type !== 'pdf') ?? null;
+        return {
+          session_number: i + 1,
+          session_date: s.session_date,
+          title: s.title,
+          prompt_text: s.prompt_text,
+          recording_url: recording ? await getPresignedGetUrl(recording.r2_key) : null,
+          file_type: recording ? recording.media_type : null,
+          files: await Promise.all(sessionFiles.map(toPortalFile)),
+        };
+      }),
     ),
     Promise.all(cohortFiles.map(toPortalFile)),
     Promise.all(myFiles.map(toPortalFile)),

@@ -125,13 +125,26 @@ are set — no separate tables:
 
 ---
 
-## D. Remaining gap — per-session recordings
+## D. Per-session cohort recordings
 
-One item from the original gap list is still open, by choice:
+Resolved: **one recording per session.** An unlocked session card is clickable and opens
+that session's recording in the media modal.
 
-| Field / behavior | Symptom | Fix path |
-|---|---|---|
-| `session.recording_url` + `session.file_type` | unlocked cohort session cards are never clickable (no play button) | The API sends `sessions[].files[]`, but `fillCohortSessionCard` reads `session.recording_url`, which is never emitted. Either render `files[]` inside the session card, or promote the first file to `recording_url`. Deferred — decide the intended UX first (one recording per session vs. a file list). |
+| Field | Type | API source | Notes |
+|---|---|---|---|
+| _(cohort session card click)_ | — | `sessions[].recording_url` + `.file_type` | whole card is clickable when a recording exists; opens the modal (video/audio). Locked cards are never clickable, and neither are sessions with no recording — the script guards on the url being present. |
+
+**Which file becomes the recording:** the newest non-PDF (audio or video) file attached to
+that session. `kind` can't be used to pick it — `insertCohortContent` never sets that
+column, so every cohort row carries the `'recording'` default. Files are ordered
+`created_at DESC`, so re-uploading supersedes the previous recording without deleting it.
+
+PDFs are never treated as the recording. Every attached file — including the one chosen as
+the recording, and any older media — still appears in `sessions[].files[]`, so nothing is
+hidden by this choice.
+
+**To replace a session's recording:** upload the new one to that session. It becomes the
+recording immediately by virtue of being newest; the old one stays in `files[]`.
 
 ---
 
@@ -229,7 +242,9 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
       "session_date": "2026-06-01|null",
       "title": "string",
       "prompt_text": "string",
-      "files": [                     // ⚠️ in the payload; session cards don't render it yet (§D)
+      "recording_url": "https://…signed…|null",  // newest non-PDF file on this session
+      "file_type": "video|audio|null",
+      "files": [                     // every attached file, recording included
         { "title": "string", "description": "string|null",
           "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
       ] }
@@ -242,7 +257,6 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
     { "title": "string", "description": "string|null",
       "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
   ]
-  // NOTE: still no per-session `recording_url`/`file_type` — see §D.
 }
 ```
 
