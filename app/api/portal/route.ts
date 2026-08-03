@@ -76,9 +76,12 @@ async function buildCohortObject(memberstackId: string) {
   const { cohort, memberGoal, sessions, filesBySession, cohortFiles, myFiles } = data;
 
   // Shared projection for a cohort file card (portal-safe: signed URL, never the r2 key).
+  // uploaded_at is created_at (when it was added to the dashboard), matching the
+  // individual side's recorded_at/uploaded_at — not a date the document itself claims.
   const toPortalFile = async (f: ContentItem) => ({
     title: f.title,
     description: f.description || null,
+    uploaded_at: f.created_at,
     public_url: await getPresignedGetUrl(f.r2_key),
     file_type: f.media_type,
   });
@@ -199,10 +202,13 @@ export async function GET(req: NextRequest) {
       file_type: r.media_type,
     })),
   );
+  // uploaded_at carries the same caveat as recorded_at above: it's created_at, i.e. when
+  // the file was added to the dashboard, not a date the document itself claims.
   const files = await Promise.all(
     rawFiles.map(async (f) => ({
       title: f.title,
       description: f.description || null,
+      uploaded_at: f.created_at,
       public_url: await getPresignedGetUrl(f.r2_key),
       file_type: f.media_type,
     })),

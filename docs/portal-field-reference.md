@@ -66,12 +66,15 @@ repeated card (the list's first child is the template).
 | `ind-recordings-empty` | empty | — | shown when `recordings[]` empty | |
 | `ind-recording-title` | item | `recordings[].title` | title | |
 | `ind-recording-label` | item | `recordings[].session_label` | session label | blank if none |
-| `ind-recording-date` | item | `recordings[].recorded_at` | `"Year Month Day"` | ⚠️ currently `content_items.created_at` (when it was uploaded), not a true recorded-on date — accurate for recordings added near the session, same-day for a bulk backfill. Field name is future-proof: add a real column later and only the API line changes. |
+| `ind-recording-date` | item | `recordings[].recorded_at` | `"Month Day"` (e.g. June 3) | ⚠️ currently `content_items.created_at` (when it was uploaded), not a true recorded-on date — accurate for recordings added near the session, same-day for a bulk backfill. Field name is future-proof: add a real column later and only the API line changes. |
+| `ind-recording-icon` | icon | `recordings[].file_type` | media icon, see §I | |
 | _(recording card click)_ | — | `recordings[].public_url` + `.file_type` | opens modal (video/audio) or new tab (pdf) | whole card is clickable; default type `video` |
 | `ind-files-list` | list | `data.files[]` | repeater of file cards | |
 | `ind-files-empty` | empty | — | shown when `files[]` empty | |
 | `ind-file-title` | item | `files[].title` | title | |
 | `ind-file-description` | item | `files[].description` | description | blank if none |
+| `ind-file-date` | item | `files[].uploaded_at` | `"Month Day"` (e.g. June 3) | ⚠️ upload date, same caveat as `ind-recording-date` — see §I |
+| `ind-file-icon` | icon | `files[].file_type` | media icon, see §I | |
 | _(file card click)_ | — | `files[].public_url` + `.file_type` | opens modal or new tab (pdf) | default type `audio` |
 
 **Repeater mechanics (applies to every `*-list`):** the list's **first child** is used as the
@@ -105,10 +108,15 @@ Source object: `data.cohort` (object or null) + `data.cohort.sessions[]`.
 | `cohort-files-list` | list | `cohort.files[]` | repeater of cohort-wide files | ✅ |
 | `cohort-files-empty` | empty | — | shown when no cohort-wide files | ✅ |
 | `cohort-file-title` | item | `files[].title` | title | ✅ |
+| `cohort-file-description` | item | `files[].description` | description | blank if none |
+| `cohort-file-date` | item | `files[].uploaded_at` | `"Month Day"` (e.g. June 3) | ⚠️ upload date — see §I |
+| `cohort-file-icon` | icon | `files[].file_type` | media icon, see §I | |
 | `cohort-my-files-list` | list | `cohort.my_files[]` | repeater of this member's private cohort files | ✅ |
 | `cohort-my-files-empty` | empty | — | shown when the member has none | ✅ |
 | `cohort-my-file-title` | item | `my_files[].title` | title | ✅ |
 | `cohort-my-file-description` | item | `my_files[].description` | description | ✅ blank if none |
+| `cohort-my-file-date` | item | `my_files[].uploaded_at` | `"Month Day"` | ⚠️ upload date — see §I |
+| `cohort-my-file-icon` | icon | `my_files[].file_type` | media icon, see §I | |
 
 **Lock rule:** a session is locked until its own `session_date` passes — UNLESS `cohort.end_date`
 has passed, which unlocks every session at once. `end_date` is optional; leave it empty for an
@@ -220,6 +228,7 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
   ],
   "files": [
     { "title": "string", "description": "string|null",
+      "uploaded_at": "2026-06-01T18:22:00Z",  // = content_items.created_at (upload time)
       "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
   ],
   "cohort": { /* object below, or null */ }
@@ -246,15 +255,18 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
       "file_type": "video|audio|null",
       "files": [                     // every attached file, recording included
         { "title": "string", "description": "string|null",
+          "uploaded_at": "2026-06-01T18:22:00Z",
           "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
       ] }
   ],
   "files": [                         // cohort-wide (client_id NULL)
     { "title": "string", "description": "string|null",
+      "uploaded_at": "2026-06-01T18:22:00Z",
       "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
   ],
   "my_files": [                      // private to this member within the cohort
     { "title": "string", "description": "string|null",
+      "uploaded_at": "2026-06-01T18:22:00Z",
       "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
   ]
 }
@@ -273,4 +285,56 @@ still surfaces:
 
 ---
 
-_Keep this in sync with `public/portal.js` and `app/api/portal/route.ts` whenever fields change._
+## I. Media icons + item dates
+
+### Icons
+
+Four card types carry a media icon: `ind-recording-icon`, `ind-file-icon`,
+`cohort-file-icon`, `cohort-my-file-icon`. All behave identically.
+
+The element is a **container the script fills** — leave it empty in Webflow:
+
+```html
+<span data-field="ind-recording-icon" class="media-icon"></span>
+```
+
+`portal.js` writes an inline [Iconoir](https://iconoir.com) SVG into it based on that item's
+`file_type`, and stamps `data-media-type` on the element:
+
+| `file_type` | Icon | Attribute set |
+|---|---|---|
+| `audio` | microphone | `data-media-type="audio"` |
+| `video` | media-video | `data-media-type="video"` |
+| `pdf` | page | `data-media-type="pdf"` |
+
+`media_type` is DB-constrained (`db/schema.sql:8`) to exactly these three, so there is no
+fallback case — an unrecognised type renders **no icon** rather than a broken one.
+
+**Styling.** The SVGs use `stroke="currentColor"`, so `color` on the element (or its parent)
+sets the icon colour, and `width`/`height` on the `<svg>` can be overridden in Webflow CSS.
+Style per type with the stamped attribute — no script change needed:
+
+```css
+.media-icon svg { width: 1rem; height: 1rem; }
+.media-icon[data-media-type="pdf"] { color: #b45309; }
+```
+
+**Why inline rather than a font or CDN:** a blocked stylesheet would silently strip every
+icon, which is the same invisible-failure mode this whole reference exists to prevent.
+Inlining costs ~1KB and has no external dependency.
+
+### Dates
+
+`ind-recording-date`, `ind-file-date`, `cohort-file-date`, and `cohort-my-file-date` all
+render the **short** form — `"June 3"`, no year — since these are recent items on space-tight
+cards. Session dates keep the long `"Year Month Day"` form.
+
+⚠️ **All four are `content_items.created_at`** — when the item was uploaded to the dashboard,
+not a date the content itself claims. Accurate for material shared near its session; a bulk
+backfill makes every card show the same day. The field names are deliberately neutral, so
+adding a real date column later changes only the API line, not the Webflow attribute.
+
+---
+
+_Keep this in sync with `public/portal.js` (and its `public/portal.staging.js` copy) and
+`app/api/portal/route.ts` whenever fields change._

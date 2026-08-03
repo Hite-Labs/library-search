@@ -57,14 +57,16 @@ Cross-check each rendered value against what's in the dashboard for that user (a
 
 **Recordings**
 - [ ] `ind-recordings-list` populated (or `ind-recordings-empty` if none).
-- [ ] Per card: `ind-recording-title`, `ind-recording-label`.
+- [ ] Per card: `ind-recording-title`, `ind-recording-label`, `ind-recording-date` (short
+      form, e.g. "June 3"), and `ind-recording-icon` (microphone/media-video/page by type).
 - [ ] Click a video/audio recording → modal opens, plays; `modal-title` correct; `modal-download`
       link works. Escape / backdrop / `modal-close` all close it.
 - [ ] Click a PDF recording → opens in a new tab (no modal).
 
 **Files**
 - [ ] `ind-files-list` populated (or `ind-files-empty`).
-- [ ] Per card: `ind-file-title`, `ind-file-description`.
+- [ ] Per card: `ind-file-title`, `ind-file-description`, `ind-file-date` (short form), and
+      `ind-file-icon` (microphone/media-video/page by type).
 - [ ] Click behavior as recordings (modal for audio/video, new tab for pdf).
 
 - [ ] **Silent-fail sweep:** every section above either showed data or its correct empty state —
@@ -89,15 +91,18 @@ enrollment (a cohort that has dated sessions with prompts).
 - [ ] Locked vs unlocked: sessions whose `session_date` is in the future show
       `cohort-session-locked`; past-dated show `cohort-session-unlocked` with `cohort-session-date`.
 
-**⚠️ Expected gaps — do NOT flag these as bugs** (API doesn't send this data yet; see reference §D)
-- [ ] `cohort-session-title` blank — expected (route drops `title`).
-- [ ] Unlocked cohort sessions not clickable / no recording — expected (no `recording_url`).
-- [ ] `cohort-files-list` shows empty state — expected (no `cohort.files[]`).
-- [ ] `cohort-my-files-list` shows empty state — expected (no `cohort.my_files[]`).
-- [ ] "Whole cohort ended unlocks all" doesn't happen — expected (no `end_date`).
+**These were the known gaps — all now CLOSED and testable** (as of 73ec000). Treat any of the
+following as a real bug if it fails:
+- [ ] `cohort-session-title` shows the session's title.
+- [ ] An unlocked cohort session with a recording is clickable → opens the modal.
+- [ ] `cohort-files-list` populates from `cohort.files[]` (or shows its empty state).
+- [ ] `cohort-my-files-list` populates from `cohort.my_files[]` (or its empty state).
+- [ ] A cohort whose `end_date` has passed unlocks every session at once.
 
-> When you're ready to close these gaps, ping me — most need a small change to
-> `buildCohortObject` in `app/api/portal/route.ts` (see reference §D for the per-field fix path).
+**File cards** (cohort-wide and my-files):
+- [ ] `cohort-file-date` / `cohort-my-file-date` show the short date ("June 3").
+- [ ] `cohort-file-icon` / `cohort-my-file-icon` render the right glyph per type:
+      microphone = audio, media-video = video, page = pdf.
 
 - [ ] **Silent-fail sweep** on the working cohort fields.
 
