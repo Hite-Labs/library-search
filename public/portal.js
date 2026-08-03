@@ -52,6 +52,53 @@
     });
   }
 
+  /**
+   * Short date ("June 3") for recording/file cards, where the year is noise — these are
+   * recent items and the card has little room. Session dates keep the long form.
+   */
+  function formatDateShort(value) {
+    if (!value) return '';
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  }
+
+  /**
+   * Iconoir (https://iconoir.com) glyphs, inlined so the portal carries no CDN or font
+   * dependency — a blocked stylesheet would otherwise silently strip every icon.
+   * Keyed by media_type, which the DB constrains to exactly these three values, so an
+   * unknown type simply renders no icon rather than a broken one.
+   *
+   * `currentColor` on the strokes means Webflow controls the colour with plain CSS on
+   * the element — no need to touch this script to restyle them.
+   */
+  var MEDIA_ICONS = {
+    audio:
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>' +
+      '<path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/><path d="M8 23h8"/></svg>',
+    video:
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M2 8a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8z"/>' +
+      '<path d="M15 11l6.4-3.2a.5.5 0 0 1 .7.4v7.6a.5.5 0 0 1-.7.4L15 13v-2z"/></svg>',
+    pdf:
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M4 3a1 1 0 0 1 1-1h9l6 6v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3z"/>' +
+      '<path d="M14 2v6h6"/></svg>'
+  };
+
+  /**
+   * Paint the media icon for a card. Also stamps data-media-type on the element so
+   * Webflow can style per type (size, colour, spacing) without this script knowing how.
+   */
+  function setIcon(root, name, mediaType) {
+    var el = root.querySelector('[data-field="' + name + '"]');
+    if (!el) return;
+    var svg = MEDIA_ICONS[mediaType];
+    el.setAttribute('data-media-type', mediaType || '');
+    el.innerHTML = svg || '';
+  }
+
   function hideAll() {
     [
       'ind-goal',
@@ -304,11 +351,13 @@
   function fillRecordingCard(card, recording) {
     setField(card, 'ind-recording-title', recording.title);
     setField(card, 'ind-recording-label', recording.session_label || '');
-    setField(card, 'ind-recording-date', formatDate(recording.recorded_at));
+    setField(card, 'ind-recording-date', formatDateShort(recording.recorded_at));
 
     var url = recording.public_url || '';
     var fileType = recording.file_type || 'video';
     var title = recording.title || '';
+
+    setIcon(card, 'ind-recording-icon', fileType);
 
     card.style.cursor = 'pointer';
     card.addEventListener('click', function () {
@@ -323,10 +372,13 @@
   function fillFileCard(card, file) {
     setField(card, 'ind-file-title', file.title);
     setField(card, 'ind-file-description', file.description || '');
+    setField(card, 'ind-file-date', formatDateShort(file.uploaded_at));
 
     var url = file.public_url || '';
     var fileType = file.file_type || 'audio';
     var title = file.title || '';
+
+    setIcon(card, 'ind-file-icon', fileType);
 
     card.style.cursor = 'pointer';
     card.addEventListener('click', function () {
@@ -395,10 +447,14 @@
 
   function fillCohortFileCard(card, file) {
     setField(card, 'cohort-file-title', file.title);
+    setField(card, 'cohort-file-description', file.description || '');
+    setField(card, 'cohort-file-date', formatDateShort(file.uploaded_at));
 
     var url = file.public_url || '';
     var fileType = file.file_type || 'audio';
     var title = file.title || '';
+
+    setIcon(card, 'cohort-file-icon', fileType);
 
     card.style.cursor = 'pointer';
     card.addEventListener('click', function () {
@@ -413,10 +469,13 @@
   function fillCohortMyFileCard(card, file) {
     setField(card, 'cohort-my-file-title', file.title);
     setField(card, 'cohort-my-file-description', file.description || '');
+    setField(card, 'cohort-my-file-date', formatDateShort(file.uploaded_at));
 
     var url = file.public_url || '';
     var fileType = file.file_type || 'audio';
     var title = file.title || '';
+
+    setIcon(card, 'cohort-my-file-icon', fileType);
 
     card.style.cursor = 'pointer';
     card.addEventListener('click', function () {
