@@ -357,7 +357,10 @@
     var fileType = recording.file_type || 'video';
     var title = recording.title || '';
 
-    setIcon(card, 'ind-recording-icon', fileType);
+    // Deliberately the RAW file_type, not the 'video'-defaulted one above: that default
+    // exists only to pick modal-vs-new-tab, and using it here would stamp a video icon on
+    // every item whose type is missing — a confident wrong answer instead of no answer.
+    setIcon(card, 'ind-recording-icon', recording.file_type);
 
     card.style.cursor = 'pointer';
     card.addEventListener('click', function () {
@@ -378,7 +381,8 @@
     var fileType = file.file_type || 'audio';
     var title = file.title || '';
 
-    setIcon(card, 'ind-file-icon', fileType);
+    // Raw file_type, not the 'audio'-defaulted one — see fillRecordingCard.
+    setIcon(card, 'ind-file-icon', file.file_type);
 
     card.style.cursor = 'pointer';
     card.addEventListener('click', function () {
@@ -454,7 +458,8 @@
     var fileType = file.file_type || 'audio';
     var title = file.title || '';
 
-    setIcon(card, 'cohort-file-icon', fileType);
+    // Raw file_type, not the 'audio'-defaulted one — see fillRecordingCard.
+    setIcon(card, 'cohort-file-icon', file.file_type);
 
     card.style.cursor = 'pointer';
     card.addEventListener('click', function () {
@@ -475,7 +480,8 @@
     var fileType = file.file_type || 'audio';
     var title = file.title || '';
 
-    setIcon(card, 'cohort-my-file-icon', fileType);
+    // Raw file_type, not the 'audio'-defaulted one — see fillRecordingCard.
+    setIcon(card, 'cohort-my-file-icon', file.file_type);
 
     card.style.cursor = 'pointer';
     card.addEventListener('click', function () {
