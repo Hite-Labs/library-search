@@ -1,6 +1,12 @@
 import { neon, NeonQueryFunction } from '@neondatabase/serverless';
 import { env } from './env';
-import { provisionMember, PlanType } from './memberstack';
+import {
+  provisionMember,
+  getMemberPlanState,
+  setMemberPlan,
+  isMemberstackConfigured,
+  PlanType,
+} from './memberstack';
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 function getSql(): NeonQueryFunction<false, false> {
@@ -337,18 +343,32 @@ export async function setClientMemberstackId(clientId: string, memberstackId: st
 }
 
 /**
- * Ensure a client has a linked Memberstack member, so they can reach the portal.
+ * Ensure a client has a linked Memberstack member AND holds the plan for the program
+ * they're being enrolled in, so they can reach the portal.
  *
- * Idempotent twice over: it no-ops when the client already has a `memberstack_id`, and
- * `provisionMember` itself dedupes by email, so an existing member is linked rather than
- * duplicated.
+ * Two cases, because a person's second program matters as much as their first:
+ *  - **No member yet** → create one with the plan(s) for `planType` (`provisionMember`
+ *    dedupes by email, so an existing member is linked rather than duplicated).
+ *  - **Member already exists** → attach any plan `planType` calls for that they don't
+ *    already hold. Without this, someone provisioned as individual who later joins a
+ *    cohort gets the cohort *enrollment* but never the cohort *plan*, so `portal.js` —
+ *    which decides panels from `planConnections` — hides the cohort panel from a genuine
+ *    cohort member. That drift is exactly what `/reconcile` reports; closing it here makes
+ *    the dashboard authoritative and leaves reconcile as a safety net rather than a
+ *    required manual step.
+ *
+ * Only ever ADDS plans. Revocation stays manual (via /reconcile): dropping a plan because
+ * one enrollment ended could cut off a program the person still has, and this function
+ * only knows about the program being enrolled — not the rest of their record.
  *
  * Never throws. Provisioning is best-effort by design — Memberstack being down must not
- * block creating a client — so a failure comes back as `provisionWarning` for the UI to
- * surface, and the caller carries on.
+ * block creating a client or an enrollment — so a failure comes back as `provisionWarning`
+ * for the UI to surface, and the caller carries on. The DB write is the source of truth.
  *
- * `planType` decides which portal panel(s) the member is entitled to; it should match the
- * program they're being enrolled in (see provisionMember).
+ * `memberProvisioned` stays true only for a brand-new member id created this request: it's
+ * the signal the UI uses to send the welcome/set-password email exactly once. Attaching a
+ * plan to an existing member must NOT re-trigger that, so it's reported separately as
+ * `plansAttached`.
  */
 export async function ensureMemberProvisioned(
   client: Client,
@@ -359,8 +379,25 @@ export async function ensureMemberProvisioned(
     totalSessions?: number;
     planType?: PlanType;
   } = {},
-): Promise<{ client: Client; provisionWarning?: string; memberProvisioned: boolean }> {
-  if (client.memberstack_id) return { client, memberProvisioned: false };
+): Promise<{
+  client: Client;
+  provisionWarning?: string;
+  memberProvisioned: boolean;
+  /** Plans newly attached to an already-existing member this request. */
+  plansAttached: ('individual' | 'cohort')[];
+}> {
+  const planType = opts.planType ?? 'individual';
+
+  // Already has a member — make sure the plan for THIS program is actually on them.
+  if (client.memberstack_id) {
+    const { attached, warning } = await ensureMemberPlans(client.memberstack_id, planType);
+    return {
+      client,
+      memberProvisioned: false,
+      plansAttached: attached,
+      provisionWarning: warning,
+    };
+  }
 
   try {
     const { id } = await provisionMember({
@@ -369,15 +406,71 @@ export async function ensureMemberProvisioned(
       lastName: opts.lastName,
       goal: opts.goal,
       totalSessions: opts.totalSessions,
-      planType: opts.planType ?? 'individual',
+      planType,
     });
     await setClientMemberstackId(client.id, id);
-    return { client: { ...client, memberstack_id: id }, memberProvisioned: true };
+    return {
+      client: { ...client, memberstack_id: id },
+      memberProvisioned: true,
+      plansAttached: [],
+    };
   } catch (err) {
     return {
       client,
       memberProvisioned: false,
+      plansAttached: [],
       provisionWarning: `Client saved, but Memberstack provisioning failed: ${String(err)}`,
+    };
+  }
+}
+
+/**
+ * Attach whichever of the two coaching plans `planType` calls for that this member doesn't
+ * already hold. Read-then-write, so a plan they already have is never re-added.
+ *
+ * Bails without touching anything when the member's current plan state can't be read —
+ * `getMemberPlanState` returns null for "unknown", and attaching plans against an unknown
+ * baseline is how you end up granting access nobody asked for.
+ */
+async function ensureMemberPlans(
+  memberstackId: string,
+  planType: PlanType,
+): Promise<{ attached: ('individual' | 'cohort')[]; warning?: string }> {
+  // An install with no Memberstack key isn't drift — there's simply no portal to gate.
+  // Warning on every enrollment there would be noise, so distinguish that from a genuine
+  // read failure, which IS worth surfacing.
+  if (!isMemberstackConfigured()) return { attached: [] };
+
+  try {
+    const state = await getMemberPlanState(memberstackId);
+    if (!state) {
+      return {
+        attached: [],
+        warning:
+          'Enrollment saved, but their Memberstack plans could not be read — ' +
+          'check /reconcile to confirm their portal access.',
+      };
+    }
+
+    const wanted: ('individual' | 'cohort')[] = [];
+    if (planType === 'individual' || planType === 'both') wanted.push('individual');
+    if (planType === 'cohort' || planType === 'both') wanted.push('cohort');
+
+    const missing = wanted.filter((p) =>
+      p === 'individual' ? !state.hasIndividualPlan : !state.hasCohortPlan,
+    );
+    if (missing.length === 0) return { attached: [] };
+
+    const attached: ('individual' | 'cohort')[] = [];
+    for (const p of missing) {
+      // false = Memberstack unconfigured or that plan id unset; not an error, just a no-op.
+      if (await setMemberPlan(memberstackId, p, true)) attached.push(p);
+    }
+    return { attached };
+  } catch (err) {
+    return {
+      attached: [],
+      warning: `Enrollment saved, but attaching their Memberstack plan failed: ${String(err)}`,
     };
   }
 }
@@ -408,6 +501,8 @@ export async function createClientWithEnrollment(data: {
   alreadyMember?: boolean;
   provisionWarning?: string;
   memberProvisioned: boolean;
+  /** Plans newly attached to an already-existing member (reused client). */
+  plansAttached: ('individual' | 'cohort')[];
 }> {
   const sql = getSql();
   const existing = await findClientByEmail(data.email);
@@ -428,22 +523,7 @@ export async function createClientWithEnrollment(data: {
     reusedClient = false;
   }
 
-  // Provision (or link) a Memberstack member so the client can access the portal.
-  // `memberProvisioned` is true only when a brand-new member id was created and stored
-  // this request — the signal the UI uses to send the welcome/set-password email exactly
-  // once (not on reuse or re-save).
   const programType = data.programType ?? 'individual';
-  const provisioned = await ensureMemberProvisioned(client, {
-    firstName: data.firstName,
-    lastName: data.lastName,
-    goal: data.goal,
-    totalSessions: data.totalSessions,
-    planType: programType,
-  });
-  client = provisioned.client;
-  const provisionWarning = provisioned.provisionWarning;
-  const memberProvisioned = provisioned.memberProvisioned;
-
   const wantsIndividual = programType === 'individual' || programType === 'both';
   const wantsCohort = programType === 'cohort' || programType === 'both';
 
@@ -461,6 +541,43 @@ export async function createClientWithEnrollment(data: {
     }
   }
 
+  // Provision (or link) a Memberstack member so the client can access the portal.
+  //
+  // Deliberately AFTER the enrollment writes, and keyed to the enrollments that actually
+  // exist rather than to `programType`: granting a plan for a program they didn't end up
+  // enrolled in would show them an empty panel and register as drift in /reconcile. An
+  // `alreadyMember` cohort still counts — they hold that enrollment, it just predates
+  // this request.
+  //
+  // `memberProvisioned` is true only when a brand-new member id was created and stored
+  // this request — the signal the UI uses to send the welcome/set-password email exactly
+  // once (not on reuse or re-save).
+  const enrolledIndividual = enrollment !== null;
+  const enrolledCohort = cohortEnrollment !== null || alreadyMember;
+  const planType: PlanType | null =
+    enrolledIndividual && enrolledCohort
+      ? 'both'
+      : enrolledIndividual
+        ? 'individual'
+        : enrolledCohort
+          ? 'cohort'
+          : null;
+
+  // No enrollment landed (cohort requested but the id was missing) — nothing to entitle.
+  const provisioned = planType
+    ? await ensureMemberProvisioned(client, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        goal: data.goal,
+        totalSessions: data.totalSessions,
+        planType,
+      })
+    : { client, memberProvisioned: false, plansAttached: [], provisionWarning: undefined };
+
+  client = provisioned.client;
+  const provisionWarning = provisioned.provisionWarning;
+  const memberProvisioned = provisioned.memberProvisioned;
+
   return {
     client,
     enrollment,
@@ -469,6 +586,7 @@ export async function createClientWithEnrollment(data: {
     alreadyMember,
     provisionWarning,
     memberProvisioned,
+    plansAttached: provisioned.plansAttached,
   };
 }
 
@@ -1010,6 +1128,8 @@ export async function addCohortMember(data: {
   alreadyMember: boolean;
   provisionWarning?: string;
   memberProvisioned: boolean;
+  /** Plans newly attached to an already-existing member (reused client). */
+  plansAttached: ('individual' | 'cohort')[];
 }> {
   const sql = getSql();
 
@@ -1036,7 +1156,14 @@ export async function addCohortMember(data: {
   }
 
   if (await isCohortMember(client.id, data.cohortId)) {
-    return { client, enrollment: null, reusedClient, alreadyMember: true, memberProvisioned: false };
+    return {
+      client,
+      enrollment: null,
+      reusedClient,
+      alreadyMember: true,
+      memberProvisioned: false,
+      plansAttached: [],
+    };
   }
 
   const provisioned = await ensureMemberProvisioned(client, {
@@ -1055,6 +1182,7 @@ export async function addCohortMember(data: {
     alreadyMember: false,
     provisionWarning: provisioned.provisionWarning,
     memberProvisioned: provisioned.memberProvisioned,
+    plansAttached: provisioned.plansAttached,
   };
 }
 

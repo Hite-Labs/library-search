@@ -940,6 +940,7 @@ function AddProgram({ clientId, onCreated }: { clientId: string; onCreated: () =
   const [pickedCohortId, setPickedCohortId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Load joinable cohorts when the cohort form opens. Refetched each time, since the
   // set changes as cohorts are created, archived, or joined elsewhere.
@@ -953,7 +954,7 @@ function AddProgram({ clientId, onCreated }: { clientId: string; onCreated: () =
 
   function close() {
     setOpen(null); setGoal(''); setTotalSessions('6');
-    setPickedCohortId(null); setError(null);
+    setPickedCohortId(null); setError(null); setNotice(null);
   }
 
   async function createPack(e: FormEvent) {
@@ -965,8 +966,22 @@ function AddProgram({ clientId, onCreated }: { clientId: string; onCreated: () =
         body: JSON.stringify({ goal, totalSessions: parseInt(totalSessions, 10) || 6 }),
       });
       if (!res.ok) throw new Error('Failed to create pack');
-      close();
-      onCreated();
+      // The pack IS saved at this point, so a Memberstack hiccup must not read as failure —
+      // erroring here would invite a retry and a duplicate enrollment. Surface it as a
+      // notice (same convention as the create-client and cohort-roster forms) and move on.
+      const data = await res.json().catch(() => null);
+      const msgs: string[] = [];
+      if (data?.provisionWarning) msgs.push(data.provisionWarning);
+      if (data?.plansAttached?.length) {
+        msgs.push(`Added their ${data.plansAttached.join(' and ')} portal access in Memberstack.`);
+      }
+      if (msgs.length) {
+        setNotice(msgs.join(' '));
+        setTimeout(() => { close(); onCreated(); }, 2500);
+      } else {
+        close();
+        onCreated();
+      }
     } catch (err) { setError(String(err)); } finally { setSaving(false); }
   }
 
@@ -984,8 +999,20 @@ function AddProgram({ clientId, onCreated }: { clientId: string; onCreated: () =
       const data = await res.json();
       if (!data.ok) throw new Error(data.error ?? 'Failed to join cohort');
       if (data.alreadyMember) throw new Error('Already a member of that cohort.');
-      close();
-      onCreated();
+      // Joining is what grants the cohort plan for an existing member — say so, since
+      // that's what makes the cohort panel appear in their portal.
+      const msgs: string[] = [];
+      if (data.provisionWarning) msgs.push(data.provisionWarning);
+      if (data.plansAttached?.length) {
+        msgs.push(`Added their ${data.plansAttached.join(' and ')} portal access in Memberstack.`);
+      }
+      if (msgs.length) {
+        setNotice(msgs.join(' '));
+        setTimeout(() => { close(); onCreated(); }, 2500);
+      } else {
+        close();
+        onCreated();
+      }
     } catch (err) { setError(String(err)); } finally { setSaving(false); }
   }
 
@@ -1012,6 +1039,7 @@ function AddProgram({ clientId, onCreated }: { clientId: string; onCreated: () =
           <input type="number" value={totalSessions} onChange={(e) => setTotalSessions(e.target.value)} min="1"
             className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
           {error && <p className="text-xs text-red-600">{error}</p>}
+          {notice && <p className="text-xs text-slate/70">{notice}</p>}
           <div className="flex gap-2">
             <button type="button" onClick={close} className="btn-spark-outline flex-1">Cancel</button>
             <button type="submit" disabled={saving} className="btn-spark flex-1 disabled:opacity-50">
@@ -1051,6 +1079,7 @@ function AddProgram({ clientId, onCreated }: { clientId: string; onCreated: () =
             placeholder="This person's goal for the cohort (optional)"
             className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-none" />
           {error && <p className="text-xs text-red-600">{error}</p>}
+          {notice && <p className="text-xs text-slate/70">{notice}</p>}
           <div className="flex gap-2">
             <button type="button" onClick={close} className="btn-spark-outline flex-1">Cancel</button>
             <button type="submit" disabled={saving || !pickedCohortId} className="btn-spark flex-1 disabled:opacity-50">
