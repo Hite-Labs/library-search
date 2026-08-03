@@ -196,6 +196,45 @@ export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> 
 }
 
 /**
+ * The active plan state of ONE member, for callers that need to know what a member
+ * already holds before changing it (see `ensureMemberProvisioned`). `listMembersWithPlans`
+ * answers the same question for the whole account, but paging every member to look up one
+ * person is the wrong shape on an enrollment write.
+ *
+ * Returns null when Memberstack isn't configured or the member can't be read — callers
+ * must treat null as "unknown", never as "holds nothing", since acting on the latter
+ * would attach plans blindly.
+ *
+ * Mirrors the connection filter in `listMembersWithPlans`: a connection counts only when
+ * `active` and not in a terminal status, so a cancelled plan reads as absent in both.
+ */
+export async function getMemberPlanState(
+  memberstackId: string,
+): Promise<{ hasIndividualPlan: boolean; hasCohortPlan: boolean } | null> {
+  const client = getClient();
+  if (!client) return null;
+
+  try {
+    const res = await client.members.retrieve({ id: memberstackId });
+    const conns = Array.isArray(res?.data?.planConnections) ? res.data.planConnections : [];
+    const activePlanIds = new Set(
+      conns
+        .filter((c): c is Exclude<typeof c, string> => typeof c !== 'string')
+        .filter((c) => c.active && !/cancel|expired/i.test(c.status ?? ''))
+        .map((c) => c.planId),
+    );
+    const individualId = env.MEMBERSTACK_INDIVIDUAL_PLAN_ID;
+    const cohortId = env.MEMBERSTACK_COHORT_PLAN_ID;
+    return {
+      hasIndividualPlan: individualId ? activePlanIds.has(individualId) : false,
+      hasCohortPlan: cohortId ? activePlanIds.has(cohortId) : false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Attach or detach one of the two coaching plans on a member. Used by the reconciliation
  * view to fix drift in either direction. Returns false when Memberstack isn't configured
  * or the plan id for that type isn't set.

@@ -31,6 +31,7 @@ export async function POST(
       alreadyMember: result.alreadyMember,
       provisionWarning: result.provisionWarning,
       memberProvisioned: result.memberProvisioned,
+      plansAttached: result.plansAttached,
     });
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });

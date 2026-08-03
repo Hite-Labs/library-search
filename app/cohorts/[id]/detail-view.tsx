@@ -745,6 +745,11 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
         msgs.push(`${who} already existed — linked their record to this cohort.`);
       }
       if (data.provisionWarning) msgs.push(data.provisionWarning);
+      // Existing member who just gained the cohort plan — this is what makes the cohort
+      // panel appear in their portal, so surface it rather than doing it silently.
+      if (data.plansAttached?.length) {
+        msgs.push(`Added their ${data.plansAttached.join(' and ')} portal access in Memberstack.`);
+      }
       resetForm();
       if (msgs.length) setNotice(msgs.join(' '));
       else setShowAdd(false);

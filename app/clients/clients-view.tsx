@@ -259,6 +259,11 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
       // member gets into the portal via the passwordless login link Lindsay shares (the
       // "Copy login link" button on the client page) — the app sends no email itself.
       if (data.provisionWarning) msgs.push(data.provisionWarning);
+      // An existing member who gained a plan — worth saying, since it's what actually
+      // unlocks the matching portal panel for them.
+      if (data.plansAttached?.length) {
+        msgs.push(`Added their ${data.plansAttached.join(' and ')} portal access in Memberstack.`);
+      }
 
       if (msgs.length > 0) {
         // Keep the modal up briefly so Lindsay sees the note(s) before we refresh.
