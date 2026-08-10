@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Nav } from '@/components/Nav';
 
 interface Issue {
-  kind: 'missing-plan' | 'extra-plan' | 'not-provisioned' | 'orphan-member';
+  kind: 'missing-plan' | 'extra-plan' | 'not-provisioned' | 'no-program' | 'orphan-member';
   planType: 'individual' | 'cohort' | null;
   email: string;
   name: string | null;
@@ -18,6 +18,8 @@ interface ReconcileData {
   ok: boolean;
   checkedClients: number;
   checkedMembers: number;
+  /** Clients whose missing memberstack_id was repaired during this check. */
+  backfilled: number;
   issues: Issue[];
   error?: string;
 }
@@ -44,6 +46,11 @@ const GROUPS: { kind: Issue['kind']; title: string; blurb: string }[] = [
     kind: 'orphan-member',
     title: 'Unknown members',
     blurb: 'Has a coaching plan in Memberstack but no client record here. Usually someone added directly in Memberstack, or a client deleted from the dashboard.',
+  },
+  {
+    kind: 'no-program',
+    title: 'Not in a program',
+    blurb: 'Exists here but has no active enrollment and no Memberstack account, so they cannot log in. Expected for a lead or someone whose program has ended — worth a look if you thought they were enrolled.',
   },
 ];
 
@@ -134,15 +141,30 @@ export function ReconcileView() {
           <>
             <p className="font-label text-xs text-slate/60 mb-4">
               Checked {data.checkedClients} clients against {data.checkedMembers} Memberstack members.
+              {/* A silent write on a page the operator trusts should say so out loud. */}
+              {data.backfilled > 0 && (
+                <>
+                  {' '}Linked {data.backfilled}{' '}
+                  {data.backfilled === 1 ? 'client' : 'clients'} to their existing Memberstack
+                  account — their portal was broken until now.
+                </>
+              )}
             </p>
 
-            {data.issues.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gold/20 p-6">
+            {/* 'no-program' is a standing fact, not a disagreement between the two systems,
+                so it's listed below but must not withhold the all-clear on its own. The
+                wording has to stay true alongside that list — claiming "everything matches"
+                directly above people who cannot log in reads as a broken check. */}
+            {!data.issues.some((i) => i.kind !== 'no-program') && (
+              <div className="bg-white rounded-2xl border border-gold/20 p-6 mb-4">
                 <p className="text-sm text-slate">
-                  Everything matches — every client&rsquo;s portal access lines up with their enrollments.
+                  No drift — every client with a program has portal access matching their
+                  enrollments.
                 </p>
               </div>
-            ) : (
+            )}
+
+            {data.issues.length > 0 && (
               <div className="space-y-4">
                 {GROUPS.map((g) => {
                   const rows = data.issues.filter((i) => i.kind === g.kind);

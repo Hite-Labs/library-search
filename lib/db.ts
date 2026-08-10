@@ -343,6 +343,26 @@ export async function setClientMemberstackId(clientId: string, memberstackId: st
 }
 
 /**
+ * Warning text for plans that were asked for but never attached because their env id is
+ * unset. Worth surfacing loudly: the member exists and can log in, so nothing looks wrong
+ * from the dashboard, but the portal gates its panels on the plan — they land on the
+ * upsell with none of their content. Silence makes a missing variable read as a
+ * Memberstack bug.
+ */
+function unsetPlanIdWarning(plansSkipped: ('individual' | 'cohort')[]): string | undefined {
+  if (plansSkipped.length === 0) return undefined;
+  const vars = plansSkipped
+    .map((p) => (p === 'individual' ? 'MEMBERSTACK_INDIVIDUAL_PLAN_ID' : 'MEMBERSTACK_COHORT_PLAN_ID'))
+    .join(' and ');
+  const many = plansSkipped.length > 1;
+  return (
+    `Saved, but no ${plansSkipped.join(' or ')} plan was attached in Memberstack — ` +
+    `${vars} ${many ? 'are' : 'is'} not set, so they can log in but will see the upsell ` +
+    `instead of their content. Set ${many ? 'them' : 'it'}, then re-check /reconcile.`
+  );
+}
+
+/**
  * Ensure a client has a linked Memberstack member AND holds the plan for the program
  * they're being enrolled in, so they can reach the portal.
  *
@@ -400,7 +420,7 @@ export async function ensureMemberProvisioned(
   }
 
   try {
-    const { id } = await provisionMember({
+    const { id, plansSkipped } = await provisionMember({
       email: client.email,
       firstName: opts.firstName,
       lastName: opts.lastName,
@@ -413,6 +433,7 @@ export async function ensureMemberProvisioned(
       client: { ...client, memberstack_id: id },
       memberProvisioned: true,
       plansAttached: [],
+      provisionWarning: unsetPlanIdWarning(plansSkipped),
     };
   } catch (err) {
     return {
@@ -462,11 +483,14 @@ async function ensureMemberPlans(
     if (missing.length === 0) return { attached: [] };
 
     const attached: ('individual' | 'cohort')[] = [];
+    const skipped: ('individual' | 'cohort')[] = [];
     for (const p of missing) {
-      // false = Memberstack unconfigured or that plan id unset; not an error, just a no-op.
+      // false = that plan id is unset (Memberstack itself is configured — checked above),
+      // so nothing was attached. A no-op, but one the operator needs to hear about.
       if (await setMemberPlan(memberstackId, p, true)) attached.push(p);
+      else skipped.push(p);
     }
-    return { attached };
+    return { attached, warning: unsetPlanIdWarning(skipped) };
   } catch (err) {
     return {
       attached: [],

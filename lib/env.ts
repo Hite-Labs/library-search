@@ -39,9 +39,16 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(32),
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
   // Webflow passwordless login page. Powers the per-client "Copy login link" button
-  // (link is suffixed with ?email=… to pre-fill the client's email). Optional → button
-  // hides when unset.
+  // (link is suffixed with ?email=… to pre-fill the client's email) and the unsuffixed
+  // version on the cohort roster, which is safe to paste in a group chat. Optional →
+  // button hides when unset.
   NEXT_PUBLIC_PORTAL_LOGIN_URL: z.string().url().optional(),
+  // The portal itself — where members who already have an account should return. Distinct
+  // from the login page above, which clears any existing Memberstack session on load: a
+  // member who bookmarks the login URL is asked for a fresh code on every visit, while
+  // the portal URL lands them straight in (the _ms-mid cookie outlives a browser restart).
+  // Optional → button hides when unset.
+  NEXT_PUBLIC_PORTAL_URL: z.string().url().optional(),
 });
 
 type Env = z.infer<typeof envSchema>;
