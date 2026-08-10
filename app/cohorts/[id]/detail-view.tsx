@@ -4,11 +4,23 @@ import { useState, useEffect, useCallback, FormEvent } from 'react';
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
 import { PencilIcon } from '@/components/PencilIcon';
+import { CopyLinkButton } from '@/components/CopyLinkButton';
 
 // Sentence-case the first character (display only).
 function initialCap(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
+
+// Webflow passwordless login page, WITHOUT the ?email= suffix the per-client button on
+// /clients/[id] adds — this one gets pasted into the group Zoom chat, where a pre-filled
+// address would be the wrong person's for everyone but one. Each member types their own
+// email and Memberstack sends them their own code. Empty → button hides.
+const PORTAL_LOGIN_URL = process.env.NEXT_PUBLIC_PORTAL_LOGIN_URL ?? '';
+
+// Where members who are already signed in should go back to. Sharing the login link for
+// return visits is what forces a needless re-authentication, since loading it clears the
+// existing Memberstack session. Empty → button hides.
+const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL ?? '';
 
 // Manrope input-label style (reserve Oswald/font-label for headers & subheaders).
 const INPUT_LABEL = 'block text-xs font-medium uppercase tracking-wide text-slate/70 mb-1';
@@ -761,10 +773,28 @@ function RosterSection({ cohortId, roster, onChange }: { cohortId: string; roste
     <div className="bg-white rounded-2xl border border-gold/20 p-6 mt-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-label text-xs text-plum">Members ({roster.length})</h2>
-        <button onClick={() => setShowAdd(!showAdd)} className="btn-spark-outline text-xs px-3 py-1.5">
-          {showAdd ? 'Cancel' : 'Add member'}
-        </button>
+        <div className="flex items-center gap-2">
+          <CopyLinkButton value={PORTAL_LOGIN_URL} label="Copy login link" />
+          <CopyLinkButton value={PORTAL_URL} label="Copy portal link" />
+          <button onClick={() => setShowAdd(!showAdd)} className="btn-spark-outline text-xs px-3 py-1.5">
+            {showAdd ? 'Cancel' : 'Add member'}
+          </button>
+        </div>
       </div>
+
+      {/* Adding someone here creates their Memberstack account but tells them nothing —
+          the app sends no email. These links are how access actually reaches them. */}
+      {(PORTAL_LOGIN_URL || PORTAL_URL) && (
+        <p className="text-xs text-slate/60 mb-3">
+          {PORTAL_LOGIN_URL && (
+            <>
+              Safe to paste the login link in the Zoom chat — each person enters their own
+              email and gets their own code.{' '}
+            </>
+          )}
+          {PORTAL_URL && <>Send the portal link to members who are already set up.</>}
+        </p>
+      )}
 
       {/* Outside the add-form so removal feedback shows even when the form is closed. */}
       {!showAdd && notice && <p className="text-xs text-slate/70 mb-3">{notice}</p>}

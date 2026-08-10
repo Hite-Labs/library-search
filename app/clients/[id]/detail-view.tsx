@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Nav } from '@/components/Nav';
 import { PencilIcon } from '@/components/PencilIcon';
+import { CopyLinkButton } from '@/components/CopyLinkButton';
 
 interface Enrollment {
   id: string;
@@ -60,7 +61,15 @@ const BOOKING_URL = process.env.NEXT_PUBLIC_BOOKING_URL ?? '';
 
 // Webflow passwordless login page. The per-client "Copy login link" button (in the header)
 // appends ?email=… so the login form can pre-fill the client's email. Empty → button hides.
+//
+// Share this one for FIRST access only. Visiting it clears an existing Memberstack
+// session, so a member who bookmarks it gets asked for a fresh code every time —
+// PORTAL_URL below is the link for people who already have an account.
 const PORTAL_LOGIN_URL = process.env.NEXT_PUBLIC_PORTAL_LOGIN_URL ?? '';
+
+// The portal itself, for members who are already set up. The _ms-mid cookie persists
+// across browser restarts, so returning here lands them straight in. Empty → button hides.
+const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL ?? '';
 
 // Tints program status badges.
 const STATUS_STYLES: Record<string, string> = {
@@ -69,25 +78,10 @@ const STATUS_STYLES: Record<string, string> = {
   complete: 'bg-petal text-plum',
 };
 
-// Small "copy to clipboard" button with a brief confirmation. Renders nothing if no value.
+// Local alias — the shared button in its pill shape, which is what this page's
+// Zoom/calendar links have always used.
 function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  if (!value) return null;
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch { /* clipboard blocked — no-op */ }
-      }}
-      className="btn-spark-outline text-xs px-3 py-1.5 shrink-0"
-    >
-      {copied ? 'Copied!' : label}
-    </button>
-  );
+  return <CopyLinkButton value={value} label={label} />;
 }
 
 // Page header: client identity + active-enrollment metadata (type | status | progress),
@@ -153,25 +147,26 @@ function EnrollmentHeader({
   );
 }
 
-// Small text-style "Copy login link" (was a pill button). Hidden when no portal URL configured.
-function CopyLoginLink({ email }: { email: string }) {
-  const [copied, setCopied] = useState(false);
-  if (!PORTAL_LOGIN_URL) return null;
-  const value = `${PORTAL_LOGIN_URL}?email=${encodeURIComponent(email)}`;
+/**
+ * The two links for one person, as quiet text buttons. Each hides when its env var is
+ * unset, so an install with neither configured shows nothing at all.
+ *
+ * They are not interchangeable: the login link pre-fills this client's email for a
+ * first sign-in, while the portal link is where an already-signed-in member should
+ * return. Sharing the login link as the everyday one is what forces a needless
+ * re-authentication, so both are offered side by side rather than picking one.
+ */
+function ClientPortalLinks({ email }: { email: string }) {
+  if (!PORTAL_LOGIN_URL && !PORTAL_URL) return null;
   return (
-    <button
-      type="button"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch { /* clipboard blocked — no-op */ }
-      }}
-      className="mt-1 text-xs text-plum/70 hover:text-plum underline underline-offset-2"
-    >
-      {copied ? 'Copied!' : 'Copy login link'}
-    </button>
+    <div className="mt-1 flex items-center gap-3">
+      <CopyLinkButton
+        variant="text"
+        label="Copy login link"
+        value={PORTAL_LOGIN_URL ? `${PORTAL_LOGIN_URL}?email=${encodeURIComponent(email)}` : ''}
+      />
+      <CopyLinkButton variant="text" label="Copy portal link" value={PORTAL_URL} />
+    </div>
   );
 }
 
@@ -317,8 +312,8 @@ function IdentityCard({ client }: { client: Client }) {
     <div className="mt-2 mb-4 bg-white rounded-2xl border border-gold/20 p-6">
       <h1 className="text-xl font-serif text-slate">{client.name}</h1>
       <p className="text-sm text-slate/60 mt-0.5 truncate">{client.email}</p>
-      {/* Passwordless portal login link, email pre-filled, for Lindsay to share. */}
-      <CopyLoginLink email={client.email} />
+      {/* Login link (email pre-filled, first access) + portal link (returning members). */}
+      <ClientPortalLinks email={client.email} />
     </div>
   );
 }

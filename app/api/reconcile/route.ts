@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listClientEntitlements } from '@/lib/db';
+import { listClientEntitlements, setClientMemberstackId } from '@/lib/db';
 import {
   listMembersWithPlans,
   setMemberPlan,
@@ -16,6 +16,10 @@ export const runtime = 'nodejs';
  *
  * Everything is matched on email — the stable identity across both systems. memberstack_id
  * is stored on clients but is null for anyone never provisioned, so it can't be the key.
+ *
+ * GET is read-only against Memberstack but does repair one thing in Postgres: a client
+ * matched by email whose memberstack_id is null gets it written back (see `backfilled`).
+ * Plan changes stay behind POST, one at a time.
  */
 
 type Issue = {
@@ -23,6 +27,7 @@ type Issue = {
     | 'missing-plan'        // dashboard says entitled, Memberstack doesn't grant it
     | 'extra-plan'          // Memberstack grants it, no active enrollment says it should
     | 'not-provisioned'     // client entitled to something but has no Memberstack member
+    | 'no-program'          // client with no member AND no enrollment — never started
     | 'orphan-member';      // Memberstack member with a coaching plan, no client record
   planType: 'individual' | 'cohort' | null;
   email: string;
@@ -75,6 +80,7 @@ export async function GET() {
   const byEmail = new Map(members.map((m) => [m.email.toLowerCase(), m]));
   const seenEmails = new Set<string>();
   const issues: Issue[] = [];
+  let backfilled = 0;
 
   for (const c of clients) {
     const email = c.email.toLowerCase();
@@ -82,8 +88,6 @@ export async function GET() {
     const member = byEmail.get(email);
 
     if (!member) {
-      // Only a problem if they're actually entitled to something — a client with no
-      // active enrollment and no member is simply someone who never started.
       if (c.wantsIndividual || c.wantsCohort) {
         issues.push({
           kind: 'not-provisioned',
@@ -94,8 +98,39 @@ export async function GET() {
           memberstackId: null,
           detail: 'Has an active enrollment but no Memberstack member — they cannot reach the portal.',
         });
+      } else {
+        // No member and nothing entitling them to one. Usually benign — a lead, or someone
+        // whose program ended — but it was previously invisible here, which made a genuinely
+        // stranded record indistinguishable from a clean check.
+        issues.push({
+          kind: 'no-program',
+          planType: null,
+          email: c.email,
+          name: c.name,
+          clientId: c.client_id,
+          memberstackId: null,
+          detail: 'No active enrollment and no Memberstack member — they cannot log in.',
+        });
       }
       continue;
+    }
+
+    // Their member was found by email but the id was never stored. Repair it: the portal
+    // resolves the logged-in member through this column alone (getClientByMemberstackId),
+    // so a null here is a real outage for them — yet every plan check below passes, which
+    // is why this cannot be left to a human to notice. Email is the identity key and the
+    // column is UNIQUE, so a bad match errors rather than corrupting quietly.
+    if (!c.memberstack_id) {
+      try {
+        await setClientMemberstackId(c.client_id, member.id);
+        backfilled += 1;
+      } catch (err) {
+        // One failed repair must not sink the whole diff — the plan comparison below is
+        // still valid and is what the operator came here for. Logged rather than
+        // swallowed because a UNIQUE violation here would mean two clients are fighting
+        // over one member id, i.e. the email-as-identity assumption has broken down.
+        console.error(`[reconcile] backfill failed for client ${c.client_id}:`, err);
+      }
     }
 
     const checks = [
@@ -147,6 +182,7 @@ export async function GET() {
     ok: true,
     checkedClients: clients.length,
     checkedMembers: members.length,
+    backfilled,
     issues,
   });
 }

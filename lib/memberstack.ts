@@ -58,7 +58,11 @@ export type PlanType = 'individual' | 'cohort' | 'both';
  * individual panel with no data, and one given no plan sees only the upsell.
  *
  * Plan ids come from MEMBERSTACK_INDIVIDUAL_PLAN_ID / MEMBERSTACK_COHORT_PLAN_ID; either
- * being unset simply omits that plan (provisioning still succeeds).
+ * being unset simply omits that plan (provisioning still succeeds) — but the omission is
+ * reported back as `plansSkipped` so the caller can warn. A member created without the
+ * plan their program needs can log in and still see nothing, which looks identical to a
+ * broken account from the admin's side; failing silently there is what makes it hard to
+ * diagnose.
  */
 export async function provisionMember({
   email,
@@ -74,12 +78,27 @@ export async function provisionMember({
   goal?: string;
   totalSessions?: number;
   planType?: PlanType;
-}): Promise<{ id: string; created: boolean }> {
+}): Promise<{
+  id: string;
+  created: boolean;
+  /** Plans this planType called for whose env id is unset, so nothing was attached. */
+  plansSkipped: ('individual' | 'cohort')[];
+}> {
   const client = getClient();
   if (!client) throw new Error('Memberstack is not configured (MEMBERSTACK_SECRET_KEY unset)');
 
+  // 'both' attaches both plans, which is what lets the portal show its plan-tab header.
+  const wantsIndividual = planType === 'individual' || planType === 'both';
+  const wantsCohort = planType === 'cohort' || planType === 'both';
+
+  // Worked out before the dedupe check so the caller is warned about an unset plan id
+  // either way — the misconfiguration is just as real for a member we're reusing.
+  const plansSkipped: ('individual' | 'cohort')[] = [];
+  if (wantsIndividual && !env.MEMBERSTACK_INDIVIDUAL_PLAN_ID) plansSkipped.push('individual');
+  if (wantsCohort && !env.MEMBERSTACK_COHORT_PLAN_ID) plansSkipped.push('cohort');
+
   const existing = await findMemberByEmail(email);
-  if (existing) return { id: existing.id, created: false };
+  if (existing) return { id: existing.id, created: false, plansSkipped };
 
   // Memberstack's default name custom fields are kebab-case keys (first-name/last-name).
   const customFields: Record<string, string> = {};
@@ -91,9 +110,6 @@ export async function provisionMember({
   if (goal) metaData.coachingGoal = goal;
   if (typeof totalSessions === 'number') metaData.totalSessions = totalSessions;
 
-  // 'both' attaches both plans, which is what lets the portal show its plan-tab header.
-  const wantsIndividual = planType === 'individual' || planType === 'both';
-  const wantsCohort = planType === 'cohort' || planType === 'both';
   const planIds = [
     wantsIndividual ? env.MEMBERSTACK_INDIVIDUAL_PLAN_ID : undefined,
     wantsCohort ? env.MEMBERSTACK_COHORT_PLAN_ID : undefined,
@@ -108,7 +124,7 @@ export async function provisionMember({
   });
   const id = res?.data?.id;
   if (!id) throw new Error('Memberstack create returned no member id');
-  return { id, created: true };
+  return { id, created: true, plansSkipped };
 }
 
 /**
