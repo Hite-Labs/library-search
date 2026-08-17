@@ -372,21 +372,29 @@ function GenerateSchedule({ cohortId, cohort, hasSessions, onDone }: {
   const [total, setTotal] = useState(String(cohort.total_sessions));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [replaceExisting, setReplaceExisting] = useState(false);
 
   async function generate(e: FormEvent) {
     e.preventDefault();
+    const n = parseInt(total, 10);
+    if (replaceExisting && hasSessions &&
+        !confirm("Delete this cohort's existing sessions and plot a new schedule? Titles and prompts on the current rows will be lost.")) {
+      return;
+    }
     setSaving(true); setError(null);
     try {
-      const n = parseInt(total, 10);
       if (!start || !(n > 0)) throw new Error('Start date and a positive session count are required');
       // Persist the cadence/start on the cohort so re-generation and the preview stay in sync.
-      await fetch(`/api/cohorts/${cohortId}`, {
+      // Checked, not fire-and-forget: if this fails the cohort's stored cadence disagrees with
+      // the rows we're about to plot, and the next Generate would silently use stale defaults.
+      const patch = await fetch(`/api/cohorts/${cohortId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ startDate: new Date(start).toISOString(), sessionCadence: cadence, totalSessions: n }),
       });
+      if (!patch.ok) throw new Error('Could not save the cohort start date and cadence');
       const res = await fetch(`/api/cohorts/${cohortId}/sessions/generate`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startDate: new Date(start).toISOString(), cadence, totalSessions: n }),
+        body: JSON.stringify({ startDate: new Date(start).toISOString(), cadence, totalSessions: n, replaceExisting }),
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error ?? 'Failed to generate schedule');
@@ -396,7 +404,16 @@ function GenerateSchedule({ cohortId, cohort, hasSessions, onDone }: {
 
   return (
     <form onSubmit={generate} className="space-y-2 bg-petal/40 rounded-lg p-3 mb-4">
-      {hasSessions && <p className="text-xs text-amber-700">This cohort already has sessions — generating adds a new set of rows (it does not replace existing ones).</p>}
+      {hasSessions && (
+        <div className="text-xs text-amber-700 space-y-1">
+          <p>This cohort already has sessions — generating adds a new set of rows alongside them.</p>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={replaceExisting} disabled={saving}
+              onChange={(e) => setReplaceExisting(e.target.checked)} className="accent-plum" />
+            <span>Replace the existing schedule instead (deletes the current rows)</span>
+          </label>
+        </div>
+      )}
       <div className="flex gap-2 items-end flex-wrap">
         <div>
           <label className={INPUT_LABEL}>Start date/time</label>

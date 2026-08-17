@@ -145,6 +145,10 @@ export const GenerateScheduleSchema = z.object({
   startDate: z.string().datetime(),
   cadence: z.enum(['weekly', 'biweekly']),
   totalSessions: z.number().int().positive(),
+  // Replace the cohort's existing dated rows instead of adding a second set. Defaults to
+  // false: replacing deletes rows that content_items may point at, so the caller has to ask
+  // for it deliberately.
+  replaceExisting: z.boolean().default(false),
 });
 
 // Two modes, mirroring AttachRecordingSchema:

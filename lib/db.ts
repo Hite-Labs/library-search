@@ -1070,10 +1070,27 @@ export async function updateCohortSession(
  * Auto-plot a cohort's schedule: generate `totalSessions` dated rows starting at
  * `startDate`, spaced by cadence (weekly = 7d, biweekly = 14d). Each row is editable
  * afterward (holiday shifts) via updateCohortSession. Bulk-inserted in one statement.
+ *
+ * `replaceExisting` deletes the cohort's current rows first, inside the same transaction —
+ * used when re-plotting a schedule so the coach doesn't end up with two overlapping sets.
+ * Off by default: deleting dated rows also orphans any content_items attached to them
+ * (cohort_session_id points at rows that no longer exist), so it must be an explicit,
+ * informed choice rather than a silent side-effect of pressing Generate twice.
+ *
+ * Spacing is computed in LOCAL time, not UTC. Using setUTCDate shifts the wall-clock time
+ * of every session after a DST boundary — a 7pm class becomes 6pm or 8pm halfway through
+ * the program — because a "week later" in UTC is not a week later on the clock a member
+ * reads. setDate does the arithmetic in the server's local zone, which keeps the hour
+ * stable across the transition.
  */
 export async function generateCohortSchedule(
   cohortId: string,
-  data: { startDate: string; cadence: 'weekly' | 'biweekly'; totalSessions: number },
+  data: {
+    startDate: string;
+    cadence: 'weekly' | 'biweekly';
+    totalSessions: number;
+    replaceExisting?: boolean;
+  },
 ): Promise<CohortSession[]> {
   const sql = getSql();
   const stepDays = data.cadence === 'biweekly' ? 14 : 7;
@@ -1083,18 +1100,26 @@ export async function generateCohortSchedule(
   const rows: { date: string; sort: number }[] = [];
   for (let n = 1; n <= data.totalSessions; n++) {
     const d = new Date(base);
-    d.setUTCDate(d.getUTCDate() + stepDays * (n - 1));
+    d.setDate(d.getDate() + stepDays * (n - 1));
     rows.push({ date: d.toISOString(), sort: n });
   }
-  const inserted = await sql.transaction(
-    rows.map(
+
+  const statements = [
+    ...(data.replaceExisting
+      ? [sql`DELETE FROM cohort_sessions WHERE cohort_id = ${cohortId}`]
+      : []),
+    ...rows.map(
       (r) => sql`
         INSERT INTO cohort_sessions (cohort_id, title, session_date, sort_order)
         VALUES (${cohortId}, '', ${r.date}, ${r.sort})
         RETURNING *`,
     ),
-  );
-  return inserted.map((res) => res[0] as CohortSession);
+  ];
+
+  const results = await sql.transaction(statements);
+  // Drop the DELETE's result when present, so the return value is always the new rows.
+  const insertResults = data.replaceExisting ? results.slice(1) : results;
+  return insertResults.map((res) => res[0] as CohortSession);
 }
 
 export async function deleteCohortSession(id: string): Promise<void> {
