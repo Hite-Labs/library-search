@@ -129,6 +129,56 @@ the answer is "a hand-picked ordered set".
 
 ---
 
+## Q-07 — Droplet env vars this branch reads (deployed 2026-08-17)
+
+**Waiting on:** Russell · **Blocks:** nothing — every one of these fails safe if absent
+
+Production `.env` lives at `/root/library-search/.env` and is hand-maintained, so these
+weren't added by the deploy. **Nothing is broken without them**; each just leaves a feature
+inert. Edit the file, then `pm2 reload library-search`.
+
+⚠️ `NEXT_PUBLIC_*` vars are baked in at **build** time, so changing one needs a rebuild
+(`npm run build && pm2 reload library-search`), not just a reload.
+
+### 1. `NEXT_PUBLIC_BOOKING_URL` — probably worth adding
+
+```
+NEXT_PUBLIC_BOOKING_URL=https://<lindsay's booking page>
+```
+The global fallback for the portal's "schedule a session" CTA, used when a client has no
+per-client link of their own. **Without it** the API sends `calendar_url: null` and the
+button keeps whatever href Webflow has hardcoded — which is exactly today's behaviour, so
+nothing regresses.
+
+Hold off if Q-01 (what the button should do) is still open — no point pointing it somewhere
+before Lindsay confirms where.
+
+### 2. `MEMBERSTACK_INDIVIDUAL_PLAN_ID` — check whether it's set
+
+```
+MEMBERSTACK_INDIVIDUAL_PLAN_ID=pln_individual-coaching-nkaa080g
+```
+**This is the switch that turns the server-side paywall on for the individual panel.**
+
+- **Unset** → the API cannot evaluate individual entitlement, so it keeps access for
+  everyone (fail-open). Gating is browser-only, as before this deploy.
+- **Set** → the API enforces it. Any member whose Memberstack plan attach silently failed
+  loses their coaching panel.
+
+`MEMBERSTACK_COHORT_PLAN_ID` is confirmed set locally and behaves the same way for the
+cohort panel.
+
+**Before relying on it, open `/reconcile` on the live site.** It lists members missing a plan
+they should have — precisely the people who would lose access. A clean report means the
+paywall is safe to leave on.
+
+### 3. `TZ` — set by the deploy, no action needed
+
+`ecosystem.config.js` now pins `TZ: "America/New_York"` for PM2, so it applies on reload.
+See Q-06 if that's the wrong zone.
+
+---
+
 ## Q-06 — Confirm the coach's timezone (currently assumed America/New_York)
 
 **Waiting on:** Russell/Lindsay · **Raised:** 2026-08-17 · **Blocks:** nothing, but a wrong
