@@ -308,6 +308,12 @@
       show(el);
     });
 
+    // Point the schedule CTA at this client's booking link (their own, else the global
+    // one — the API applies that precedence). setLink no-ops on a falsy url, so when the
+    // API sends null the button keeps whatever href Webflow authored on it.
+    setLink(document, 'ind-next-session-schedule', client.calendar_url);
+    setLink(document, 'ind-schedule-link', client.calendar_url);
+
     renderNextSession(client.next_session_at);
   }
 

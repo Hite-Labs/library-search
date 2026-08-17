@@ -1299,8 +1299,16 @@ export async function getCohortContent(cohortId: string): Promise<ContentItem[]>
   return rows as ContentItem[];
 }
 
-/** Create a shared cohort content row from a pasted/uploaded R2 link (zero-vector; never searched).
- *  Pass cohortSessionId to tie the file to a specific session (else it's cohort-wide). */
+/** Create a cohort content row from a pasted/uploaded R2 link (zero-vector; never searched).
+ *
+ *  Scope is set by which optional column you pass — the same three shapes the portal reads
+ *  back (db/schema.sql:135-143):
+ *    cohortSessionId → that session's files, shown inside the session card
+ *    neither         → cohort-wide, every member sees it
+ *    clientId        → private to that member within the cohort (the portal's `my_files`)
+ *
+ *  The zero vector keeps these rows out of search: match_content_items already excludes
+ *  anything with a cohort_id, and a zero vector can never match regardless. */
 export async function insertCohortContent(data: {
   title: string;
   cohortId: string;
@@ -1308,17 +1316,18 @@ export async function insertCohortContent(data: {
   r2Key: string;
   publicUrl: string;
   cohortSessionId?: string | null;
+  clientId?: string | null;
 }): Promise<string> {
   const sql = getSql();
   const zeroVec = `[${new Array(1024).fill(0).join(',')}]`;
   const rows = await sql`
     INSERT INTO content_items
       (title, description, media_type, use_cases, mood_tags,
-       r2_key, public_url, embedding, cohort_id, cohort_session_id, downloadable)
+       r2_key, public_url, embedding, cohort_id, cohort_session_id, client_id, downloadable)
     VALUES
       (${data.title}, '', ${data.mediaType}, '', '',
        ${data.r2Key}, ${data.publicUrl}, ${zeroVec}::vector, ${data.cohortId},
-       ${data.cohortSessionId ?? null}, true)
+       ${data.cohortSessionId ?? null}, ${data.clientId ?? null}, true)
     RETURNING id`;
   return rows[0].id as string;
 }

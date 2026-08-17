@@ -14,19 +14,27 @@ import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
 
-/** The individual payload as sent when the member isn't entitled to (or has no) coaching. */
-const EMPTY_INDIVIDUAL = {
-  client: {
-    goal: '',
-    total_sessions: null,
-    sessions_done: null,
-    next_session_at: null,
-    program_type: null,
-  },
-  sessions: [],
-  recordings: [],
-  files: [],
-} as const;
+/**
+ * The individual payload as sent when the member isn't entitled to (or has no) coaching.
+ * Built per-request rather than as a frozen constant so calendar_url can carry the global
+ * booking link: someone with no pack still sees a working "book a session" CTA, which is
+ * the one action we actually want from them.
+ */
+function emptyIndividual() {
+  return {
+    client: {
+      goal: '',
+      total_sessions: null,
+      sessions_done: null,
+      next_session_at: null,
+      program_type: null,
+      calendar_url: env.NEXT_PUBLIC_BOOKING_URL || null,
+    },
+    sessions: [],
+    recordings: [],
+    files: [],
+  };
+}
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
 // The Webflow portal calls this cross-origin with an Authorization header, which
@@ -212,7 +220,7 @@ export async function GET(req: NextRequest) {
   const enrollment = !individualRevoked && data ? pickEnrollment(data.enrollments) : null;
 
   if (!enrollment) {
-    return NextResponse.json({ ...EMPTY_INDIVIDUAL, cohort }, { headers: cors });
+    return NextResponse.json({ ...emptyIndividual(), cohort }, { headers: cors });
   }
 
   // 5. Sessions — portal-safe projection. Logs come back session_date DESC; number them
@@ -264,6 +272,11 @@ export async function GET(req: NextRequest) {
         sessions_done: enrollment.sessions_done,
         next_session_at: enrollment.next_session_at,
         program_type: enrollment.program_type,
+        // Where the portal's "schedule a session" CTA should point. Per-enrollment link
+        // first, else the global booking link — the same precedence the client view uses
+        // (app/clients/[id]/detail-view.tsx:530), so the portal and the dashboard agree on
+        // which link a given client gets. null → the script leaves Webflow's href alone.
+        calendar_url: enrollment.calendar_url || env.NEXT_PUBLIC_BOOKING_URL || null,
       },
       sessions,
       recordings,
