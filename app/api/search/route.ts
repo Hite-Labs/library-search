@@ -3,13 +3,44 @@ import { embed } from '@/lib/embeddings';
 import { matchContentItems, matchContentItemsForMember, getCohortIdsForMember } from '@/lib/db';
 import { verifyMemberToken } from '@/lib/memberstack';
 import { chat } from '@/lib/anthropic';
-import { SEARCH_SYSTEM_PROMPT } from '@/lib/prompts';
+import { SEARCH_SYSTEM_PROMPT, SEARCH_NO_MATCH_RESPONSE } from '@/lib/prompts';
 import { SearchSchema } from '@/lib/schemas';
+import { checkRate, getClientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
+/**
+ * Similarity floor for a match to stand on its own. Above this the results speak for
+ * themselves and we skip Claude entirely; below it we return the fallback and NO cards.
+ *
+ * This used to live only as prose inside SEARCH_SYSTEM_PROMPT, which meant paying Claude to
+ * evaluate a threshold the code had already computed — and worse, the route returned every
+ * 0.4+ match regardless, so a 0.45 match rendered "no perfect fit" copy ABOVE visible cards.
+ * The threshold belongs here, in one place.
+ */
+const STRONG_MATCH = 0.5;
+
+/** Neon-side floor: anything below this never comes back at all (db/schema.sql). */
+const MATCH_FLOOR = 0.4;
+
+// This route is public by design (the search box is open to non-members) and each call
+// spends Voyage + Anthropic credits, so it needs a budget. Generous for a person typing
+// queries; fatal to a script. See lib/rate-limit.ts for the per-process caveat.
+const RATE_LIMIT = 10;
+const RATE_WINDOW_MS = 60 * 1000;
+
 export async function POST(req: NextRequest) {
+  // Throttle BEFORE any paid work (embedding, Claude) so a throttled request costs nothing.
+  const ip = getClientIp(req);
+  const rate = checkRate(`search:${ip}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many searches. Please wait a moment.', retryAfterSeconds: rate.retryAfterSeconds },
+      { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } },
+    );
+  }
+
   const body = await req.json().catch(() => null);
   const parsed = SearchSchema.safeParse(body);
   if (!parsed.success) {
@@ -45,32 +76,22 @@ export async function POST(req: NextRequest) {
   let matches;
   if (memberId) {
     const cohortIds = await getCohortIdsForMember(memberId);
-    matches = await matchContentItemsForMember(queryEmbedding, 0.4, 5, cohortIds);
+    matches = await matchContentItemsForMember(queryEmbedding, MATCH_FLOOR, 5, cohortIds);
   } else {
-    matches = await matchContentItems(queryEmbedding, 0.4, 5);
+    matches = await matchContentItems(queryEmbedding, MATCH_FLOOR, 5);
   }
 
-  // Step 3: Build Claude prompt with matches
-  const matchesText =
-    matches.length === 0
-      ? 'No matches found.'
-      : matches
-          .map(
-            (m, i) =>
-              `${i + 1}. Title: "${m.title}"\n   Description: ${m.description}\n   Type: ${m.media_type}\n   Modality: ${m.modality ?? 'N/A'}\n   Similarity: ${m.similarity.toFixed(2)}`,
-          )
-          .join('\n\n');
+  // Step 3: Decide in code, not in the prompt. Only matches at or above STRONG_MATCH are
+  // worth showing; a weak match is treated as no match, so the member never sees the
+  // "no perfect fit" copy sitting on top of result cards.
+  const strong = matches.filter((m) => m.similarity >= STRONG_MATCH);
 
-  const userMessage = `Member's query: "${query}"\n\nMatching content items:\n${matchesText}`;
-
-  let response: string;
-  try {
-    response = await chat(userMessage, SEARCH_SYSTEM_PROMPT);
-  } catch (err) {
-    return NextResponse.json({ error: `Claude failed: ${String(err)}` }, { status: 500 });
+  if (strong.length === 0) {
+    // No Claude call: there is nothing to summarise, and the fallback copy is fixed.
+    return NextResponse.json({ response: SEARCH_NO_MATCH_RESPONSE, results: [] });
   }
 
-  const results = matches.map((m) => ({
+  const results = strong.map((m) => ({
     id: m.id,
     title: m.title,
     description: m.description,
@@ -79,5 +100,30 @@ export async function POST(req: NextRequest) {
     similarity: m.similarity,
   }));
 
-  return NextResponse.json({ response, results });
+  // Step 4: Summarise the strong matches. Best-effort — the cards are the substance, so a
+  // Claude failure degrades to results-without-prose rather than failing the whole search.
+  const matchesText = strong
+    .map(
+      (m, i) =>
+        `${i + 1}. Title: "${m.title}"\n   Description: ${m.description}\n   Type: ${m.media_type}\n   Modality: ${m.modality ?? 'N/A'}\n   Similarity: ${m.similarity.toFixed(2)}`,
+    )
+    .join('\n\n');
+
+  const userMessage = `Member's query: "${query}"\n\nMatching content items:\n${matchesText}`;
+
+  // Deliberately degrades rather than fails: the cards are the substance, so a Claude outage
+  // should cost the prose blurb, not the whole search. The tradeoff is that a persistently
+  // broken key degrades quietly, so the failure is flagged in the payload (`summaryFailed`)
+  // as well as logged — the widget ignores it, but it makes the state visible when debugging
+  // "why did the summary disappear" without having to read server logs.
+  let response: string | null = null;
+  let summaryFailed = false;
+  try {
+    response = await chat(userMessage, SEARCH_SYSTEM_PROMPT);
+  } catch (err) {
+    summaryFailed = true;
+    console.error('[search] Claude summary failed, returning results only:', err);
+  }
+
+  return NextResponse.json({ response, results, ...(summaryFailed && { summaryFailed: true }) });
 }

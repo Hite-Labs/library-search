@@ -18,14 +18,20 @@ Hold the Webflow project against this. Derived from the actual code, not memory:
 
 1. **Memberstack gate** — `window.$memberstackDom.getCurrentMember()`. No member → show
    `#portal-upsell`, stop.
-2. **Plan detection** — reads `member.planConnections[].planId`:
+2. **Plan detection** — reads `member.planConnections[]`, counting only **active,
+   non-cancelled** connections. Memberstack keeps cancelled/expired connections on the
+   member, so both the script and the API filter them out; a lapsed member keeps their
+   account and simply sees the upsell again. Nothing is ever deleted.
    | Plan | Plan ID | Unlocks |
    |---|---|---|
    | Individual coaching | `pln_individual-coaching-nkaa080g` | `#portal-coaching` panel (`ind-*` fields) |
    | Cohort | `pln_cohort-qbab0892` | `#portal-cohort` panel (`cohort-*` fields) |
    | Neither | — | `#portal-upsell` |
 3. **One API call** — `GET /api/portal` with `Authorization: Bearer <_ms-mid cookie>`. Returns
-   BOTH individual and cohort data in one payload (see §H).
+   individual and cohort data in one payload (see §H), **gated by plan**: the API checks the
+   member's active plans and omits what they aren't entitled to — an unentitled individual
+   panel comes back as the empty-but-valid shape, an unentitled cohort comes back `null`.
+   Gating is enforced server-side, not just hidden in the browser.
 4. **Render** — `render(data)` writes values into the DOM by `data-field`. Token is verified
    server-side (`verifyMemberToken`); the member ID alone is never trusted.
 
@@ -310,14 +316,19 @@ The element is a **container the script fills** — leave it empty in Webflow:
 `media_type` is DB-constrained (`db/schema.sql:8`) to exactly these three, so there is no
 fallback case — an unrecognised type renders **no icon** rather than a broken one.
 
-**Styling.** The SVGs use `stroke="currentColor"`, so `color` on the element (or its parent)
-sets the icon colour, and `width`/`height` on the `<svg>` can be overridden in Webflow CSS.
-Style per type with the stamped attribute — no script change needed:
+**Styling.** ⚠️ The SVG strokes are **hardcoded `#ffffff`**, not `currentColor`. A CSS `color`
+rule will NOT change them — that is the deliberate tradeoff for the icons rendering without
+any Webflow styling at all (nothing set `color` on the wrapper, so `currentColor` left them
+invisible). `width`/`height` on the `<svg>` can still be overridden, and the stamped
+`data-media-type` attribute is still available for per-type styling of the container:
 
 ```css
 .media-icon svg { width: 1rem; height: 1rem; }
-.media-icon[data-media-type="pdf"] { color: #b45309; }
+.media-icon[data-media-type="pdf"] { background: #fef3c7; }  /* container, not stroke */
 ```
+
+Accent colours (e.g. the petal accent) therefore apply to **buttons and CTAs**, which are
+plain Webflow elements, not to these icons.
 
 **Why inline rather than a font or CDN:** a blocked stylesheet would silently strip every
 icon, which is the same invisible-failure mode this whole reference exists to prevent.

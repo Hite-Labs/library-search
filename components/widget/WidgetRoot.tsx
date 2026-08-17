@@ -24,7 +24,8 @@ function notifyHeight() {
 export function WidgetRoot() {
   const [state, setState] = useState<State>('idle');
   const [query, setQuery] = useState('');
-  const [response, setResponse] = useState('');
+  // null = no prose summary for this search (skipped or failed); cards stand alone.
+  const [response, setResponse] = useState<string | null>(null);
   const [results, setResults] = useState<Result[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [memberstackUserId, setMemberstackUserId] = useState<string | null>(null);
@@ -66,8 +67,17 @@ export function WidgetRoot() {
         body: JSON.stringify({ query, memberstackUserId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Search failed');
-      setResponse(data.response);
+      if (!res.ok) {
+        // Throttled: the server's message is already member-facing copy, so show it as-is
+        // rather than wrapping it in an Error (which would render "Error: ..." to the user).
+        if (res.status === 429) {
+          setErrorMsg(data.error ?? 'Too many searches. Please wait a moment.');
+          setState('error');
+          return;
+        }
+        throw new Error(data.error ?? 'Search failed');
+      }
+      setResponse(data.response ?? null);
       setResults(data.results);
       setState('results');
     } catch (err) {
@@ -79,7 +89,7 @@ export function WidgetRoot() {
   function handleReset() {
     setState('idle');
     setQuery('');
-    setResponse('');
+    setResponse(null);
     setResults([]);
     setErrorMsg('');
   }

@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword, setAuthCookie } from '@/lib/auth';
-import { isLockedOut, recordFailure, clearFailures } from '@/lib/rate-limit';
+import { isLockedOut, recordFailure, clearFailures, getClientIp } from '@/lib/rate-limit';
 import { LoginSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
-
-function getClientIp(req: NextRequest): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-}
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);

@@ -1,12 +1,27 @@
+/**
+ * Shown when nothing clears the similarity threshold. Returned directly by
+ * app/api/search/route.ts without calling Claude — the copy is fixed, so paying an LLM to
+ * reproduce it verbatim bought nothing. Previously this lived as a rule inside
+ * SEARCH_SYSTEM_PROMPT, which put the threshold in two places and let weak matches render
+ * cards underneath this sentence.
+ */
+export const SEARCH_NO_MATCH_RESPONSE =
+  "I don't have something that's a perfect fit for that — reach out to Lindsay directly and she can point you in the right direction.";
+
+/**
+ * Summarise-only. The route has already decided these matches are strong enough to show, so
+ * this prompt never needs to judge relevance or produce a no-match response — it is only
+ * called when there is at least one match worth explaining.
+ */
 export const SEARCH_SYSTEM_PROMPT = `You are a warm, supportive guide helping a wellness membership member find the right resource.
-You have been given a list of matching content items from the library. Your job is to explain,
-in 2-3 sentences, which resource(s) are the best fit and why — speaking directly to how the
-member described their need.
+You have been given a list of matching content items from the library, already filtered for
+relevance. Your job is to explain, in 2-3 sentences, which resource(s) are the best fit and
+why — speaking directly to how the member described their need.
 
 Rules:
 - Only recommend content from the provided matches. Never invent or reference anything else.
-- If no match has a similarity score above 0.5, or the provided list is empty, respond with exactly:
-  "I don't have something that's a perfect fit for that — reach out to Lindsay directly and she can point you in the right direction."
+- Every item given to you is a genuine match. Recommend from them; never say you have nothing
+  suitable, and never suggest contacting anyone instead.
 - Tone: warm, direct, not clinical. No jargon. One to three sentences max.`;
 
 export const SUGGEST_SYSTEM_PROMPT = `You are a wellness content tagging assistant. Given a title and description for a wellness content item,

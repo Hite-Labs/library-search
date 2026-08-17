@@ -9,10 +9,24 @@ import {
   type ContentItem,
 } from '@/lib/db';
 import { getPresignedGetUrl } from '@/lib/r2';
-import { verifyMemberToken } from '@/lib/memberstack';
+import { verifyMemberToken, getMemberPlanState } from '@/lib/memberstack';
 import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
+
+/** The individual payload as sent when the member isn't entitled to (or has no) coaching. */
+const EMPTY_INDIVIDUAL = {
+  client: {
+    goal: '',
+    total_sessions: null,
+    sessions_done: null,
+    next_session_at: null,
+    program_type: null,
+  },
+  sessions: [],
+  recordings: [],
+  files: [],
+} as const;
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
 // The Webflow portal calls this cross-origin with an Authorization header, which
@@ -150,27 +164,55 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'No client linked to this member' }, { status: 404, headers: cors });
   }
 
-  // 3. Cohort object (single active cohort) — independent of the individual enrollment,
-  //    so a cohort-only member (no individual pack) still gets their cohort tab.
-  const cohort = await buildCohortObject(verified.id);
+  // 3. Entitlements + cohort + enrollments, together — the plan lookup is a network call to
+  //    Memberstack, so it rides alongside the DB work rather than adding latency.
+  //
+  //    Plan state decides what we SEND, not just what the portal script chooses to show.
+  //    Hiding a panel in the browser still shipped the data, so anyone reading the network
+  //    response saw content they hadn't paid for.
+  const [planState, cohortRaw, data] = await Promise.all([
+    getMemberPlanState(verified.id),
+    buildCohortObject(verified.id),
+    getClientWithEnrollments(client.id),
+  ]);
 
-  // 4. Pick the individual enrollment to reflect.
-  const data = await getClientWithEnrollments(client.id);
-  const enrollment = data ? pickEnrollment(data.enrollments) : null;
+  // A Memberstack plan can only REVOKE what the dashboard granted, never grant on its own.
+  //
+  // The DB is the source of truth for enrollment: `ensureMemberPlans` (lib/db.ts:456) fails
+  // soft in four separate ways — Memberstack unconfigured, plan state unreadable, plan id
+  // unset, or the attach call throwing — and each of those saves the enrollment with only a
+  // warning. So a real cohort member can legitimately hold no Memberstack plan, and letting
+  // the plan check veto their enrollment would empty the tab of someone who belongs there.
+  //
+  // Hence: revoke only on a POSITIVE, trustworthy "they don't hold it" —
+  //   - planState === null            → unknown (unconfigured or unreachable) → keep access
+  //   - plan id env var unset         → the flag is hardcoded false upstream, not measured,
+  //                                     so it carries no information → keep access
+  //   - flag false with an id present → genuinely lapsed or never attached → revoke
+  //
+  // getMemberPlanState filters cancelled/expired connections, so a lapsed member reads as
+  // unentitled here — which is the intended behaviour for D5.
+  function revoked(configuredPlanId: string | undefined, holds: boolean | undefined): boolean {
+    if (!planState) return false;
+    if (!configuredPlanId) return false;
+    return holds === false;
+  }
+
+  const cohort = revoked(env.MEMBERSTACK_COHORT_PLAN_ID, planState?.hasCohortPlan)
+    ? null
+    : cohortRaw;
+
+  // 4. Pick the individual enrollment to reflect. A revoked member is treated exactly like
+  //    one with no enrollment: an empty-but-valid payload, never a 403 — they stay signed in
+  //    and see the upsell, which is the point.
+  const individualRevoked = revoked(
+    env.MEMBERSTACK_INDIVIDUAL_PLAN_ID,
+    planState?.hasIndividualPlan,
+  );
+  const enrollment = !individualRevoked && data ? pickEnrollment(data.enrollments) : null;
 
   if (!enrollment) {
-    // Linked client but no individual enrollment — return an empty-but-valid individual
-    // payload, but still surface the cohort object if the member has one.
-    return NextResponse.json(
-      {
-        client: { goal: '', total_sessions: null, sessions_done: null, next_session_at: null, program_type: null },
-        sessions: [],
-        recordings: [],
-        files: [],
-        cohort,
-      },
-      { headers: cors },
-    );
+    return NextResponse.json({ ...EMPTY_INDIVIDUAL, cohort }, { headers: cors });
   }
 
   // 5. Sessions — portal-safe projection. Logs come back session_date DESC; number them
