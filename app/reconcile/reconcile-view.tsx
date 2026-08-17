@@ -3,10 +3,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
+// Type-only: erased at compile time, so this client component never pulls in the
+// memberstack module (or the server env it reads) at runtime.
+import type { PlanKey } from '@/lib/memberstack';
 
 interface Issue {
   kind: 'missing-plan' | 'extra-plan' | 'not-provisioned' | 'no-program' | 'orphan-member';
-  planType: 'individual' | 'cohort' | null;
+  // Imported from the registry rather than re-declared. This value is sent straight back to
+  // POST /api/reconcile as the plan to attach or detach, so a hand-maintained copy would
+  // silently omit any plan added later — the server would emit a key this type doesn't list
+  // and the mismatch would only surface here, at the write.
+  planType: PlanKey | null;
   email: string;
   name: string | null;
   clientId: string | null;
