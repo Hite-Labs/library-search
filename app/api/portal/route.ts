@@ -89,6 +89,37 @@ function pickEnrollment(enrollments: Enrollment[]): Enrollment | null {
   );
 }
 
+/**
+ * Is this cohort session still locked? Mirrors isCohortSessionLocked in public/portal.js —
+ * and is now the authoritative copy. The script's version stays as presentation (it decides
+ * which DOM row to show); this one decides what we actually SEND.
+ *
+ * That split matters: the browser check only ever hid a row, so every locked session's
+ * playable URL was still in the JSON. Anyone could open devtools on day one and play the
+ * final session. Same class of flaw as the plan gating fixed earlier — "hidden" is not
+ * "not sent".
+ *
+ * A session is locked until its own date passes, UNLESS the cohort's end date has passed,
+ * which unlocks the whole archive. Fails closed: a missing or unparseable date stays locked.
+ */
+function isSessionLocked(
+  sessionDate: string | null,
+  cohortEndDate: string | null,
+): boolean {
+  const now = Date.now();
+
+  if (cohortEndDate) {
+    const end = new Date(cohortEndDate).getTime();
+    if (!isNaN(end) && now >= end) return false;
+  }
+
+  if (!sessionDate) return true;
+  const unlock = new Date(sessionDate).getTime();
+  if (isNaN(unlock)) return true;
+
+  return now < unlock;
+}
+
 // Build the portal-safe cohort object for a member (single active cohort), or null.
 // Sessions are numbered oldest=1 (matching the individual sessions projection), each with
 // its discussion prompt and files carrying fresh signed GET URLs (never the raw R2 url).
@@ -119,14 +150,27 @@ async function buildCohortObject(memberstackId: string) {
         // the recording; they stay in files[] as attachments alongside any older media.
         const sessionFiles = filesBySession.get(s.id) ?? [];
         const recording = sessionFiles.find((f) => f.media_type !== 'pdf') ?? null;
+
+        // Locked sessions ship NO media — no signed recording URL, no file list. Presigning
+        // a locked recording is what leaked it: the URL is live for an hour and playable by
+        // anyone who reads the response, whatever the UI shows.
+        //
+        // title and prompt_text are deliberately still sent. The portal already displays
+        // them on locked cards ("Session 5 — Boundaries"), which reads as intended design
+        // rather than an oversight, and withholding them would silently change what members
+        // see. If those should be hidden too, this is the one place to change.
+        const locked = isSessionLocked(s.session_date, cohort.end_date);
+
         return {
           session_number: i + 1,
           session_date: s.session_date,
           title: s.title,
           prompt_text: s.prompt_text,
-          recording_url: recording ? await getPresignedGetUrl(recording.r2_key) : null,
-          file_type: recording ? recording.media_type : null,
-          files: await Promise.all(sessionFiles.map(toPortalFile)),
+          locked,
+          recording_url:
+            locked || !recording ? null : await getPresignedGetUrl(recording.r2_key),
+          file_type: locked || !recording ? null : recording.media_type,
+          files: locked ? [] : await Promise.all(sessionFiles.map(toPortalFile)),
         };
       }),
     ),

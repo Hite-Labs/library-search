@@ -34,8 +34,31 @@ export function WidgetRoot() {
   // Listen for the Memberstack user id + JWT from the parent page (forwarded by
   // embed.js). The token is what the backend actually verifies; the id is kept for
   // backward-compat/logging only.
+  //
+  // The origin check mirrors the frame-ancestors CSP in next.config.ts: only a page allowed
+  // to frame us may hand us a token. Without it any page that embeds this widget could post
+  // an arbitrary token in. The backend verifies the token regardless, so this is defence in
+  // depth rather than the only control — but accepting credentials from an unchecked origin
+  // is not a habit worth keeping.
   useEffect(() => {
+    function isTrustedParent(origin: string): boolean {
+      if (origin === window.location.origin) return true;
+      try {
+        const host = new URL(origin).hostname;
+        return (
+          host === 'showyourspark.com' ||
+          host.endsWith('.showyourspark.com') ||
+          host.endsWith('.webflow.io') ||
+          host.endsWith('.webflow.com') ||
+          host.endsWith('.webflow-ext.com')
+        );
+      } catch {
+        return false;
+      }
+    }
+
     function onMessage(e: MessageEvent) {
+      if (!isTrustedParent(e.origin)) return;
       if (e.data?.type === 'ms-user') {
         setMemberstackUserId(e.data.userId ?? null);
         setMemberToken(e.data.token ?? null);

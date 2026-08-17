@@ -411,10 +411,16 @@
 
   // A session is locked until its own date passes, UNLESS the cohort's
   // end date has passed, in which case everything unlocks regardless.
-  // Field names confirmed against app/api/portal/route.ts: the cohort object returns
-  // end_date, and each session returns session_date. Fails closed — a missing or
-  // unparseable session_date leaves the session locked.
+  //
+  // The API is now authoritative: it sends `locked` per session and withholds the recording
+  // URL and file list for locked ones, so a locked session cannot be played even by reading
+  // the response directly. This function remains for presentation — deciding which DOM row
+  // to show — and as a fallback for a cached script talking to an older payload.
+  //
+  // Fails closed: a missing or unparseable session_date leaves the session locked.
   function isCohortSessionLocked(session, cohort) {
+    if (typeof session.locked === 'boolean') return session.locked;
+
     var today = new Date();
 
     var cohortEnd = cohort && cohort.end_date ? new Date(cohort.end_date) : null;

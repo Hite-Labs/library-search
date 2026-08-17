@@ -129,6 +129,16 @@ Source object: `data.cohort` (object or null) + `data.cohort.sessions[]`.
 has passed, which unlocks every session at once. `end_date` is optional; leave it empty for an
 open-ended cohort and locking stays purely per-session.
 
+**The lock is enforced server-side.** `/api/portal` computes it and sends `locked` per session,
+withholding `recording_url` (null) and `files` (empty) for locked ones. It previously presigned
+every session's recording regardless, so a locked session's audio was playable by anyone reading
+the JSON — hiding a DOM row is not the same as not sending the data. The script still computes
+the lock as a fallback for a cached copy talking to an older payload, but it now prefers the
+server's `locked` flag.
+
+`title` and `prompt_text` **are** still sent for locked sessions — the portal shows them on
+locked cards, which is intended (a member can see what's coming). Only the media is withheld.
+
 **The three cohort file shapes** are one table (`content_items`) distinguished by which columns
 are set — no separate tables:
 
@@ -257,11 +267,12 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
   "sessions": [
     { "session_number": 1,
       "session_date": "2026-06-01|null",
-      "title": "string",
-      "prompt_text": "string",
-      "recording_url": "https://…signed…|null",  // newest non-PDF file on this session
-      "file_type": "video|audio|null",
-      "files": [                     // every attached file, recording included
+      "title": "string",                         // sent even when locked
+      "prompt_text": "string",                   // sent even when locked
+      "locked": false,                           // server-computed; the authoritative flag
+      "recording_url": "https://…signed…|null",  // newest non-PDF file; ALWAYS null when locked
+      "file_type": "video|audio|null",           // null when locked
+      "files": [                     // every attached file, recording included; [] when locked
         { "title": "string", "description": "string|null",
           "uploaded_at": "2026-06-01T18:22:00Z",
           "public_url": "https://…signed…", "file_type": "video|audio|pdf" }

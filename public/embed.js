@@ -1,5 +1,10 @@
 (function () {
-  var APP_URL = 'NEXT_PUBLIC_APP_URL_PLACEHOLDER';
+  // Hardcoded deliberately, matching portal.js. This was 'NEXT_PUBLIC_APP_URL_PLACEHOLDER',
+  // which nothing ever substituted — there is no build step for the files in public/, so the
+  // literal string shipped to production. That broke the widget twice over: iframe.src
+  // resolved to a relative path, and the postMessage below targeted an invalid origin, so
+  // the member's token never arrived and search silently fell back to library-only results.
+  var APP_URL = 'https://dashboard.showyourspark.com';
 
   var mount = document.getElementById('library-search-widget');
   if (!mount) return;
