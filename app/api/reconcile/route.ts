@@ -4,8 +4,11 @@ import {
   listMembersWithPlans,
   setMemberPlan,
   isMemberstackConfigured,
+  planEnvVarFor,
+  planIdFor,
+  PLAN_KEYS,
+  type PlanKey,
 } from '@/lib/memberstack';
-import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
 
@@ -29,7 +32,7 @@ type Issue = {
     | 'not-provisioned'     // client entitled to something but has no Memberstack member
     | 'no-program'          // client with no member AND no enrollment — never started
     | 'orphan-member';      // Memberstack member with a coaching plan, no client record
-  planType: 'individual' | 'cohort' | null;
+  planType: PlanKey | null;
   email: string;
   name: string | null;
   clientId: string | null;
@@ -48,10 +51,7 @@ export async function GET() {
   // Without the plan ids every member reads as "has no plans", so the diff would report a
   // clean slate while comparing against nothing — the most dangerous possible output for
   // this page. Refuse rather than reassure.
-  const missingPlanIds = [
-    env.MEMBERSTACK_INDIVIDUAL_PLAN_ID ? null : 'MEMBERSTACK_INDIVIDUAL_PLAN_ID',
-    env.MEMBERSTACK_COHORT_PLAN_ID ? null : 'MEMBERSTACK_COHORT_PLAN_ID',
-  ].filter((v): v is string => v !== null);
+  const missingPlanIds = PLAN_KEYS.filter((key) => !planIdFor(key)).map(planEnvVarFor);
 
   if (missingPlanIds.length > 0) {
     return NextResponse.json(
@@ -133,10 +133,18 @@ export async function GET() {
       }
     }
 
-    const checks = [
-      { type: 'individual' as const, wants: c.wantsIndividual, has: member.hasIndividualPlan },
-      { type: 'cohort' as const, wants: c.wantsCohort, has: member.hasCohortPlan },
-    ];
+    // Driven by the plan registry, so a new plan is checked here automatically. The
+    // per-plan "does the dashboard want it" signal still comes from the enrollment query,
+    // which is coaching-shaped — a non-coaching plan would need its own wants-source.
+    const wantsByKey: Record<PlanKey, boolean> = {
+      individual: c.wantsIndividual,
+      cohort: c.wantsCohort,
+    };
+    const checks = PLAN_KEYS.map((type) => ({
+      type,
+      wants: wantsByKey[type],
+      has: member.plans[type],
+    }));
 
     for (const { type, wants, has } of checks) {
       if (wants && !has) {
@@ -166,16 +174,23 @@ export async function GET() {
   // Members carrying a coaching plan with no matching client record at all.
   for (const m of members) {
     if (seenEmails.has(m.email.toLowerCase())) continue;
-    if (!m.hasIndividualPlan && !m.hasCohortPlan) continue;
-    issues.push({
-      kind: 'orphan-member',
-      planType: m.hasIndividualPlan ? 'individual' : 'cohort',
-      email: m.email,
-      name: null,
-      clientId: null,
-      memberstackId: m.id,
-      detail: 'Has a coaching plan in Memberstack but no client record in the dashboard.',
-    });
+    const held = PLAN_KEYS.filter((key) => m.plans[key]);
+    if (held.length === 0) continue;
+    // One issue per plan held. This was a single row using
+    //   m.hasIndividualPlan ? 'individual' : 'cohort'
+    // which reported only one plan for a member holding several, so detaching the reported
+    // one left the others in place and the orphan reappeared on the next run.
+    for (const planType of held) {
+      issues.push({
+        kind: 'orphan-member',
+        planType,
+        email: m.email,
+        name: null,
+        clientId: null,
+        memberstackId: m.id,
+        detail: `Has the ${planType} plan in Memberstack but no client record in the dashboard.`,
+      });
+    }
   }
 
   return NextResponse.json({
@@ -198,13 +213,20 @@ export async function POST(req: Request) {
   const planType = body?.planType;
   const action = body?.action;
 
+  // Validated against the registry, so a new plan is accepted here without editing this
+  // check — and an unknown one is still rejected rather than passed through.
+  const isPlanKey = (v: unknown): v is PlanKey =>
+    typeof v === 'string' && (PLAN_KEYS as readonly string[]).includes(v);
+
   if (
     typeof memberstackId !== 'string' ||
-    (planType !== 'individual' && planType !== 'cohort') ||
+    !isPlanKey(planType) ||
     (action !== 'attach' && action !== 'detach')
   ) {
     return NextResponse.json(
-      { error: 'memberstackId, planType (individual|cohort) and action (attach|detach) are required' },
+      {
+        error: `memberstackId, planType (${PLAN_KEYS.join('|')}) and action (attach|detach) are required`,
+      },
       { status: 400 },
     );
   }

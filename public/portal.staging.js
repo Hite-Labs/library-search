@@ -3,9 +3,48 @@
 
   var API_URL = 'https://dashboard.showyourspark.com/api/portal';
 
-  // Module-level state for tab logic
-  var hasIndividualPlan = false;
-  var hasCohortPlan = false;
+  // Plan registry — the browser half of lib/memberstack.ts's PLAN_KEYS. One entry per
+  // plan: its Memberstack id, the Webflow element ids/fields it controls, and whether the
+  // member holds it. Adding a plan is an entry here plus the matching Webflow elements.
+  //
+  // Replaces a pair of module-level booleans that initTabs and gateAndLoad each branched on
+  // separately, which is what made a third panel impossible without rewriting both.
+  var PLANS = [
+    {
+      key: 'individual',
+      planId: 'pln_individual-coaching-nkaa080g',
+      panelId: 'portal-coaching',
+      tabField: 'tab-individual',
+      has: false
+    },
+    {
+      key: 'cohort',
+      planId: 'pln_cohort-qbab0892',
+      panelId: 'portal-cohort',
+      tabField: 'tab-cohort',
+      has: false
+    }
+  ];
+
+  function planByKey(key) {
+    for (var i = 0; i < PLANS.length; i++) {
+      if (PLANS[i].key === key) return PLANS[i];
+    }
+    return null;
+  }
+
+  function hasPlan(key) {
+    var p = planByKey(key);
+    return !!(p && p.has);
+  }
+
+  function heldPlans() {
+    var out = [];
+    for (var i = 0; i < PLANS.length; i++) {
+      if (PLANS[i].has) out.push(PLANS[i]);
+    }
+    return out;
+  }
 
   function byField(name) {
     return document.querySelector('[data-field="' + name + '"]');
@@ -214,45 +253,46 @@
 
   function initTabs() {
     var tabsHeader = byField('plan-tabs-header');
-    var tabIndividual = byField('tab-individual');
-    var tabCohort = byField('tab-cohort');
+    var held = heldPlans();
 
-    if (!hasIndividualPlan || !hasCohortPlan) {
+    // Show tabs whenever the member holds MORE THAN ONE panel — previously this required
+    // holding BOTH of exactly two, so a member with any other combination would have got no
+    // tab header at all and no way to reach their second panel.
+    if (held.length < 2) {
       hide(tabsHeader);
       return;
     }
 
     show(tabsHeader);
 
-    function activate(which) {
-      // Guard: only allow switching to a panel the member actually has
-      if (which === 'individual' && !hasIndividualPlan) return;
-      if (which === 'cohort' && !hasCohortPlan) return;
+    function activate(key) {
+      // Only switch to a panel the member actually holds.
+      if (!hasPlan(key)) return;
 
-      var coaching = byId('portal-coaching');
-      var cohort = byId('portal-cohort');
-
-      if (which === 'individual') {
-        if (coaching) coaching.style.display = 'block';
-        if (cohort) cohort.style.display = 'none';
-      } else {
-        if (coaching) coaching.style.display = 'none';
-        if (cohort) cohort.style.display = 'block';
+      // Hide every panel, then show the one asked for. The old version was an if/else over
+      // two panels, whose else-branch meant any unrecognised key showed the cohort panel.
+      for (var i = 0; i < PLANS.length; i++) {
+        var p = PLANS[i];
+        var panel = byId(p.panelId);
+        if (panel) panel.style.display = p.key === key ? 'block' : 'none';
+        var tab = byField(p.tabField);
+        if (tab) tab.classList.toggle('is-active', p.key === key);
       }
-
-      if (tabIndividual) tabIndividual.classList.toggle('is-active', which === 'individual');
-      if (tabCohort) tabCohort.classList.toggle('is-active', which === 'cohort');
     }
 
-    if (tabIndividual) {
-      tabIndividual.addEventListener('click', function () { activate('individual'); });
-    }
-    if (tabCohort) {
-      tabCohort.addEventListener('click', function () { activate('cohort'); });
+    for (var i = 0; i < held.length; i++) {
+      (function (p) {
+        var tab = byField(p.tabField);
+        if (tab) {
+          tab.addEventListener('click', function () { activate(p.key); });
+        }
+      })(held[i]);
     }
 
-    // Default to individual tab active
-    activate('individual');
+    // Default to the first plan the member actually holds, in registry order. Was hardcoded
+    // to 'individual', which the guard then rejected for a cohort-only member — leaving no
+    // tab visually active.
+    activate(held[0].key);
   }
 
   // ===== Individual coaching render (unchanged) =====
@@ -709,14 +749,15 @@
       try {
         var member = result && result.data;
 
-        // FIX: these three are IDs in Webflow, not data-field attributes.
+        // FIX: the gate containers are IDs in Webflow, not data-field attributes.
         var upsell = byId('portal-upsell');
-        var coaching = byId('portal-coaching');
-        var cohort = byId('portal-cohort');
+        var i;
 
         if (upsell) upsell.style.display = 'none';
-        if (coaching) coaching.style.display = 'none';
-        if (cohort) cohort.style.display = 'none';
+        for (i = 0; i < PLANS.length; i++) {
+          var panelEl = byId(PLANS[i].panelId);
+          if (panelEl) panelEl.style.display = 'none';
+        }
 
         if (!member) {
           if (upsell) upsell.style.display = 'block';
@@ -744,19 +785,24 @@
           plans.push(conn.planId);
         }
 
-        hasIndividualPlan = plans.indexOf('pln_individual-coaching-nkaa080g') !== -1;
-        hasCohortPlan = plans.indexOf('pln_cohort-qbab0892') !== -1;
+        // Resolve every plan from the registry rather than two hardcoded lookups.
+        var anyHeld = false;
+        for (i = 0; i < PLANS.length; i++) {
+          PLANS[i].has = plans.indexOf(PLANS[i].planId) !== -1;
+          if (PLANS[i].has) anyHeld = true;
+        }
 
-        if (!hasIndividualPlan && !hasCohortPlan) {
+        // No plans at all is not an error state — it is the funnel. The member keeps their
+        // account and sees the upsell, which is how they buy their way in.
+        if (!anyHeld) {
           if (upsell) upsell.style.display = 'block';
           return;
         }
 
-        if (hasIndividualPlan) {
-          if (coaching) coaching.style.display = 'block';
-        }
-        if (hasCohortPlan) {
-          if (cohort) cohort.style.display = 'block';
+        for (i = 0; i < PLANS.length; i++) {
+          if (!PLANS[i].has) continue;
+          var held = byId(PLANS[i].panelId);
+          if (held) held.style.display = 'block';
         }
 
         // Single fetch drives both panels — init() handles tabs + data load

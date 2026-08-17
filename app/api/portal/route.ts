@@ -9,7 +9,12 @@ import {
   type ContentItem,
 } from '@/lib/db';
 import { getPresignedGetUrl } from '@/lib/r2';
-import { verifyMemberToken, getMemberPlanState } from '@/lib/memberstack';
+import {
+  verifyMemberToken,
+  getMemberPlanState,
+  planIdFor,
+  type PlanKey,
+} from '@/lib/memberstack';
 import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
@@ -244,24 +249,18 @@ export async function GET(req: NextRequest) {
   //
   // getMemberPlanState filters cancelled/expired connections, so a lapsed member reads as
   // unentitled here — which is the intended behaviour for D5.
-  function revoked(configuredPlanId: string | undefined, holds: boolean | undefined): boolean {
+  function revoked(key: PlanKey): boolean {
     if (!planState) return false;
-    if (!configuredPlanId) return false;
-    return holds === false;
+    if (!planIdFor(key)) return false;
+    return planState[key] === false;
   }
 
-  const cohort = revoked(env.MEMBERSTACK_COHORT_PLAN_ID, planState?.hasCohortPlan)
-    ? null
-    : cohortRaw;
+  const cohort = revoked('cohort') ? null : cohortRaw;
 
   // 4. Pick the individual enrollment to reflect. A revoked member is treated exactly like
   //    one with no enrollment: an empty-but-valid payload, never a 403 — they stay signed in
   //    and see the upsell, which is the point.
-  const individualRevoked = revoked(
-    env.MEMBERSTACK_INDIVIDUAL_PLAN_ID,
-    planState?.hasIndividualPlan,
-  );
-  const enrollment = !individualRevoked && data ? pickEnrollment(data.enrollments) : null;
+  const enrollment = !revoked('individual') && data ? pickEnrollment(data.enrollments) : null;
 
   if (!enrollment) {
     return NextResponse.json({ ...emptyIndividual(), cohort }, { headers: cors });
