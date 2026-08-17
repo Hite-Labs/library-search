@@ -43,8 +43,79 @@ export async function findMemberByEmail(email: string): Promise<{ id: string } |
   }
 }
 
-/** Which portal panel(s) this member should be entitled to. */
-export type PlanType = 'individual' | 'cohort' | 'both';
+// ── Plan registry ────────────────────────────────────────────────────────────
+//
+// One place that knows which plans exist. Everything else derives from it, so adding a
+// plan is an entry here rather than a new boolean threaded through six files.
+//
+// This replaces a pair of named booleans (hasIndividualPlan / hasCohortPlan) that had to be
+// re-encoded at every layer. Two spots already had the right shape — `revoked()` in the
+// portal route takes the plan id as an argument, and reconcile's `checks[]` is an array of
+// descriptors — so this generalises in the direction the code was already heading.
+
+/** Every plan the portal knows about. Add a key here first; the rest follows. */
+export const PLAN_KEYS = ['individual', 'cohort'] as const;
+
+export type PlanKey = (typeof PLAN_KEYS)[number];
+
+/** Which plans a member holds, keyed by plan. Replaces the old two-boolean shape. */
+export type PlanFlags = Record<PlanKey, boolean>;
+
+/**
+ * The Memberstack plan id configured for each plan, or undefined when its env var is unset.
+ *
+ * Read through this rather than touching env directly: an unset id means "cannot evaluate
+ * this plan", which callers must distinguish from "member doesn't hold it" — conflating the
+ * two is what would silently paywall everyone.
+ */
+export function planIdFor(key: PlanKey): string | undefined {
+  switch (key) {
+    case 'individual':
+      return env.MEMBERSTACK_INDIVIDUAL_PLAN_ID;
+    case 'cohort':
+      return env.MEMBERSTACK_COHORT_PLAN_ID;
+  }
+}
+
+/** The env var name backing each plan — used in operator-facing warnings. */
+export function planEnvVarFor(key: PlanKey): string {
+  switch (key) {
+    case 'individual':
+      return 'MEMBERSTACK_INDIVIDUAL_PLAN_ID';
+    case 'cohort':
+      return 'MEMBERSTACK_COHORT_PLAN_ID';
+  }
+}
+
+/** No plans held — the baseline every flags object starts from. */
+export function noPlans(): PlanFlags {
+  return PLAN_KEYS.reduce((acc, k) => ({ ...acc, [k]: false }), {} as PlanFlags);
+}
+
+/**
+ * Project a set of active Memberstack plan ids onto our plan keys.
+ * A plan whose env id is unset reads as false — see the caveat on `planIdFor`.
+ */
+export function flagsFromPlanIds(activePlanIds: Set<string>): PlanFlags {
+  return PLAN_KEYS.reduce((acc, key) => {
+    const id = planIdFor(key);
+    acc[key] = id ? activePlanIds.has(id) : false;
+    return acc;
+  }, noPlans());
+}
+
+/**
+ * Which plans an operation applies to.
+ *
+ * Was a union `'individual' | 'cohort' | 'both'`, where `'both'` sat alongside the plan
+ * names — so N plans would have needed 2^N-1 members. A list says the same thing and scales.
+ */
+export type PlanType = PlanKey[];
+
+/** Does this selection include that plan? */
+export function wants(planType: PlanType, key: PlanKey): boolean {
+  return planType.includes(key);
+}
 
 /**
  * Ensure a Memberstack member exists for this email. Dedupes first (so re-adding an
@@ -70,7 +141,7 @@ export async function provisionMember({
   lastName,
   goal,
   totalSessions,
-  planType = 'individual',
+  planType = ['individual'],
 }: {
   email: string;
   firstName?: string;
@@ -82,20 +153,17 @@ export async function provisionMember({
   id: string;
   created: boolean;
   /** Plans this planType called for whose env id is unset, so nothing was attached. */
-  plansSkipped: ('individual' | 'cohort')[];
+  plansSkipped: PlanKey[];
 }> {
   const client = getClient();
   if (!client) throw new Error('Memberstack is not configured (MEMBERSTACK_SECRET_KEY unset)');
 
-  // 'both' attaches both plans, which is what lets the portal show its plan-tab header.
-  const wantsIndividual = planType === 'individual' || planType === 'both';
-  const wantsCohort = planType === 'cohort' || planType === 'both';
-
+  // Attaching several plans is what lets the portal show its plan-tab header.
   // Worked out before the dedupe check so the caller is warned about an unset plan id
   // either way — the misconfiguration is just as real for a member we're reusing.
-  const plansSkipped: ('individual' | 'cohort')[] = [];
-  if (wantsIndividual && !env.MEMBERSTACK_INDIVIDUAL_PLAN_ID) plansSkipped.push('individual');
-  if (wantsCohort && !env.MEMBERSTACK_COHORT_PLAN_ID) plansSkipped.push('cohort');
+  const plansSkipped: PlanKey[] = PLAN_KEYS.filter(
+    (key) => wants(planType, key) && !planIdFor(key),
+  );
 
   const existing = await findMemberByEmail(email);
   if (existing) return { id: existing.id, created: false, plansSkipped };
@@ -110,10 +178,9 @@ export async function provisionMember({
   if (goal) metaData.coachingGoal = goal;
   if (typeof totalSessions === 'number') metaData.totalSessions = totalSessions;
 
-  const planIds = [
-    wantsIndividual ? env.MEMBERSTACK_INDIVIDUAL_PLAN_ID : undefined,
-    wantsCohort ? env.MEMBERSTACK_COHORT_PLAN_ID : undefined,
-  ].filter((id): id is string => Boolean(id));
+  const planIds = PLAN_KEYS.filter((key) => wants(planType, key))
+    .map(planIdFor)
+    .filter((id): id is string => Boolean(id));
 
   const res = await client.members.create({
     email,
@@ -156,8 +223,29 @@ export interface MemberPlanState {
   id: string;
   email: string;
   /** Active connections only — a cancelled/expired plan grants no portal access. */
-  hasIndividualPlan: boolean;
-  hasCohortPlan: boolean;
+  plans: PlanFlags;
+}
+
+/**
+ * The plan ids a member actively holds.
+ *
+ * A connection counts only when `active` is true AND its status isn't terminal: Memberstack
+ * keeps cancelled connections on the member, and treating those as live access would both
+ * hide real drift and let a lapsed member keep paid panels.
+ *
+ * `planConnections` entries can be a bare id string rather than an object; those carry no
+ * status, so they're skipped rather than assumed active.
+ */
+function activePlanIdsOf(planConnections: unknown): Set<string> {
+  const conns = Array.isArray(planConnections) ? planConnections : [];
+  return new Set(
+    conns
+      .filter((c): c is { planId: string; active?: boolean; status?: string } =>
+        Boolean(c) && typeof c !== 'string',
+      )
+      .filter((c) => c.active && !/cancel|expired/i.test(c.status ?? ''))
+      .map((c) => c.planId),
+  );
 }
 
 /**
@@ -176,9 +264,6 @@ export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> 
   const client = getClient();
   if (!client) return null;
 
-  const individualId = env.MEMBERSTACK_INDIVIDUAL_PLAN_ID;
-  const cohortId = env.MEMBERSTACK_COHORT_PLAN_ID;
-
   const out: MemberPlanState[] = [];
   let after: number | undefined = undefined;
 
@@ -189,18 +274,10 @@ export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> 
     const members = res?.data ?? [];
 
     for (const m of members) {
-      const conns = Array.isArray(m.planConnections) ? m.planConnections : [];
-      const activePlanIds = new Set(
-        conns
-          .filter((c): c is Exclude<typeof c, string> => typeof c !== 'string')
-          .filter((c) => c.active && !/cancel|expired/i.test(c.status ?? ''))
-          .map((c) => c.planId),
-      );
       out.push({
         id: m.id,
         email: m.auth?.email ?? '',
-        hasIndividualPlan: individualId ? activePlanIds.has(individualId) : false,
-        hasCohortPlan: cohortId ? activePlanIds.has(cohortId) : false,
+        plans: flagsFromPlanIds(activePlanIdsOf(m.planConnections)),
       });
     }
 
@@ -221,49 +298,38 @@ export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> 
  * must treat null as "unknown", never as "holds nothing", since acting on the latter
  * would attach plans blindly.
  *
- * Mirrors the connection filter in `listMembersWithPlans`: a connection counts only when
- * `active` and not in a terminal status, so a cancelled plan reads as absent in both.
+ * Shares `activePlanIdsOf` with `listMembersWithPlans`, so a cancelled plan reads as absent
+ * in both — they used to be separate copies of the same filter, which could drift.
  */
-export async function getMemberPlanState(
-  memberstackId: string,
-): Promise<{ hasIndividualPlan: boolean; hasCohortPlan: boolean } | null> {
+export async function getMemberPlanState(memberstackId: string): Promise<PlanFlags | null> {
   const client = getClient();
   if (!client) return null;
 
   try {
     const res = await client.members.retrieve({ id: memberstackId });
-    const conns = Array.isArray(res?.data?.planConnections) ? res.data.planConnections : [];
-    const activePlanIds = new Set(
-      conns
-        .filter((c): c is Exclude<typeof c, string> => typeof c !== 'string')
-        .filter((c) => c.active && !/cancel|expired/i.test(c.status ?? ''))
-        .map((c) => c.planId),
-    );
-    const individualId = env.MEMBERSTACK_INDIVIDUAL_PLAN_ID;
-    const cohortId = env.MEMBERSTACK_COHORT_PLAN_ID;
-    return {
-      hasIndividualPlan: individualId ? activePlanIds.has(individualId) : false,
-      hasCohortPlan: cohortId ? activePlanIds.has(cohortId) : false,
-    };
+    return flagsFromPlanIds(activePlanIdsOf(res?.data?.planConnections));
   } catch {
     return null;
   }
 }
 
 /**
- * Attach or detach one of the two coaching plans on a member. Used by the reconciliation
- * view to fix drift in either direction. Returns false when Memberstack isn't configured
- * or the plan id for that type isn't set.
+ * Attach or detach one plan on a member. Used by the reconciliation view to fix drift in
+ * either direction. Returns false when Memberstack isn't configured or the plan id for that
+ * key isn't set.
  */
 export async function setMemberPlan(
   memberstackId: string,
-  planType: 'individual' | 'cohort',
+  planKey: PlanKey,
   attached: boolean,
 ): Promise<boolean> {
   const client = getClient();
   if (!client) return false;
-  const planId =
-    planType === 'individual' ? env.MEMBERSTACK_INDIVIDUAL_PLAN_ID : env.MEMBERSTACK_COHORT_PLAN_ID;
+  // Registry lookup, not a ternary. This was
+  //   planType === 'individual' ? INDIVIDUAL_ID : COHORT_ID
+  // which has no third branch — any plan key added later would have silently resolved to
+  // the COHORT plan id and attached the wrong entitlement, with nothing to catch it.
+  const planId = planIdFor(planKey);
   if (!planId) return false;
 
   if (attached) await client.members.addFreePlan({ id: memberstackId, data: { planId } });

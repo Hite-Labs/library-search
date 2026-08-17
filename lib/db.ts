@@ -5,7 +5,9 @@ import {
   getMemberPlanState,
   setMemberPlan,
   isMemberstackConfigured,
-  PlanType,
+  planEnvVarFor,
+  type PlanType,
+  type PlanKey,
 } from './memberstack';
 
 let _sql: NeonQueryFunction<false, false> | null = null;
@@ -349,11 +351,11 @@ export async function setClientMemberstackId(clientId: string, memberstackId: st
  * upsell with none of their content. Silence makes a missing variable read as a
  * Memberstack bug.
  */
-function unsetPlanIdWarning(plansSkipped: ('individual' | 'cohort')[]): string | undefined {
+function unsetPlanIdWarning(plansSkipped: PlanKey[]): string | undefined {
   if (plansSkipped.length === 0) return undefined;
-  const vars = plansSkipped
-    .map((p) => (p === 'individual' ? 'MEMBERSTACK_INDIVIDUAL_PLAN_ID' : 'MEMBERSTACK_COHORT_PLAN_ID'))
-    .join(' and ');
+  // Registry lookup rather than a two-way ternary, which would have named the wrong env
+  // var for any plan added later.
+  const vars = plansSkipped.map(planEnvVarFor).join(' and ');
   const many = plansSkipped.length > 1;
   return (
     `Saved, but no ${plansSkipped.join(' or ')} plan was attached in Memberstack — ` +
@@ -404,9 +406,9 @@ export async function ensureMemberProvisioned(
   provisionWarning?: string;
   memberProvisioned: boolean;
   /** Plans newly attached to an already-existing member this request. */
-  plansAttached: ('individual' | 'cohort')[];
+  plansAttached: PlanKey[];
 }> {
-  const planType = opts.planType ?? 'individual';
+  const planType = opts.planType ?? ['individual'];
 
   // Already has a member — make sure the plan for THIS program is actually on them.
   if (client.memberstack_id) {
@@ -456,7 +458,7 @@ export async function ensureMemberProvisioned(
 async function ensureMemberPlans(
   memberstackId: string,
   planType: PlanType,
-): Promise<{ attached: ('individual' | 'cohort')[]; warning?: string }> {
+): Promise<{ attached: PlanKey[]; warning?: string }> {
   // An install with no Memberstack key isn't drift — there's simply no portal to gate.
   // Warning on every enrollment there would be noise, so distinguish that from a genuine
   // read failure, which IS worth surfacing.
@@ -473,17 +475,15 @@ async function ensureMemberPlans(
       };
     }
 
-    const wanted: ('individual' | 'cohort')[] = [];
-    if (planType === 'individual' || planType === 'both') wanted.push('individual');
-    if (planType === 'cohort' || planType === 'both') wanted.push('cohort');
-
-    const missing = wanted.filter((p) =>
-      p === 'individual' ? !state.hasIndividualPlan : !state.hasCohortPlan,
-    );
+    // Keyed lookup, not a ternary. This was
+    //   p === 'individual' ? !state.hasIndividualPlan : !state.hasCohortPlan
+    // which has no third branch — a plan key added later would have been checked against
+    // the COHORT flag, so it would read as already-held (or not) based on the wrong plan.
+    const missing = planType.filter((key) => !state[key]);
     if (missing.length === 0) return { attached: [] };
 
-    const attached: ('individual' | 'cohort')[] = [];
-    const skipped: ('individual' | 'cohort')[] = [];
+    const attached: PlanKey[] = [];
+    const skipped: PlanKey[] = [];
     for (const p of missing) {
       // false = that plan id is unset (Memberstack itself is configured — checked above),
       // so nothing was attached. A no-op, but one the operator needs to hear about.
@@ -576,19 +576,12 @@ export async function createClientWithEnrollment(data: {
   // `memberProvisioned` is true only when a brand-new member id was created and stored
   // this request — the signal the UI uses to send the welcome/set-password email exactly
   // once (not on reuse or re-save).
-  const enrolledIndividual = enrollment !== null;
-  const enrolledCohort = cohortEnrollment !== null || alreadyMember;
-  const planType: PlanType | null =
-    enrolledIndividual && enrolledCohort
-      ? 'both'
-      : enrolledIndividual
-        ? 'individual'
-        : enrolledCohort
-          ? 'cohort'
-          : null;
+  const planType: PlanType = [];
+  if (enrollment !== null) planType.push('individual');
+  if (cohortEnrollment !== null || alreadyMember) planType.push('cohort');
 
   // No enrollment landed (cohort requested but the id was missing) — nothing to entitle.
-  const provisioned = planType
+  const provisioned = planType.length
     ? await ensureMemberProvisioned(client, {
         firstName: data.firstName,
         lastName: data.lastName,
@@ -1219,7 +1212,7 @@ export async function addCohortMember(data: {
     firstName: client.name.split(' ')[0],
     lastName: client.name.split(' ').slice(1).join(' ') || undefined,
     goal: data.goal,
-    planType: 'cohort',
+    planType: ['cohort'],
   });
   client = provisioned.client;
 

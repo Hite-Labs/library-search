@@ -43,7 +43,7 @@ export async function POST(
     lastName: client.name.split(' ').slice(1).join(' ') || undefined,
     goal: parsed.data.goal,
     totalSessions: parsed.data.totalSessions,
-    planType: 'individual',
+    planType: ['individual'],
   });
 
   return NextResponse.json({
