@@ -18,14 +18,20 @@ Hold the Webflow project against this. Derived from the actual code, not memory:
 
 1. **Memberstack gate** — `window.$memberstackDom.getCurrentMember()`. No member → show
    `#portal-upsell`, stop.
-2. **Plan detection** — reads `member.planConnections[].planId`:
+2. **Plan detection** — reads `member.planConnections[]`, counting only **active,
+   non-cancelled** connections. Memberstack keeps cancelled/expired connections on the
+   member, so both the script and the API filter them out; a lapsed member keeps their
+   account and simply sees the upsell again. Nothing is ever deleted.
    | Plan | Plan ID | Unlocks |
    |---|---|---|
    | Individual coaching | `pln_individual-coaching-nkaa080g` | `#portal-coaching` panel (`ind-*` fields) |
    | Cohort | `pln_cohort-qbab0892` | `#portal-cohort` panel (`cohort-*` fields) |
    | Neither | — | `#portal-upsell` |
 3. **One API call** — `GET /api/portal` with `Authorization: Bearer <_ms-mid cookie>`. Returns
-   BOTH individual and cohort data in one payload (see §H).
+   individual and cohort data in one payload (see §H), **gated by plan**: the API checks the
+   member's active plans and omits what they aren't entitled to — an unentitled individual
+   panel comes back as the empty-but-valid shape, an unentitled cohort comes back `null`.
+   Gating is enforced server-side, not just hidden in the browser.
 4. **Render** — `render(data)` writes values into the DOM by `data-field`. Token is verified
    server-side (`verifyMemberToken`); the member ID alone is never trusted.
 
@@ -54,7 +60,8 @@ repeated card (the list's first child is the template).
 | `ind-sessions-completed` | text | `client.sessions_done` | number | defaults `"0"` if null; matched by `eachEl` (may appear multiple places) |
 | `ind-sessions-total` | text | `client.total_sessions` | number | defaults `"0"` if null; `eachEl` |
 | `ind-next-session-display` | toggle | `client.next_session_at` | shown when a valid date exists | the "you have a session booked" block |
-| `ind-next-session-schedule` | toggle | `client.next_session_at` | shown when NO valid date | the "schedule a session" prompt |
+| `ind-next-session-schedule` | toggle + href | `client.next_session_at` / `client.calendar_url` | shown when NO valid date | the "schedule a session" prompt. Also receives `href` = `calendar_url` — harmless on a div, useful if the element IS the link |
+| `ind-schedule-link` | href | `client.calendar_url` | sets `href` | **optional, add to Webflow when wanted.** Put it on the `<a>` itself when the CTA is a button *inside* the `-schedule` block. Unset in Webflow → simply never matches; the button keeps its authored href |
 | `ind-next-session-date` | text | `client.next_session_at` | `"Month Day"` (e.g. July 9) | only meaningful inside `-display` |
 | `ind-next-session-time` | text | `client.next_session_at` | `"h:mm AM/PM TZ"` | local time + tz abbrev |
 | `ind-sessions-list` | list | `data.sessions[]` | repeater of session cards | hidden if empty |
@@ -216,7 +223,8 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
     "total_sessions": 12,           // or null
     "sessions_done": 4,             // or null
     "next_session_at": "2026-07-09T15:00:00Z", // or null
-    "program_type": "individual"    // or null
+    "program_type": "individual",   // or null
+    "calendar_url": "https://cal.com/…"  // enrollment's own link, else NEXT_PUBLIC_BOOKING_URL, else null
   },
   "sessions": [                     // oldest session_number = 1
     { "session_date": "2026-06-01", "next_actions": "string", "session_number": 1 }
@@ -277,7 +285,9 @@ still surfaces:
 ```jsonc
 {
   "client": { "goal": "", "total_sessions": null, "sessions_done": null,
-              "next_session_at": null, "program_type": null },
+              "next_session_at": null, "program_type": null,
+              "calendar_url": "https://…|null" },  // global booking link still sent — a
+                                                   // member with no pack can still book
   "sessions": [], "recordings": [], "files": [],
   "cohort": { /* … or null */ }
 }
@@ -310,14 +320,19 @@ The element is a **container the script fills** — leave it empty in Webflow:
 `media_type` is DB-constrained (`db/schema.sql:8`) to exactly these three, so there is no
 fallback case — an unrecognised type renders **no icon** rather than a broken one.
 
-**Styling.** The SVGs use `stroke="currentColor"`, so `color` on the element (or its parent)
-sets the icon colour, and `width`/`height` on the `<svg>` can be overridden in Webflow CSS.
-Style per type with the stamped attribute — no script change needed:
+**Styling.** ⚠️ The SVG strokes are **hardcoded `#ffffff`**, not `currentColor`. A CSS `color`
+rule will NOT change them — that is the deliberate tradeoff for the icons rendering without
+any Webflow styling at all (nothing set `color` on the wrapper, so `currentColor` left them
+invisible). `width`/`height` on the `<svg>` can still be overridden, and the stamped
+`data-media-type` attribute is still available for per-type styling of the container:
 
 ```css
 .media-icon svg { width: 1rem; height: 1rem; }
-.media-icon[data-media-type="pdf"] { color: #b45309; }
+.media-icon[data-media-type="pdf"] { background: #fef3c7; }  /* container, not stroke */
 ```
+
+Accent colours (e.g. the petal accent) therefore apply to **buttons and CTAs**, which are
+plain Webflow elements, not to these icons.
 
 **Why inline rather than a font or CDN:** a blocked stylesheet would silently strip every
 icon, which is the same invisible-failure mode this whole reference exists to prevent.

@@ -145,6 +145,10 @@ export const GenerateScheduleSchema = z.object({
   startDate: z.string().datetime(),
   cadence: z.enum(['weekly', 'biweekly']),
   totalSessions: z.number().int().positive(),
+  // Replace the cohort's existing dated rows instead of adding a second set. Defaults to
+  // false: replacing deletes rows that content_items may point at, so the caller has to ask
+  // for it deliberately.
+  replaceExisting: z.boolean().default(false),
 });
 
 // Two modes, mirroring AttachRecordingSchema:
@@ -163,12 +167,18 @@ export const AddCohortMemberSchema = z
     message: 'Provide either clientId, or name + email',
   });
 
+// The three cohort content shapes are distinguished by which columns are set, so both
+// scoping fields are optional and default to null (see db/schema.sql:135-143):
+//   cohortSessionId set          → that session's files
+//   both null                    → cohort-wide, every member sees it
+//   clientId set                 → private to that member within the cohort (my_files)
 export const CohortContentSchema = z.object({
   title: z.string().min(1),
   publicUrl: z.string().url(),
   r2Key: z.string().min(1),
   mediaType: z.enum(['audio', 'video', 'pdf']),
   cohortSessionId: z.string().uuid().nullable().default(null),
+  clientId: z.string().uuid().nullable().default(null),
 });
 
 // ── Library (public content browser) ─────────────────────────────────────────

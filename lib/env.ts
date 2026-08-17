@@ -49,6 +49,11 @@ const envSchema = z.object({
   // the portal URL lands them straight in (the _ms-mid cookie outlives a browser restart).
   // Optional → button hides when unset.
   NEXT_PUBLIC_PORTAL_URL: z.string().url().optional(),
+  // Global booking link, used wherever a client has no per-enrollment calendar_url of their
+  // own: the "copy booking link" button on the client view, and the portal's schedule CTA
+  // (/api/portal returns it as client.calendar_url when the enrollment's is blank).
+  // Optional → the portal falls back to whatever href Webflow authored on the button.
+  NEXT_PUBLIC_BOOKING_URL: z.string().url().optional(),
 });
 
 type Env = z.infer<typeof envSchema>;

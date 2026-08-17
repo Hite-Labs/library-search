@@ -36,9 +36,14 @@
     if (el) el.textContent = value == null ? '' : String(value);
   }
 
+  // Multi-match on purpose. Webflow duplicates elements for its mobile layout, so a
+  // querySelector here set the href on the desktop copy only and the mobile Zoom/Telegram
+  // links stayed dead. Same reasoning as eachEl above. Both callers pass `document`;
+  // a root-scoped caller would still behave correctly, just with one match.
   function setLink(root, name, url) {
-    var el = root.querySelector('[data-field="' + name + '"]');
-    if (el && url) el.setAttribute('href', url);
+    if (!url) return;
+    var nodes = root.querySelectorAll('[data-field="' + name + '"]');
+    for (var i = 0; i < nodes.length; i++) nodes[i].setAttribute('href', url);
   }
 
   function formatDate(value) {
@@ -303,6 +308,12 @@
       show(el);
     });
 
+    // Point the schedule CTA at this client's booking link (their own, else the global
+    // one — the API applies that precedence). setLink no-ops on a falsy url, so when the
+    // API sends null the button keeps whatever href Webflow authored on it.
+    setLink(document, 'ind-next-session-schedule', client.calendar_url);
+    setLink(document, 'ind-schedule-link', client.calendar_url);
+
     renderNextSession(client.next_session_at);
   }
 
@@ -400,8 +411,9 @@
 
   // A session is locked until its own date passes, UNLESS the cohort's
   // end date has passed, in which case everything unlocks regardless.
-  // ASSUMPTION pending Claude Code confirmation: session.session_date and
-  // cohort.end_date are the fields the API actually returns for this.
+  // Field names confirmed against app/api/portal/route.ts: the cohort object returns
+  // end_date, and each session returns session_date. Fails closed — a missing or
+  // unparseable session_date leaves the session locked.
   function isCohortSessionLocked(session, cohort) {
     var today = new Date();
 
@@ -705,9 +717,26 @@
           return;
         }
 
-        var plans = member.planConnections.map(function (p) {
-          return p.planId;
-        });
+        // Only ACTIVE, non-terminal connections count. Memberstack keeps cancelled and
+        // expired connections on the member, so a plain planId check kept showing paid
+        // panels to someone whose plan had lapsed — and disagreed with the server and
+        // /reconcile, which both filter them out (see lib/memberstack.ts).
+        // A lapsed member keeps their account and simply sees the upsell again.
+        // Note the asymmetry with the server (lib/memberstack.ts), which requires
+        // active === true. That's the Admin SDK, where `active` is a documented boolean.
+        // This is $memberstackDom, a different SDK whose payload we can't verify from the
+        // repo — so treat `active` as disqualifying only when it is EXPLICITLY false. If the
+        // DOM SDK omits the field, members keep access rather than all being locked out;
+        // the server-side gate in /api/portal is the authoritative check either way.
+        var conns = member.planConnections || [];
+        var plans = [];
+        for (var ci = 0; ci < conns.length; ci++) {
+          var conn = conns[ci];
+          if (!conn || !conn.planId) continue;
+          if (conn.active === false) continue;
+          if (/cancel|expired/i.test(conn.status || '')) continue;
+          plans.push(conn.planId);
+        }
 
         hasIndividualPlan = plans.indexOf('pln_individual-coaching-nkaa080g') !== -1;
         hasCohortPlan = plans.indexOf('pln_cohort-qbab0892') !== -1;
