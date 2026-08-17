@@ -173,6 +173,43 @@ recording immediately by virtue of being newest; the old one stays in `files[]`.
 
 ---
 
+## D2. Promo blocks — `promo-*`
+
+Upsell pieces, managed in the dashboard rather than authored per page. The API sends only
+the promos this member should see (it drops anything selling a plan they already hold), so
+the script applies no visibility logic — it just paints what arrives.
+
+**Two lists**, so a buy CTA and an "already included" notice can look different in Webflow:
+
+| data-field | Type | Source | Notes |
+|---|---|---|---|
+| `promo-list` | list | `promos[]` where `kind='buy'` | repeater of promo cards; hidden if empty |
+| `promo-empty` | empty | — | shown when there are no buy promos |
+| `promo-inclusion-list` | list | `promos[]` where `kind='inclusion'` | e.g. "included with your membership" |
+| `promo-inclusion-empty` | empty | — | shown when there are none |
+| `promo-title` | item | `promos[].title` | inside a promo card |
+| `promo-body` | item | `promos[].body` | inside a promo card |
+| `promo-cta-label` | item | `promos[].cta_label` | button text |
+| `promo-cta` | item href | `promos[].cta_url` | sets `href` |
+| _(promo card click)_ | — | `promos[].cta_url` | whole card opens the link in a new tab, when a url exists |
+
+Each card is also stamped `data-promo-kind="buy|inclusion"`, so one template can be styled
+per kind if you'd rather not build two.
+
+**Both lists are optional.** `renderList` no-ops on a missing container, so adding only the
+buy list is fine — the inclusion promos simply won't render anywhere.
+
+**Who sees what** is one rule: a promo names the plan a member must *not* hold
+(`requires_missing_plan`). A cohort member sees coaching offers, an individual member sees
+cohort offers, someone with both sees neither, and a member with no plans sees everything.
+A promo with no plan named shows to everyone.
+
+⚠️ **Promos render for members with no plans and no client record.** That was previously an
+error state — the portal showed "we couldn't find your coaching portal" — and is now the
+primary funnel: they get an empty-but-valid payload carrying the offers.
+
+---
+
 ## E. Media modal fields (shared, single DOM instance)
 
 Opened by any recording / file / (future) cohort card. One modal serves all. PDFs bypass the
@@ -249,7 +286,12 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
       "uploaded_at": "2026-06-01T18:22:00Z",  // = content_items.created_at (upload time)
       "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
   ],
-  "cohort": { /* object below, or null */ }
+  "cohort": { /* object below, or null */ },
+  "promos": [                       // already filtered for this member
+    { "id": "uuid", "title": "string", "body": "string",
+      "cta_label": "string", "cta_url": "https://…",
+      "kind": "buy|inclusion" }
+  ]
 }
 ```
 

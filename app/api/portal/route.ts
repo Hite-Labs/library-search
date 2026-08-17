@@ -5,15 +5,19 @@ import {
   getSessionLogs,
   getClientContentByKind,
   getCohortForPortal,
+  listLivePromos,
   type Enrollment,
   type ContentItem,
+  type Promo,
 } from '@/lib/db';
 import { getPresignedGetUrl } from '@/lib/r2';
 import {
   verifyMemberToken,
   getMemberPlanState,
   planIdFor,
+  isPlanKey,
   type PlanKey,
+  type PlanFlags,
 } from '@/lib/memberstack';
 import { env } from '@/lib/env';
 
@@ -92,6 +96,35 @@ function pickEnrollment(enrollments: Enrollment[]): Enrollment | null {
     enrollments[0] ??
     null
   );
+}
+
+/**
+ * Promos this member should see, in portal-safe shape.
+ *
+ * The rule is Lindsay's: show an offer only when the member does NOT already hold that
+ * plan. One rule covers the whole matrix — individual members see cohort and membership
+ * offers, cohort members see individual, and so on.
+ *
+ * Deliberately generous about what counts as "doesn't hold it": a null plan state (we
+ * couldn't look it up), an unset env id, or an unrecognised plan key all mean the promo
+ * shows. Over-showing an upsell wastes an impression; under-showing one silently costs a
+ * sale, and only the second failure is invisible.
+ */
+function visiblePromos(promos: Promo[], planState: PlanFlags | null) {
+  return promos
+    .filter((p) => {
+      const key = p.requires_missing_plan;
+      if (!key || !isPlanKey(key)) return true;
+      return planState?.[key] !== true;
+    })
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      body: p.body,
+      cta_label: p.cta_label,
+      cta_url: p.cta_url,
+      kind: p.kind,
+    }));
 }
 
 /**
@@ -216,9 +249,24 @@ export async function GET(req: NextRequest) {
   }
 
   // 2. Resolve the client linked to this member.
+  //
+  // No client record is NOT an error any more: a signed-up member who hasn't bought
+  // anything has no row here, and they are exactly who the upsell exists for. Returning
+  // 404 made the portal show "we couldn't find your coaching portal" to the person most
+  // worth selling to. They now get an empty-but-valid payload plus promos.
+  //
+  // Still no data leak — everything below this point is keyed to a client id they don't
+  // have, so there is nothing to return but the offers.
   const client = await getClientByMemberstackId(verified.id);
   if (!client) {
-    return NextResponse.json({ error: 'No client linked to this member' }, { status: 404, headers: cors });
+    // planState is deliberately null here: with no client record we haven't looked their
+    // plans up, and visiblePromos treats unknown plan state as "holds nothing", so they see
+    // every live offer. That is the right answer for someone with no purchases.
+    const promosOnly = visiblePromos(await listLivePromos(), null);
+    return NextResponse.json(
+      { ...emptyIndividual(), cohort: null, promos: promosOnly },
+      { headers: cors },
+    );
   }
 
   // 3. Entitlements + cohort + enrollments, together — the plan lookup is a network call to
@@ -227,10 +275,11 @@ export async function GET(req: NextRequest) {
   //    Plan state decides what we SEND, not just what the portal script chooses to show.
   //    Hiding a panel in the browser still shipped the data, so anyone reading the network
   //    response saw content they hadn't paid for.
-  const [planState, cohortRaw, data] = await Promise.all([
+  const [planState, cohortRaw, data, livePromos] = await Promise.all([
     getMemberPlanState(verified.id),
     buildCohortObject(verified.id),
     getClientWithEnrollments(client.id),
+    listLivePromos(),
   ]);
 
   // A Memberstack plan can only REVOKE what the dashboard granted, never grant on its own.
@@ -257,13 +306,20 @@ export async function GET(req: NextRequest) {
 
   const cohort = revoked('cohort') ? null : cohortRaw;
 
+  // Uses planState directly rather than `revoked()`: revoked() answers "should we take
+  // access away", which is intentionally conservative, whereas this asks the simpler
+  // "do they have it right now".
+  const promos = visiblePromos(livePromos, planState);
+
   // 4. Pick the individual enrollment to reflect. A revoked member is treated exactly like
   //    one with no enrollment: an empty-but-valid payload, never a 403 — they stay signed in
   //    and see the upsell, which is the point.
   const enrollment = !revoked('individual') && data ? pickEnrollment(data.enrollments) : null;
 
   if (!enrollment) {
-    return NextResponse.json({ ...emptyIndividual(), cohort }, { headers: cors });
+    // Promos ride on this path too — a member with no coaching pack is exactly who the
+    // upsell is for, so returning them here is the whole point rather than an afterthought.
+    return NextResponse.json({ ...emptyIndividual(), cohort, promos }, { headers: cors });
   }
 
   // 5. Sessions — portal-safe projection. Logs come back session_date DESC; number them
@@ -325,6 +381,7 @@ export async function GET(req: NextRequest) {
       recordings,
       files,
       cohort,
+      promos,
     },
     { headers: cors },
   );

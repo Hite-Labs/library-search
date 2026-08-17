@@ -181,3 +181,39 @@ LANGUAGE sql STABLE AS $$
   ORDER BY ci.embedding <=> query_embedding ASC
   LIMIT match_count;
 $$;
+
+-- ── Promo blocks ─────────────────────────────────────────────────────────────
+-- Upsell pieces shown in the portal. A member with no plan is the primary funnel, not an
+-- error state, so promos are visible any time rather than gated to a moment — and every
+-- page can carry one.
+--
+-- Visibility is "show only if the member does NOT already hold this plan", expressed as
+-- requires_missing_plan. That single rule covers the whole matrix Lindsay described:
+-- individual members see cohort/membership offers, cohort members see individual, and so on.
+-- NULL means "show to everyone" (a general announcement, no plan involved).
+--
+-- kind distinguishes a buy CTA from an inclusion notice: a member whose plan already covers
+-- the thing should read "included with your membership — take a look", not be sold it again.
+-- Same block system, different Webflow template.
+--
+-- Retiring an offer is `active = false`, or letting ends_at pass. No deploy.
+CREATE TABLE promos (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title         text NOT NULL,
+  body          text NOT NULL DEFAULT '',
+  cta_label     text NOT NULL DEFAULT '',
+  cta_url       text NOT NULL DEFAULT '',
+  -- The plan key (lib/memberstack.ts PLAN_KEYS) a member must NOT hold for this to show.
+  -- Deliberately un-constrained text: the plan registry lives in TS, and a CHECK here would
+  -- have to be migrated in lockstep every time a plan is added. An unknown key simply never
+  -- matches a held plan, so it shows to everyone — the safe direction for an upsell.
+  requires_missing_plan text,
+  kind          text NOT NULL DEFAULT 'buy' CHECK (kind IN ('buy','inclusion')),
+  active        boolean NOT NULL DEFAULT true,
+  sort_order    integer NOT NULL DEFAULT 0,
+  starts_at     timestamptz,
+  ends_at       timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+-- The portal's only query: active promos in display order.
+CREATE INDEX promos_active_idx ON promos (active, sort_order) WHERE active;

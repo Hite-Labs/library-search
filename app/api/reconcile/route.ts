@@ -6,6 +6,7 @@ import {
   isMemberstackConfigured,
   planEnvVarFor,
   planIdFor,
+  isPlanKey,
   PLAN_KEYS,
   type PlanKey,
 } from '@/lib/memberstack';
@@ -213,11 +214,8 @@ export async function POST(req: Request) {
   const planType = body?.planType;
   const action = body?.action;
 
-  // Validated against the registry, so a new plan is accepted here without editing this
-  // check — and an unknown one is still rejected rather than passed through.
-  const isPlanKey = (v: unknown): v is PlanKey =>
-    typeof v === 'string' && (PLAN_KEYS as readonly string[]).includes(v);
-
+  // Validated against the registry (isPlanKey), so a new plan is accepted here without
+  // editing this check — and an unknown one is still rejected rather than passed through.
   if (
     typeof memberstackId !== 'string' ||
     !isPlanKey(planType) ||
