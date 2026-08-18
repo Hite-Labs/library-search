@@ -120,9 +120,25 @@ function pickEnrollment(enrollments: Enrollment[]): Enrollment | null {
  * shows. Over-showing an upsell wastes an impression; under-showing one silently costs a
  * sale, and only the second failure is invisible.
  */
-function visiblePromoCodes(promos: Promo[], planState: PlanFlags | null): string[] {
+function visiblePromoCodes(
+  promos: Promo[],
+  planState: PlanFlags | null,
+  challengeRun: Challenge | null,
+): string[] {
+  // Has the active run stopped taking new people? Worked out once rather than per promo.
+  //
+  // No run, or a run with no start date, means nothing is closed — a promo that follows the
+  // window keeps showing, because "no challenge is scheduled" is not "the challenge is
+  // full". The same for an unparseable schedule: this only ever WITHDRAWS an offer, so
+  // every uncertain case leaves it up, matching the fail-generous rule below.
+  const joiningClosed = challengeRun ? challengeAccess(challengeRun).join_closed : false;
+
   return promos
     .filter((p) => {
+      // Selling a group challenge to someone arriving with five days left is what the
+      // cutoff exists to prevent — and it only prevents it if the offer disappears too.
+      if (p.follows_challenge_window && joiningClosed) return false;
+
       const key = p.hide_if_has;
       if (!key || !isPlanKey(key)) return true;
       return planState?.[key] !== true;
@@ -348,7 +364,7 @@ export async function GET(req: NextRequest) {
     // Promos still use a null plan state on purpose where the lookup failed: unknown
     // reads as "holds nothing", so they see every live offer, which is the right answer
     // for someone with no purchases.
-    const codesOnly = visiblePromoCodes(livePromosOnly, codesPlanState);
+    const codesOnly = visiblePromoCodes(livePromosOnly, codesPlanState, runOnly);
     return NextResponse.json(
       {
         ...emptyIndividual(),
@@ -401,7 +417,7 @@ export async function GET(req: NextRequest) {
   // Uses planState directly rather than `revoked()`: revoked() answers "should we take
   // access away", which is intentionally conservative, whereas this asks the simpler
   // "do they have it right now".
-  const promoCodes = visiblePromoCodes(livePromos, planState);
+  const promoCodes = visiblePromoCodes(livePromos, planState, challengeRun);
 
   // The challenge inverts the rule above, and the inversion is deliberate.
   //

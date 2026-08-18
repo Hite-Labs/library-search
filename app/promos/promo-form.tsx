@@ -50,6 +50,9 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
   const [code, setCode] = useState(promo?.code ?? '');
   const [hideIfHas, setHideIfHas] = useState(promo?.hide_if_has ?? '');
   const [note, setNote] = useState(promo?.note ?? '');
+  const [followsChallengeWindow, setFollowsChallengeWindow] = useState(
+    promo?.follows_challenge_window ?? false,
+  );
   const [startsAt, setStartsAt] = useState(isoToLocalInput(promo?.starts_at ?? null));
   const [endsAt, setEndsAt] = useState(isoToLocalInput(promo?.ends_at ?? null));
 
@@ -87,6 +90,7 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
       ? {
           code: trimmed,
           note: note.trim(),
+          followsChallengeWindow,
           hideIfHas: hideIfHas || undefined,
           clearHideIfHas: !hideIfHas,
           startsAt: start ?? undefined,
@@ -97,6 +101,7 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
       : {
           code: trimmed,
           note: note.trim(),
+          followsChallengeWindow,
           hideIfHas: hideIfHas || null,
           startsAt: start,
           endsAt: end,
@@ -173,6 +178,26 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
           <p className="text-xs text-slate/50 mt-1">
             Hides the offer from people who already bought it.
           </p>
+        </div>
+
+        <div>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={followsChallengeWindow}
+              onChange={(e) => setFollowsChallengeWindow(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-label text-xs text-slate/70">
+                Stop showing once the challenge closes to new joiners
+              </span>
+              <span className="block text-xs text-slate/50 mt-0.5">
+                For challenge offers. Uses the active run&apos;s cutoff, so the offer
+                retires itself instead of selling a run someone has mostly missed.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div>

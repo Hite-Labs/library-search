@@ -13,6 +13,7 @@ export interface Promo {
   id: string;
   code: string;
   hide_if_has: string | null;
+  follows_challenge_window: boolean;
   note: string;
   active: boolean;
   starts_at: string | null;
@@ -271,6 +272,12 @@ export function PromosView() {
                         <span className={unknownPlan ? 'text-amber-700' : ''}>
                           {audienceLabel(p.hide_if_has)}
                         </span>
+                        {p.follows_challenge_window && (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span>Retires when the challenge closes to joiners</span>
+                          </>
+                        )}
                       </div>
                     </div>
 

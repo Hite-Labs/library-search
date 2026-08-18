@@ -1437,6 +1437,8 @@ export interface Promo {
   id: string;
   code: string;
   hide_if_has: string | null;
+  /** Stop showing this once the active challenge run closes to new joiners. */
+  follows_challenge_window: boolean;
   note: string;
   active: boolean;
   starts_at: string | null;
@@ -1484,6 +1486,7 @@ export class DuplicatePromoCodeError extends Error {
 export async function createPromo(data: {
   code: string;
   hideIfHas?: string | null;
+  followsChallengeWindow?: boolean;
   note?: string;
   startsAt?: string | null;
   endsAt?: string | null;
@@ -1491,9 +1494,9 @@ export async function createPromo(data: {
   const sql = getSql();
   try {
     const rows = await sql`
-      INSERT INTO promos (code, hide_if_has, note, starts_at, ends_at)
-      VALUES (${data.code}, ${data.hideIfHas ?? null}, ${data.note ?? ''},
-              ${data.startsAt ?? null}, ${data.endsAt ?? null})
+      INSERT INTO promos (code, hide_if_has, follows_challenge_window, note, starts_at, ends_at)
+      VALUES (${data.code}, ${data.hideIfHas ?? null}, ${data.followsChallengeWindow ?? false},
+              ${data.note ?? ''}, ${data.startsAt ?? null}, ${data.endsAt ?? null})
       RETURNING *`;
     return rows[0] as Promo;
   } catch (err) {
@@ -1519,6 +1522,7 @@ export async function updatePromo(
   data: {
     code?: string;
     hideIfHas?: string | null;
+    followsChallengeWindow?: boolean;
     note?: string;
     active?: boolean;
     startsAt?: string | null;
@@ -1535,6 +1539,7 @@ export async function updatePromo(
         code = COALESCE(${data.code ?? null}, code),
         hide_if_has = CASE WHEN ${data.clearHideIfHas ?? false}
           THEN NULL ELSE COALESCE(${data.hideIfHas ?? null}, hide_if_has) END,
+        follows_challenge_window = COALESCE(${data.followsChallengeWindow ?? null}, follows_challenge_window),
         note = COALESCE(${data.note ?? null}, note),
         active = COALESCE(${data.active ?? null}, active),
         starts_at = CASE WHEN ${data.clearStartsAt ?? false}

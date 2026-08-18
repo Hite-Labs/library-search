@@ -261,6 +261,17 @@ CREATE TABLE promos (
 -- order is the Webflow page's own DOM order, since the blocks are authored in place.
 CREATE INDEX promos_active_idx ON promos (active) WHERE active;
 
+-- Ties a promo to the challenge's joining window: when the active run passes its
+-- join_cutoff_days, a promo with this set stops showing. Selling a 21-day group challenge
+-- to someone with five days left is the thing the cutoff exists to prevent, and it only
+-- actually prevents it if the offer disappears too — otherwise the cutoff is a note in the
+-- dashboard and the sale still happens.
+--
+-- A boolean rather than a challenge_id: there is one active run at a time, and pointing a
+-- promo at a specific run would need re-pointing at every new one. This way the promo is
+-- written once and follows whichever run is live.
+ALTER TABLE promos ADD COLUMN follows_challenge_window boolean NOT NULL DEFAULT false;
+
 -- ── 21-day challenge ─────────────────────────────────────────────────────────
 --
 -- Deliberately NOT a cohort variant, and much smaller than one, for two reasons.

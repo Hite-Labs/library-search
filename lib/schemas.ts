@@ -229,6 +229,7 @@ const PROMO_CODE = z
 export const PromoCreateSchema = z.object({
   code: PROMO_CODE,
   hideIfHas: z.string().nullable().optional(),
+  followsChallengeWindow: z.boolean().optional(),
   note: z.string().optional(),
   startsAt: z.string().datetime().nullable().optional(),
   endsAt: z.string().datetime().nullable().optional(),
@@ -240,6 +241,7 @@ export const PromoCreateSchema = z.object({
 export const PromoUpdateSchema = z.object({
   code: PROMO_CODE.optional(),
   hideIfHas: z.string().nullable().optional(),
+  followsChallengeWindow: z.boolean().optional(),
   note: z.string().optional(),
   active: z.boolean().optional(),
   startsAt: z.string().datetime().nullable().optional(),
