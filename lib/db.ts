@@ -1426,3 +1426,123 @@ export async function getCohortForPortal(memberstackId: string): Promise<{
     myFiles: myFileRows as ContentItem[],
   };
 }
+
+// ── Promos ───────────────────────────────────────────────────────────────────
+
+export interface Promo {
+  id: string;
+  title: string;
+  body: string;
+  cta_label: string;
+  cta_url: string;
+  requires_missing_plan: string | null;
+  kind: 'buy' | 'inclusion';
+  active: boolean;
+  sort_order: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Promos live right now: active, and inside their scheduled window if they have one.
+ *
+ * The window bounds are optional and independent — a promo with no starts_at is live
+ * immediately, one with no ends_at runs until switched off. Filtering in SQL rather than
+ * in JS keeps "what does a member see" answerable with one query when debugging.
+ *
+ * Plan-based visibility is NOT applied here: that depends on which plans the caller's
+ * member holds, so the portal route filters what this returns. Keeping the two separate
+ * means the dashboard can list every live promo without knowing about a member.
+ */
+export async function listLivePromos(): Promise<Promo[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM promos
+    WHERE active
+      AND (starts_at IS NULL OR starts_at <= now())
+      AND (ends_at IS NULL OR ends_at > now())
+    ORDER BY sort_order, created_at`;
+  return rows as Promo[];
+}
+
+/** Every promo including inactive and expired ones, for the dashboard. */
+export async function listAllPromos(): Promise<Promo[]> {
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM promos ORDER BY sort_order, created_at`;
+  return rows as Promo[];
+}
+
+export async function createPromo(data: {
+  title: string;
+  body?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  requiresMissingPlan?: string | null;
+  kind?: 'buy' | 'inclusion';
+  sortOrder?: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+}): Promise<Promo> {
+  const sql = getSql();
+  const rows = await sql`
+    INSERT INTO promos (title, body, cta_label, cta_url, requires_missing_plan,
+                        kind, sort_order, starts_at, ends_at)
+    VALUES (${data.title}, ${data.body ?? ''}, ${data.ctaLabel ?? ''}, ${data.ctaUrl ?? ''},
+            ${data.requiresMissingPlan ?? null}, ${data.kind ?? 'buy'},
+            ${data.sortOrder ?? 0}, ${data.startsAt ?? null}, ${data.endsAt ?? null})
+    RETURNING *`;
+  return rows[0] as Promo;
+}
+
+/**
+ * PATCH semantics: omitted fields are left untouched via COALESCE.
+ *
+ * The nullable columns need care — COALESCE cannot distinguish "leave alone" from "clear
+ * it", so requires_missing_plan / starts_at / ends_at take an explicit `clear` flag.
+ * Without it there would be no way to un-schedule a promo or make a targeted one universal.
+ */
+export async function updatePromo(
+  id: string,
+  data: {
+    title?: string;
+    body?: string;
+    ctaLabel?: string;
+    ctaUrl?: string;
+    requiresMissingPlan?: string | null;
+    kind?: 'buy' | 'inclusion';
+    active?: boolean;
+    sortOrder?: number;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    clearRequiresMissingPlan?: boolean;
+    clearStartsAt?: boolean;
+    clearEndsAt?: boolean;
+  },
+): Promise<Promo | null> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE promos SET
+      title = COALESCE(${data.title ?? null}, title),
+      body = COALESCE(${data.body ?? null}, body),
+      cta_label = COALESCE(${data.ctaLabel ?? null}, cta_label),
+      cta_url = COALESCE(${data.ctaUrl ?? null}, cta_url),
+      requires_missing_plan = CASE WHEN ${data.clearRequiresMissingPlan ?? false}
+        THEN NULL ELSE COALESCE(${data.requiresMissingPlan ?? null}, requires_missing_plan) END,
+      kind = COALESCE(${data.kind ?? null}, kind),
+      active = COALESCE(${data.active ?? null}, active),
+      sort_order = COALESCE(${data.sortOrder ?? null}, sort_order),
+      starts_at = CASE WHEN ${data.clearStartsAt ?? false}
+        THEN NULL ELSE COALESCE(${data.startsAt ?? null}, starts_at) END,
+      ends_at = CASE WHEN ${data.clearEndsAt ?? false}
+        THEN NULL ELSE COALESCE(${data.endsAt ?? null}, ends_at) END
+    WHERE id = ${id}
+    RETURNING *`;
+  return (rows[0] as Promo) ?? null;
+}
+
+export async function deletePromo(id: string): Promise<boolean> {
+  const sql = getSql();
+  const rows = await sql`DELETE FROM promos WHERE id = ${id} RETURNING id`;
+  return rows.length > 0;
+}

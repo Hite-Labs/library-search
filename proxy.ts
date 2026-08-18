@@ -40,6 +40,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/api/enrollments') ||
     pathname.startsWith('/api/cohorts') ||
     pathname.startsWith('/api/reconcile') ||
+    pathname.startsWith('/api/promos') ||
     pathname.startsWith('/api/library');
 
   if (!isProtectedApi) return NextResponse.next();
@@ -68,5 +69,9 @@ export const config = {
     // '/api/library' list route, and the matcher gates whether proxy() runs at all.
     '/api/library/:path*',
     '/api/library',
+    // Same pairing for promos — the bare route is the list/create endpoint, and without
+    // this entry proxy() would never run for it, leaving it publicly writable.
+    '/api/promos/:path*',
+    '/api/promos',
   ],
 };

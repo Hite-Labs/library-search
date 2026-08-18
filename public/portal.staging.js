@@ -669,6 +669,55 @@
     );
 
     if (data.cohort) renderCohort(data.cohort);
+
+    renderPromos(data.promos);
+  }
+
+  // ===== Promo blocks =====
+
+  // Promos arrive already filtered by the API — it drops anything selling a plan the member
+  // holds — so there is no visibility logic here. That deliberately keeps one source of
+  // truth: adding a plan changes the registry, not this script.
+  //
+  // Two lists, so Webflow can style a buy CTA and an "already included" notice differently
+  // without the script knowing anything about their markup. Either may be absent; renderList
+  // no-ops on a missing container.
+  function fillPromoCard(card, promo) {
+    setField(card, 'promo-title', promo.title || '');
+    setField(card, 'promo-body', promo.body || '');
+    setField(card, 'promo-cta-label', promo.cta_label || '');
+    setLink(card, 'promo-cta', promo.cta_url);
+
+    // Stamped so Webflow can style by kind without a second template if preferred.
+    card.setAttribute('data-promo-kind', promo.kind || 'buy');
+
+    // Whole card clickable, matching how every other card in the portal behaves. Guarded on
+    // a url so a promo with no link isn't a dead click target.
+    if (promo.cta_url) {
+      card.style.cursor = 'pointer';
+      card.addEventListener('click', function () {
+        window.open(promo.cta_url, '_blank', 'noopener,noreferrer');
+      });
+    }
+  }
+
+  function renderPromos(promos) {
+    promos = promos || [];
+
+    var buy = [];
+    var inclusion = [];
+    for (var i = 0; i < promos.length; i++) {
+      if (promos[i].kind === 'inclusion') inclusion.push(promos[i]);
+      else buy.push(promos[i]);
+    }
+
+    renderList(byField('promo-list'), byField('promo-empty'), buy, fillPromoCard);
+    renderList(
+      byField('promo-inclusion-list'),
+      byField('promo-inclusion-empty'),
+      inclusion,
+      fillPromoCard
+    );
   }
 
   function loadPortal(token) {
@@ -688,6 +737,9 @@
         if (response.status === 401) {
           throw new PortalError('Your session has expired. Please sign in again.');
         }
+        // The API no longer 404s for a member without a client record — that member is the
+        // upsell audience and gets an empty payload with promos instead. This branch stays
+        // as a fallback for a genuine missing route or an older deployment.
         if (response.status === 404) {
           throw new PortalError(
             'We couldn\'t find your coaching portal. Please contact your coach.'
@@ -794,10 +846,12 @@
 
         // No plans at all is not an error state — it is the funnel. The member keeps their
         // account and sees the upsell, which is how they buy their way in.
-        if (!anyHeld) {
-          if (upsell) upsell.style.display = 'block';
-          return;
-        }
+        //
+        // Note this does NOT return early any more. It used to, which meant the one member
+        // who most needs to see an offer never loaded any data — and so never got a promo.
+        // init() still runs; the panels stay hidden because none are held, and the fetch
+        // exists to populate the upsell.
+        if (!anyHeld && upsell) upsell.style.display = 'block';
 
         for (i = 0; i < PLANS.length; i++) {
           if (!PLANS[i].has) continue;
@@ -805,7 +859,7 @@
           if (held) held.style.display = 'block';
         }
 
-        // Single fetch drives both panels — init() handles tabs + data load
+        // Single fetch drives every panel — init() handles tabs + data load + promos
         init();
       } catch (err) {
         console.error('[portal] gateAndLoad inner error:', err);

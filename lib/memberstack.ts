@@ -87,6 +87,11 @@ export function planEnvVarFor(key: PlanKey): string {
   }
 }
 
+/** Is this string one of the registry's plan keys? Narrows unknown input at a boundary. */
+export function isPlanKey(value: unknown): value is PlanKey {
+  return typeof value === 'string' && (PLAN_KEYS as readonly string[]).includes(value);
+}
+
 /** No plans held — the baseline every flags object starts from. */
 export function noPlans(): PlanFlags {
   return PLAN_KEYS.reduce((acc, k) => ({ ...acc, [k]: false }), {} as PlanFlags);
