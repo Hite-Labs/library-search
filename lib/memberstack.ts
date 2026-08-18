@@ -3,6 +3,7 @@
 import memberstackAdmin from '@memberstack/admin';
 import { randomBytes } from 'node:crypto';
 import { env } from './env';
+import { PLAN_KEYS, type PlanKey, type PlanFlags } from './plan-keys';
 
 type AdminClient = ReturnType<typeof memberstackAdmin.init>;
 
@@ -53,13 +54,12 @@ export async function findMemberByEmail(email: string): Promise<{ id: string } |
 // portal route takes the plan id as an argument, and reconcile's `checks[]` is an array of
 // descriptors — so this generalises in the direction the code was already heading.
 
-/** Every plan the portal knows about. Add a key here first; the rest follows. */
-export const PLAN_KEYS = ['individual', 'cohort'] as const;
-
-export type PlanKey = (typeof PLAN_KEYS)[number];
-
-/** Which plans a member holds, keyed by plan. Replaces the old two-boolean shape. */
-export type PlanFlags = Record<PlanKey, boolean>;
+// The keys themselves live in lib/plan-keys.ts, which has no dependencies, so dashboard
+// pages in the browser can read them without pulling this module's Admin SDK and secret
+// key into the client bundle. Re-exported here so every existing server-side import of
+// PLAN_KEYS / PlanKey / PlanFlags from '@/lib/memberstack' keeps working unchanged.
+export { PLAN_KEYS, isPlanKey } from './plan-keys';
+export type { PlanKey, PlanFlags } from './plan-keys';
 
 /**
  * The Memberstack plan id configured for each plan, or undefined when its env var is unset.
@@ -85,11 +85,6 @@ export function planEnvVarFor(key: PlanKey): string {
     case 'cohort':
       return 'MEMBERSTACK_COHORT_PLAN_ID';
   }
-}
-
-/** Is this string one of the registry's plan keys? Narrows unknown input at a boundary. */
-export function isPlanKey(value: unknown): value is PlanKey {
-  return typeof value === 'string' && (PLAN_KEYS as readonly string[]).includes(value);
 }
 
 /** No plans held — the baseline every flags object starts from. */

@@ -9,6 +9,9 @@ const LINKS = [
   { href: '/library', label: 'Library' },
   { href: '/clients', label: 'Clients' },
   { href: '/cohorts', label: 'Cohorts' },
+  // Upsell blocks shown in the member portal. Edited occasionally, when an offer opens
+  // or closes, rather than daily — so it sits after the three working sections.
+  { href: '/promos', label: 'Promos' },
   // Dashboard-vs-Memberstack drift check. Read occasionally, not part of daily flow.
   { href: '/reconcile', label: 'Access' },
 ];
