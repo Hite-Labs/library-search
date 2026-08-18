@@ -34,6 +34,12 @@ const envSchema = z.object({
   // its cohort panel on this plan (see public/portal.js), so a cohort-only person needs
   // it to see anything but the upsell. Unset → no plan attached for cohort members.
   MEMBERSTACK_COHORT_PLAN_ID: z.string().optional(),
+  // Optional: the FREE Memberstack plan id for the 21-day challenge. This plan is what
+  // grants challenge access, whichever way it was obtained — bought directly, bundled with
+  // the audio membership, or added to an existing coaching client. There is no roster:
+  // holding this plan IS the enrolment, so a Memberstack automation has to attach it on
+  // every purchase route. Unset → nobody sees the challenge.
+  MEMBERSTACK_CHALLENGE_PLAN_ID: z.string().optional(),
 
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),

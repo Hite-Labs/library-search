@@ -9,6 +9,9 @@ const LINKS = [
   { href: '/library', label: 'Library' },
   { href: '/clients', label: 'Clients' },
   { href: '/cohorts', label: 'Cohorts' },
+  // 21-day challenge runs. Separate from cohorts on purpose: different scheduling, content
+  // authored in Webflow, and access comes from the Memberstack plan rather than a roster.
+  { href: '/challenges', label: 'Challenges' },
   // Upsell blocks shown in the member portal. Edited occasionally, when an offer opens
   // or closes, rather than daily — so it sits after the three working sections.
   { href: '/promos', label: 'Promos' },

@@ -260,3 +260,50 @@ CREATE TABLE promos (
 -- The portal's only query: which codes are live right now. sort_order is gone — display
 -- order is the Webflow page's own DOM order, since the blocks are authored in place.
 CREATE INDEX promos_active_idx ON promos (active) WHERE active;
+
+-- ── 21-day challenge ─────────────────────────────────────────────────────────
+--
+-- Deliberately NOT a cohort variant, and much smaller than one, for two reasons.
+--
+-- 1. The content lives in Webflow. Lindsay builds all 21 days on the page; this table
+--    never holds a video, a file or an R2 key. It answers exactly one question:
+--    which day numbers may a member see right now? (Same philosophy as promos above.)
+--
+-- 2. There is no roster. Access is the Memberstack challenge plan, however it was
+--    obtained — bought directly, bundled with the audio membership, or added to an
+--    existing coaching client. A member holding the plan is in; that is the whole rule.
+--    So there is no challenge_members table, no client_id, and no per-member state.
+--
+-- One shared clock: day N unlocks at start_date + (N-1) days, at reveal_time. Someone who
+-- buys mid-run sees every day up to today at once and continues with everyone else, which
+-- is what lets a single daily email serve the whole run.
+--
+-- Day numbers are computed, never stored — a challenge_days table would hold nothing but
+-- arithmetic. If per-day titles or prompts are ever wanted in the DB rather than Webflow,
+-- that is an additive table later.
+CREATE TABLE challenges (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name          text NOT NULL,
+  description   text NOT NULL DEFAULT '',
+  -- When day 1 unlocks. Nullable so a run can be drafted before its dates are settled;
+  -- a challenge with no start_date reveals nothing.
+  start_date    timestamptz,
+  total_days    integer NOT NULL DEFAULT 21,
+  -- Local time of day each new day appears, "HH:MM" in reveal_timezone. Stored as text
+  -- rather than `time` so it round-trips through JSON unchanged.
+  reveal_time   text NOT NULL DEFAULT '06:00',
+  -- IANA zone the reveal happens in. One zone for the whole run, deliberately: the
+  -- alternative is per-member local time, which would mean day 4 appearing at different
+  -- absolute moments for different people and no single instant for the daily email.
+  reveal_timezone text NOT NULL DEFAULT 'America/New_York',
+  -- Days of access AFTER the last day, for catching up. 0 = access ends with day 21.
+  grace_days    integer NOT NULL DEFAULT 7,
+  telegram_url  text NOT NULL DEFAULT '',
+  status        text NOT NULL DEFAULT 'draft'
+                  CHECK (status IN ('draft','active','complete','archived')),
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- The portal's only query: the one runnable challenge. Partial index because every
+-- lookup filters to active.
+CREATE INDEX challenges_active_idx ON challenges (start_date) WHERE status = 'active';

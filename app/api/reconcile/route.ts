@@ -135,15 +135,21 @@ export async function GET() {
     }
 
     // Driven by the plan registry, so a new plan is checked here automatically. The
-    // per-plan "does the dashboard want it" signal still comes from the enrollment query,
-    // which is coaching-shaped — a non-coaching plan would need its own wants-source.
-    const wantsByKey: Record<PlanKey, boolean> = {
+    // per-plan "does the dashboard want it" signal comes from the enrollment query, which
+    // is coaching-shaped.
+    //
+    // `challenge` is deliberately absent and therefore never reported as drift. It has no
+    // enrollment: the Memberstack plan IS the entitlement, however it was obtained — bought
+    // directly, bundled with the audio membership, or added to an existing client. There is
+    // no dashboard-side intent to compare against, so every challenge member would otherwise
+    // read as "has a plan the dashboard didn't grant" and drown the real findings.
+    const wantsByKey: Partial<Record<PlanKey, boolean>> = {
       individual: c.wantsIndividual,
       cohort: c.wantsCohort,
     };
-    const checks = PLAN_KEYS.map((type) => ({
+    const checks = PLAN_KEYS.filter((type) => type in wantsByKey).map((type) => ({
       type,
-      wants: wantsByKey[type],
+      wants: wantsByKey[type] === true,
       has: member.plans[type],
     }));
 

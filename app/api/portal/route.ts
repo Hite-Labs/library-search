@@ -6,6 +6,8 @@ import {
   getClientContentByKind,
   getCohortForPortal,
   listLivePromos,
+  getActiveChallenge,
+  type Challenge,
   type Enrollment,
   type ContentItem,
   type Promo,
@@ -19,6 +21,7 @@ import {
   type PlanKey,
   type PlanFlags,
 } from '@/lib/memberstack';
+import { challengeAccess } from '@/lib/challenge-days';
 import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
@@ -125,6 +128,39 @@ function visiblePromoCodes(promos: Promo[], planState: PlanFlags | null): string
       return planState?.[key] !== true;
     })
     .map((p) => p.code);
+}
+
+/**
+ * The portal-safe challenge object, or null when there is nothing to show.
+ *
+ * `unlocked_days` is the entire point: the day content lives in Webflow, so the server
+ * never holds it and cannot leak it. All it does is say which day numbers this member may
+ * see, and portal.js reveals those blocks.
+ *
+ * A run with no start date, or one whose grace window has closed, returns null rather than
+ * an empty shell — "there is no challenge for you right now" and "your challenge has zero
+ * days visible" would look identical in the portal, and only the first is true.
+ *
+ * Note the shape is not the DB shape (telegram_url → telegram_link), matching how
+ * buildCohortObject renames on the way out. The portal contract is its own thing.
+ */
+function buildChallengeObject(run: Challenge | null) {
+  if (!run || !run.start_date) return null;
+
+  const access = challengeAccess(run);
+  if (access.ended) return null;
+
+  return {
+    name: run.name,
+    description: run.description,
+    telegram_link: run.telegram_url || null,
+    total_days: run.total_days,
+    unlocked_days: access.unlocked,
+    current_day: access.current_day,
+    starts_at: run.start_date,
+    access_ends_at: access.access_ends_at,
+    started: access.started,
+  };
 }
 
 /**
@@ -259,12 +295,32 @@ export async function GET(req: NextRequest) {
   // have, so there is nothing to return but the offers.
   const client = await getClientByMemberstackId(verified.id);
   if (!client) {
-    // planState is deliberately null here: with no client record we haven't looked their
-    // plans up, and visiblePromoCodes treats unknown plan state as "holds nothing", so they
-    // see every live offer. That is the right answer for someone with no purchases.
-    const codesOnly = visiblePromoCodes(await listLivePromos(), null);
+    // The challenge still has to be resolved on this path, and it is the only thing here
+    // that can be. Someone who bought ONLY the challenge — never a coaching or cohort
+    // client — has no clients row at all, so this is their normal path, not an edge case.
+    // Returning null here would have meant they paid and saw nothing.
+    //
+    // Their plans are looked up for real, because for the challenge the plan is the
+    // entitlement; there is no enrollment to fall back on.
+    const [codesPlanState, livePromosOnly, runOnly] = await Promise.all([
+      getMemberPlanState(verified.id),
+      listLivePromos(),
+      getActiveChallenge(),
+    ]);
+    const challengeOnly =
+      codesPlanState?.challenge === true ? buildChallengeObject(runOnly) : null;
+
+    // Promos still use a null plan state on purpose where the lookup failed: unknown
+    // reads as "holds nothing", so they see every live offer, which is the right answer
+    // for someone with no purchases.
+    const codesOnly = visiblePromoCodes(livePromosOnly, codesPlanState);
     return NextResponse.json(
-      { ...emptyIndividual(), cohort: null, promo_codes: codesOnly },
+      {
+        ...emptyIndividual(),
+        cohort: null,
+        challenge: challengeOnly,
+        promo_codes: codesOnly,
+      },
       { headers: cors },
     );
   }
@@ -275,11 +331,12 @@ export async function GET(req: NextRequest) {
   //    Plan state decides what we SEND, not just what the portal script chooses to show.
   //    Hiding a panel in the browser still shipped the data, so anyone reading the network
   //    response saw content they hadn't paid for.
-  const [planState, cohortRaw, data, livePromos] = await Promise.all([
+  const [planState, cohortRaw, data, livePromos, challengeRun] = await Promise.all([
     getMemberPlanState(verified.id),
     buildCohortObject(verified.id),
     getClientWithEnrollments(client.id),
     listLivePromos(),
+    getActiveChallenge(),
   ]);
 
   // A Memberstack plan can only REVOKE what the dashboard granted, never grant on its own.
@@ -311,6 +368,21 @@ export async function GET(req: NextRequest) {
   // "do they have it right now".
   const promoCodes = visiblePromoCodes(livePromos, planState);
 
+  // The challenge inverts the rule above, and the inversion is deliberate.
+  //
+  // Coaching and cohort access come from the DATABASE — an enrollment the dashboard
+  // created — so a Memberstack plan may only revoke, never grant, and only on a positive
+  // signal. The challenge has no enrollment at all: holding the plan IS the entitlement,
+  // however it was obtained (bought outright, bundled with the audio membership, or added
+  // to an existing client). So here the plan must GRANT, which means requiring a positive
+  // `true` and failing closed on anything unknown.
+  //
+  // Concretely: unreadable plan state or an unset MEMBERSTACK_CHALLENGE_PLAN_ID means no
+  // challenge. That is the safe direction for the only plan people pay for directly —
+  // the opposite choice would hand the challenge to everyone the moment the env var went
+  // missing.
+  const challenge = planState?.challenge === true ? buildChallengeObject(challengeRun) : null;
+
   // 4. Pick the individual enrollment to reflect. A revoked member is treated exactly like
   //    one with no enrollment: an empty-but-valid payload, never a 403 — they stay signed in
   //    and see the upsell, which is the point.
@@ -320,7 +392,7 @@ export async function GET(req: NextRequest) {
     // Promos ride on this path too — a member with no coaching pack is exactly who the
     // upsell is for, so returning them here is the whole point rather than an afterthought.
     return NextResponse.json(
-      { ...emptyIndividual(), cohort, promo_codes: promoCodes },
+      { ...emptyIndividual(), cohort, challenge, promo_codes: promoCodes },
       { headers: cors },
     );
   }
@@ -384,6 +456,7 @@ export async function GET(req: NextRequest) {
       recordings,
       files,
       cohort,
+      challenge,
       promo_codes: promoCodes,
     },
     { headers: cors },

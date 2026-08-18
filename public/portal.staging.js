@@ -23,6 +23,18 @@
       panelId: 'portal-cohort',
       tabField: 'tab-cohort',
       has: false
+    },
+    {
+      // The 21-day challenge. Unlike the two above, this plan is bought directly (or comes
+      // bundled with the audio membership) rather than being attached when a coach enrols
+      // someone — so holding it IS the entitlement, with no dashboard enrollment behind it.
+      // TODO: set planId once the Memberstack plan exists. Until then heldPlans() never
+      // includes it, so the panel stays hidden and nothing else is affected.
+      key: 'challenge',
+      planId: 'pln_challenge-REPLACE_ME',
+      panelId: 'portal-challenge',
+      tabField: 'tab-challenge',
+      has: false
     }
   ];
 
@@ -171,6 +183,15 @@
     eachEl('[data-field="cohort-session-display"]', hide);
     eachEl('[data-field="cohort-sessions-completed"]', hide);
     eachEl('[data-field="cohort-sessions-total"]', hide);
+    // Challenge day blocks are hidden up front too: they are authored in Webflow and would
+    // otherwise all be visible for the moment before the API answers — briefly showing
+    // day 21 to someone on day 2.
+    eachEl('[data-challenge-day]', hide);
+    eachEl('[data-field="challenge-not-started"]', hide);
+    eachEl('[data-field="challenge-name"]', hide);
+    eachEl('[data-field="challenge-current-day"]', hide);
+    eachEl('[data-field="challenge-total-days"]', hide);
+    eachEl('[data-field="challenge-starts-at"]', hide);
   }
 
   function showError(message) {
@@ -670,7 +691,64 @@
 
     if (data.cohort) renderCohort(data.cohort);
 
+    renderChallenge(data.challenge);
     renderPromos(data.promo_codes);
+  }
+
+  // ===== 21-day challenge =====
+
+  // Like promos, the content is authored entirely in Webflow: Lindsay builds all 21 day
+  // blocks on the page, each marked data-challenge-day="4". This script only reveals the
+  // days the API says are unlocked, and hides the rest.
+  //
+  // The server decides. It sends `unlocked_days` and nothing else about the schedule, so a
+  // locked day's content is never in the response to begin with — the same lesson the
+  // cohort session lock had to learn, where hiding a row client-side still shipped the
+  // recording URL to anyone reading the network tab.
+  //
+  // eachEl throughout, never byField: Webflow duplicates elements for mobile.
+  function renderChallenge(challenge) {
+    // No challenge, or not entitled to it — hide every day block and the panel chrome.
+    if (!challenge) {
+      eachEl('[data-challenge-day]', hide);
+      eachEl('[data-field="challenge-not-started"]', hide);
+      return;
+    }
+
+    var unlocked = challenge.unlocked_days || [];
+
+    eachEl('[data-challenge-day]', function (el) {
+      var n = parseInt(el.getAttribute('data-challenge-day'), 10);
+      // A non-numeric or unlisted day stays hidden. Fails closed, so a typo in the Webflow
+      // attribute costs a hidden day rather than revealing day 21 on day one.
+      if (!isNaN(n) && unlocked.indexOf(n) !== -1) show(el);
+      else hide(el);
+    });
+
+    // Before the run starts there is nothing to reveal, so say so rather than showing an
+    // empty page — "starts Monday" and "something is broken" look identical otherwise.
+    var notStarted = byField('challenge-not-started');
+    if (challenge.started) hide(notStarted);
+    else show(notStarted);
+
+    eachEl('[data-field="challenge-name"]', function (el) {
+      el.textContent = challenge.name || '';
+      show(el);
+    });
+    eachEl('[data-field="challenge-current-day"]', function (el) {
+      el.textContent = challenge.current_day == null ? '' : String(challenge.current_day);
+      show(el);
+    });
+    eachEl('[data-field="challenge-total-days"]', function (el) {
+      el.textContent = challenge.total_days == null ? '' : String(challenge.total_days);
+      show(el);
+    });
+    eachEl('[data-field="challenge-starts-at"]', function (el) {
+      el.textContent = formatDate(challenge.starts_at);
+      show(el);
+    });
+
+    setLink(document, 'challenge-telegram-link', challenge.telegram_link);
   }
 
   // ===== Promo blocks =====

@@ -526,7 +526,7 @@ export async function createClientWithEnrollment(data: {
   provisionWarning?: string;
   memberProvisioned: boolean;
   /** Plans newly attached to an already-existing member (reused client). */
-  plansAttached: ('individual' | 'cohort')[];
+  plansAttached: PlanKey[];
 }> {
   const sql = getSql();
   const existing = await findClientByEmail(data.email);
@@ -1171,7 +1171,7 @@ export async function addCohortMember(data: {
   provisionWarning?: string;
   memberProvisioned: boolean;
   /** Plans newly attached to an already-existing member (reused client). */
-  plansAttached: ('individual' | 'cohort')[];
+  plansAttached: PlanKey[];
 }> {
   const sql = getSql();
 
@@ -1556,5 +1556,128 @@ export async function updatePromo(
 export async function deletePromo(id: string): Promise<boolean> {
   const sql = getSql();
   const rows = await sql`DELETE FROM promos WHERE id = ${id} RETURNING id`;
+  return rows.length > 0;
+}
+
+// ── Challenges (21-day) ──────────────────────────────────────────────────────
+//
+// No roster and no per-member rows: the Memberstack challenge plan is the entitlement,
+// however it was obtained. See db/schema.sql for the full reasoning.
+
+export interface Challenge {
+  id: string;
+  name: string;
+  description: string;
+  start_date: string | null;
+  total_days: number;
+  reveal_time: string;
+  reveal_timezone: string;
+  grace_days: number;
+  telegram_url: string;
+  status: 'draft' | 'active' | 'complete' | 'archived';
+  created_at: string;
+}
+
+export async function listChallenges(statusFilter?: string): Promise<Challenge[]> {
+  const sql = getSql();
+  const rows = statusFilter
+    ? await sql`SELECT * FROM challenges WHERE status = ${statusFilter}
+                ORDER BY start_date DESC NULLS FIRST, created_at DESC`
+    : await sql`SELECT * FROM challenges
+                ORDER BY start_date DESC NULLS FIRST, created_at DESC`;
+  return rows as Challenge[];
+}
+
+export async function getChallenge(id: string): Promise<Challenge | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM challenges WHERE id = ${id}`;
+  return (rows[0] as Challenge) ?? null;
+}
+
+/**
+ * The challenge the portal should show: the active run, most recently started.
+ *
+ * Returns a run regardless of whether it has started, ended, or has dates at all — the
+ * caller decides what that means for a member, because "starts in 3 days" and "finished
+ * last week" are both worth saying and are not the same as "no challenge".
+ *
+ * Only one active run is expected at a time. If there are several, the most recent start
+ * wins rather than erroring: an operator mistake should not blank the panel for everyone.
+ */
+export async function getActiveChallenge(): Promise<Challenge | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM challenges
+    WHERE status = 'active'
+    ORDER BY start_date DESC NULLS LAST, created_at DESC
+    LIMIT 1`;
+  return (rows[0] as Challenge) ?? null;
+}
+
+export async function createChallenge(data: {
+  name: string;
+  description?: string;
+  startDate?: string | null;
+  totalDays?: number;
+  revealTime?: string;
+  revealTimezone?: string;
+  graceDays?: number;
+  telegramUrl?: string;
+}): Promise<Challenge> {
+  const sql = getSql();
+  const rows = await sql`
+    INSERT INTO challenges (name, description, start_date, total_days, reveal_time,
+                            reveal_timezone, grace_days, telegram_url)
+    VALUES (${data.name}, ${data.description ?? ''}, ${data.startDate ?? null},
+            ${data.totalDays ?? 21}, ${data.revealTime ?? '06:00'},
+            ${data.revealTimezone ?? 'America/New_York'}, ${data.graceDays ?? 7},
+            ${data.telegramUrl ?? ''})
+    RETURNING *`;
+  return rows[0] as Challenge;
+}
+
+/**
+ * PATCH semantics. start_date uses the sql`col` self-reference so an explicit null clears
+ * it while an omitted field leaves it alone — the same idiom as updateCohort, since
+ * COALESCE cannot tell those two apart on a nullable column.
+ */
+export async function updateChallenge(
+  id: string,
+  data: {
+    name?: string;
+    description?: string;
+    startDate?: string | null;
+    totalDays?: number;
+    revealTime?: string;
+    revealTimezone?: string;
+    graceDays?: number;
+    telegramUrl?: string;
+    status?: string;
+  },
+): Promise<Challenge | null> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE challenges SET
+      name = COALESCE(${data.name ?? null}, name),
+      description = COALESCE(${data.description ?? null}, description),
+      start_date = ${data.startDate === undefined ? sql`start_date` : data.startDate},
+      total_days = COALESCE(${data.totalDays ?? null}, total_days),
+      reveal_time = COALESCE(${data.revealTime ?? null}, reveal_time),
+      reveal_timezone = COALESCE(${data.revealTimezone ?? null}, reveal_timezone),
+      grace_days = COALESCE(${data.graceDays ?? null}, grace_days),
+      telegram_url = COALESCE(${data.telegramUrl ?? null}, telegram_url),
+      status = COALESCE(${data.status ?? null}, status)
+    WHERE id = ${id}
+    RETURNING *`;
+  return (rows[0] as Challenge) ?? null;
+}
+
+/**
+ * Delete a challenge run. Safe in a way cohorts are not: nothing references a challenge —
+ * no enrollments, no content_items, no per-member rows — so there is nothing to orphan.
+ */
+export async function deleteChallenge(id: string): Promise<boolean> {
+  const sql = getSql();
+  const rows = await sql`DELETE FROM challenges WHERE id = ${id} RETURNING id`;
   return rows.length > 0;
 }

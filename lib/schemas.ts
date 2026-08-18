@@ -248,3 +248,49 @@ export const PromoUpdateSchema = z.object({
   clearStartsAt: z.boolean().optional(),
   clearEndsAt: z.boolean().optional(),
 });
+
+// ── Challenges (21-day) ──────────────────────────────────────────────────────
+
+// "HH:MM", 24-hour. Rejected at the boundary rather than defaulted silently: a typo here
+// shifts every day's reveal for the whole run, so it should fail loudly at save time.
+const REVEAL_TIME = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use 24-hour HH:MM, e.g. 06:00');
+
+// Validated against the runtime's own zone database rather than a hardcoded list, so it
+// stays correct as zones change. An invalid zone would otherwise make every day's unlock
+// uncomputable and the whole challenge silently invisible.
+const TIMEZONE = z.string().refine(
+  (tz) => {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { message: 'Not a recognised timezone, e.g. America/New_York' },
+);
+
+export const CreateChallengeSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().default(''),
+  startDate: z.string().datetime().nullable().optional(),
+  totalDays: z.number().int().positive().max(365).default(21),
+  revealTime: REVEAL_TIME.default('06:00'),
+  revealTimezone: TIMEZONE.default('America/New_York'),
+  graceDays: z.number().int().nonnegative().max(365).default(7),
+  telegramUrl: z.string().default(''),
+});
+
+export const UpdateChallengeSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  startDate: z.string().datetime().nullable().optional(),
+  totalDays: z.number().int().positive().max(365).optional(),
+  revealTime: REVEAL_TIME.optional(),
+  revealTimezone: TIMEZONE.optional(),
+  graceDays: z.number().int().nonnegative().max(365).optional(),
+  telegramUrl: z.string().optional(),
+  status: z.enum(['draft', 'active', 'complete', 'archived']).optional(),
+});

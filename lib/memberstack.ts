@@ -74,6 +74,8 @@ export function planIdFor(key: PlanKey): string | undefined {
       return env.MEMBERSTACK_INDIVIDUAL_PLAN_ID;
     case 'cohort':
       return env.MEMBERSTACK_COHORT_PLAN_ID;
+    case 'challenge':
+      return env.MEMBERSTACK_CHALLENGE_PLAN_ID;
   }
 }
 
@@ -84,6 +86,8 @@ export function planEnvVarFor(key: PlanKey): string {
       return 'MEMBERSTACK_INDIVIDUAL_PLAN_ID';
     case 'cohort':
       return 'MEMBERSTACK_COHORT_PLAN_ID';
+    case 'challenge':
+      return 'MEMBERSTACK_CHALLENGE_PLAN_ID';
   }
 }
 

@@ -10,7 +10,7 @@
 // consumer follows automatically.
 
 /** Every plan the portal knows about. */
-export const PLAN_KEYS = ['individual', 'cohort'] as const;
+export const PLAN_KEYS = ['individual', 'cohort', 'challenge'] as const;
 
 export type PlanKey = (typeof PLAN_KEYS)[number];
 
