@@ -5,16 +5,16 @@ import { Nav } from '@/components/Nav';
 import { PromoForm } from './promo-form';
 import { PLAN_KEYS } from '@/lib/plan-keys';
 
+/**
+ * A promo's access rule. Not its content — the block itself is built in Webflow and matched
+ * to this row by `code` (the element's data-promo attribute).
+ */
 export interface Promo {
   id: string;
-  title: string;
-  body: string;
-  cta_label: string;
-  cta_url: string;
-  requires_missing_plan: string | null;
-  kind: 'buy' | 'inclusion';
+  code: string;
+  hide_if_has: string | null;
+  note: string;
   active: boolean;
-  sort_order: number;
   starts_at: string | null;
   ends_at: string | null;
   created_at: string;
@@ -35,12 +35,13 @@ function formatDate(iso: string): string {
 /**
  * Why a promo is or is not showing right now.
  *
- * This mirrors listLivePromos' SQL (lib/db.ts) deliberately. The single question this
- * page has to answer is "why can't I see my promo?", and making the operator work that
- * out from three separate columns is how the question turns into a support message.
+ * This mirrors listLivePromos' SQL (lib/db.ts) deliberately. The single question this page
+ * has to answer is "why isn't my promo showing?", and making the operator work that out
+ * from three separate columns is how the question turns into a support message. It matters
+ * more now than in v1: with no title or body here, a row has less about it to recognise.
  *
- * Plan targeting is NOT folded in here: it varies per member, so there is no one true
- * answer, and pretending otherwise would make this verdict wrong. It is shown alongside.
+ * Plan targeting is NOT folded in: it varies per member, so there is no one true answer,
+ * and pretending otherwise would make this verdict wrong. It is shown alongside.
  */
 function liveStatus(p: Promo, now: Date): { live: boolean; reason: string } {
   if (!p.active) return { live: false, reason: 'Paused' };
@@ -55,15 +56,15 @@ function liveStatus(p: Promo, now: Date): { live: boolean; reason: string } {
 }
 
 /** Who sees this promo, in the operator's terms rather than the column's. */
-function audienceLabel(requiresMissingPlan: string | null): string {
-  if (!requiresMissingPlan) return 'Everyone';
-  if (!isKnownPlan(requiresMissingPlan)) {
+function audienceLabel(hideIfHas: string | null): string {
+  if (!hideIfHas) return 'Everyone';
+  if (!isKnownPlan(hideIfHas)) {
     // An unrecognised key cannot match a held plan, so the promo shows to everyone.
-    // Surfacing that matters: silently advertising the cohort to people who already
-    // paid for it is the exact mistake this column exists to prevent.
-    return 'Everyone — "' + requiresMissingPlan + '" is not a known plan';
+    // Surfacing that matters: silently advertising the cohort to people who already paid
+    // for it is the exact mistake this column exists to prevent.
+    return 'Everyone — "' + hideIfHas + '" is not a known plan';
   }
-  return 'Members without ' + requiresMissingPlan;
+  return 'Everyone except ' + hideIfHas + ' members';
 }
 
 export function PromosView() {
@@ -131,9 +132,9 @@ export function PromosView() {
   const remove = useCallback(
     async (p: Promo) => {
       const ok = confirm(
-        'Delete "' +
-          p.title +
-          '" permanently?\n\nIf you might use it again, choose Pause instead — that hides it from members but keeps it here.',
+        'Delete the rule for "' +
+          p.code +
+          '" permanently?\n\nThe block stays in Webflow but will no longer show to anyone. If you might use it again, choose Pause instead.',
       );
       if (!ok) return;
       setBusyId(p.id);
@@ -162,7 +163,7 @@ export function PromosView() {
           <div>
             <h1 className="text-xl font-serif text-slate">Promos</h1>
             <p className="text-sm text-slate/60 mt-0.5">
-              Offers shown inside the member portal
+              Who may see each promo block in the member portal
               {!loading &&
                 promos.length > 0 &&
                 ' — ' + liveCount + ' showing now, ' + promos.length + ' total'}
@@ -180,10 +181,16 @@ export function PromosView() {
           </button>
         </div>
 
-        <p className="text-sm text-slate/60 mb-5 max-w-2xl">
-          A promo is hidden from anyone who already has the plan it advertises, so a cohort
-          offer disappears the moment someone joins. Members with no plans yet see everything.
-        </p>
+        <div className="text-sm text-slate/60 mb-5 max-w-2xl space-y-1">
+          <p>
+            The promo itself — its wording, image and button — is built in Webflow. This page
+            only controls who is allowed to see it.
+          </p>
+          <p>
+            Each rule matches a block by its code. A block whose code has no rule here stays
+            hidden.
+          </p>
+        </div>
 
         {error && (
           <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -212,9 +219,9 @@ export function PromosView() {
           </div>
         ) : promos.length === 0 ? (
           <div className="text-center py-16 border border-dashed border-slate/20 rounded-xl bg-white/50">
-            <p className="text-slate/70 text-sm">No promos yet.</p>
+            <p className="text-slate/70 text-sm">No promo rules yet.</p>
             <p className="text-slate/50 text-sm mt-1">
-              Create one to start offering the cohort or coaching inside the portal.
+              Add one for each promo block on the Webflow page, using the same code.
             </p>
           </div>
         ) : (
@@ -222,8 +229,7 @@ export function PromosView() {
             {promos.map((p) => {
               const status = liveStatus(p, now);
               const busy = busyId === p.id;
-              const unknownPlan =
-                p.requires_missing_plan !== null && !isKnownPlan(p.requires_missing_plan);
+              const unknownPlan = p.hide_if_has !== null && !isKnownPlan(p.hide_if_has);
               return (
                 <div
                   key={p.id}
@@ -243,24 +249,19 @@ export function PromosView() {
                           }
                           aria-hidden
                         />
-                        <h2
+                        {/* Monospaced because this string has to be reproduced exactly in
+                            Webflow — it is the row's identity now, not a label. */}
+                        <code
                           className={
-                            'font-serif truncate ' +
+                            'font-mono text-sm truncate ' +
                             (status.live ? 'text-slate' : 'text-slate/50')
                           }
                         >
-                          {p.title}
-                        </h2>
-                        {p.kind === 'inclusion' && (
-                          <span className="font-label text-[0.65rem] uppercase tracking-wide text-plum bg-petal px-1.5 py-0.5 rounded">
-                            Included
-                          </span>
-                        )}
+                          {p.code}
+                        </code>
                       </div>
 
-                      {p.body && (
-                        <p className="text-sm text-slate/60 mt-1 line-clamp-2">{p.body}</p>
-                      )}
+                      {p.note && <p className="text-sm text-slate/60 mt-1">{p.note}</p>}
 
                       <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-2 font-label text-xs text-slate/50">
                         <span className={status.live ? 'text-emerald-700' : ''}>
@@ -268,14 +269,8 @@ export function PromosView() {
                         </span>
                         <span aria-hidden>·</span>
                         <span className={unknownPlan ? 'text-amber-700' : ''}>
-                          {audienceLabel(p.requires_missing_plan)}
+                          {audienceLabel(p.hide_if_has)}
                         </span>
-                        {p.cta_label && (
-                          <>
-                            <span aria-hidden>·</span>
-                            <span className="truncate max-w-[16rem]">Button: {p.cta_label}</span>
-                          </>
-                        )}
                       </div>
                     </div>
 

@@ -99,32 +99,32 @@ function pickEnrollment(enrollments: Enrollment[]): Enrollment | null {
 }
 
 /**
- * Promos this member should see, in portal-safe shape.
+ * The promo codes this member qualifies for.
  *
  * The rule is Lindsay's: show an offer only when the member does NOT already hold that
  * plan. One rule covers the whole matrix — individual members see cohort and membership
  * offers, cohort members see individual, and so on.
+ *
+ * Only codes go to the browser, never the rule behind them. The promo's words and images
+ * are authored in Webflow; portal.js reveals the elements whose data-promo attribute is in
+ * this list and hides the rest. That keeps the reveal decision here, on the server, which
+ * matters because the browser's plan detection deliberately disagrees with this one —
+ * $memberstackDom's payload can't be verified from the repo, so portal.js treats `active`
+ * as disqualifying only when explicitly false (see public/portal.js, gateAndLoad).
  *
  * Deliberately generous about what counts as "doesn't hold it": a null plan state (we
  * couldn't look it up), an unset env id, or an unrecognised plan key all mean the promo
  * shows. Over-showing an upsell wastes an impression; under-showing one silently costs a
  * sale, and only the second failure is invisible.
  */
-function visiblePromos(promos: Promo[], planState: PlanFlags | null) {
+function visiblePromoCodes(promos: Promo[], planState: PlanFlags | null): string[] {
   return promos
     .filter((p) => {
-      const key = p.requires_missing_plan;
+      const key = p.hide_if_has;
       if (!key || !isPlanKey(key)) return true;
       return planState?.[key] !== true;
     })
-    .map((p) => ({
-      id: p.id,
-      title: p.title,
-      body: p.body,
-      cta_label: p.cta_label,
-      cta_url: p.cta_url,
-      kind: p.kind,
-    }));
+    .map((p) => p.code);
 }
 
 /**
@@ -260,11 +260,11 @@ export async function GET(req: NextRequest) {
   const client = await getClientByMemberstackId(verified.id);
   if (!client) {
     // planState is deliberately null here: with no client record we haven't looked their
-    // plans up, and visiblePromos treats unknown plan state as "holds nothing", so they see
-    // every live offer. That is the right answer for someone with no purchases.
-    const promosOnly = visiblePromos(await listLivePromos(), null);
+    // plans up, and visiblePromoCodes treats unknown plan state as "holds nothing", so they
+    // see every live offer. That is the right answer for someone with no purchases.
+    const codesOnly = visiblePromoCodes(await listLivePromos(), null);
     return NextResponse.json(
-      { ...emptyIndividual(), cohort: null, promos: promosOnly },
+      { ...emptyIndividual(), cohort: null, promo_codes: codesOnly },
       { headers: cors },
     );
   }
@@ -309,7 +309,7 @@ export async function GET(req: NextRequest) {
   // Uses planState directly rather than `revoked()`: revoked() answers "should we take
   // access away", which is intentionally conservative, whereas this asks the simpler
   // "do they have it right now".
-  const promos = visiblePromos(livePromos, planState);
+  const promoCodes = visiblePromoCodes(livePromos, planState);
 
   // 4. Pick the individual enrollment to reflect. A revoked member is treated exactly like
   //    one with no enrollment: an empty-but-valid payload, never a 403 — they stay signed in
@@ -319,7 +319,10 @@ export async function GET(req: NextRequest) {
   if (!enrollment) {
     // Promos ride on this path too — a member with no coaching pack is exactly who the
     // upsell is for, so returning them here is the whole point rather than an afterthought.
-    return NextResponse.json({ ...emptyIndividual(), cohort, promos }, { headers: cors });
+    return NextResponse.json(
+      { ...emptyIndividual(), cohort, promo_codes: promoCodes },
+      { headers: cors },
+    );
   }
 
   // 5. Sessions — portal-safe projection. Logs come back session_date DESC; number them
@@ -381,7 +384,7 @@ export async function GET(req: NextRequest) {
       recordings,
       files,
       cohort,
-      promos,
+      promo_codes: promoCodes,
     },
     { headers: cors },
   );

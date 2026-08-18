@@ -35,6 +35,10 @@ function localInputToIso(value: string): string | null {
   return d.toISOString();
 }
 
+// Mirrors PROMO_CODE in lib/schemas.ts. Checked here too so a typo is caught before a
+// round-trip, with wording aimed at the person typing rather than at a developer.
+const CODE_PATTERN = /^[a-z0-9-]+$/;
+
 interface Props {
   /** The promo being edited, or null to create a new one. */
   promo: Promo | null;
@@ -43,15 +47,9 @@ interface Props {
 }
 
 export function PromoForm({ promo, onCancel, onSaved }: Props) {
-  const [title, setTitle] = useState(promo?.title ?? '');
-  const [body, setBody] = useState(promo?.body ?? '');
-  const [ctaLabel, setCtaLabel] = useState(promo?.cta_label ?? '');
-  const [ctaUrl, setCtaUrl] = useState(promo?.cta_url ?? '');
-  const [requiresMissingPlan, setRequiresMissingPlan] = useState(
-    promo?.requires_missing_plan ?? '',
-  );
-  const [kind, setKind] = useState<'buy' | 'inclusion'>(promo?.kind ?? 'buy');
-  const [sortOrder, setSortOrder] = useState(String(promo?.sort_order ?? 0));
+  const [code, setCode] = useState(promo?.code ?? '');
+  const [hideIfHas, setHideIfHas] = useState(promo?.hide_if_has ?? '');
+  const [note, setNote] = useState(promo?.note ?? '');
   const [startsAt, setStartsAt] = useState(isoToLocalInput(promo?.starts_at ?? null));
   const [endsAt, setEndsAt] = useState(isoToLocalInput(promo?.ends_at ?? null));
 
@@ -62,8 +60,14 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) {
-      setError('Give the promo a title.');
+
+    const trimmed = code.trim();
+    if (!trimmed) {
+      setError('Enter the code from the Webflow block.');
+      return;
+    }
+    if (!CODE_PATTERN.test(trimmed)) {
+      setError('Codes can use lowercase letters, numbers and hyphens only — no spaces.');
       return;
     }
 
@@ -77,30 +81,23 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
     setSaving(true);
     setError(null);
 
-    // Create and update take different shapes. On update the clear* flags are the only
-    // way to empty a nullable column, because omitting a field means "leave it alone".
-    const common = {
-      title: title.trim(),
-      body: body.trim(),
-      ctaLabel: ctaLabel.trim(),
-      ctaUrl: ctaUrl.trim(),
-      kind,
-      sortOrder: Number(sortOrder) || 0,
-    };
-
+    // Create and update take different shapes. On update the clear* flags are the only way
+    // to empty a nullable column, because omitting a field means "leave it alone".
     const payload = isEdit
       ? {
-          ...common,
-          requiresMissingPlan: requiresMissingPlan || undefined,
-          clearRequiresMissingPlan: !requiresMissingPlan,
+          code: trimmed,
+          note: note.trim(),
+          hideIfHas: hideIfHas || undefined,
+          clearHideIfHas: !hideIfHas,
           startsAt: start ?? undefined,
           clearStartsAt: start === null,
           endsAt: end ?? undefined,
           clearEndsAt: end === null,
         }
       : {
-          ...common,
-          requiresMissingPlan: requiresMissingPlan || null,
+          code: trimmed,
+          note: note.trim(),
+          hideIfHas: hideIfHas || null,
           startsAt: start,
           endsAt: end,
         };
@@ -111,10 +108,19 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('save failed');
+      if (!res.ok) {
+        // 409 is a taken code — the server's message names it, and that is more useful
+        // than a generic failure since the fix is to pick a different one.
+        const data = await res.json().catch(() => null);
+        throw new Error(
+          res.status === 409 && data?.error
+            ? data.error
+            : 'Could not save. Check the fields and try again.',
+        );
+      }
       await onSaved();
-    } catch {
-      setError('Could not save. Check the fields and try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save.');
       setSaving(false);
     }
   }
@@ -124,113 +130,72 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
   const labelClass = 'block font-label text-xs text-slate/70 mb-1';
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="bg-white border border-slate/15 rounded-xl p-5 mb-6"
-    >
-      <h2 className="font-serif text-slate mb-4">{isEdit ? 'Edit promo' : 'New promo'}</h2>
+    <form onSubmit={handleSubmit} className="bg-white border border-slate/15 rounded-xl p-5 mb-6">
+      <h2 className="font-serif text-slate mb-4">{isEdit ? 'Edit promo rule' : 'New promo rule'}</h2>
 
       <div className="space-y-4">
         <div>
-          <label className={labelClass} htmlFor="promo-title">
-            Title
+          <label className={labelClass} htmlFor="promo-code">
+            Code
           </label>
           <input
-            id="promo-title"
-            className={inputClass}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Join the next cohort"
+            id="promo-code"
+            className={inputClass + ' font-mono'}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="cohort-upsell"
+            autoComplete="off"
+            spellCheck={false}
           />
+          <p className="text-xs text-slate/50 mt-1">
+            Must match the block in Webflow exactly. On that element, set the attribute{' '}
+            <code className="font-mono text-slate/70">data-promo</code> to this same code.
+          </p>
         </div>
 
         <div>
-          <label className={labelClass} htmlFor="promo-body">
-            Body
+          <label className={labelClass} htmlFor="promo-audience">
+            Who sees this
           </label>
-          <textarea
-            id="promo-body"
-            className={inputClass + ' resize-y min-h-[4.5rem]'}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Six weeks of live group coaching, starting in September."
+          <select
+            id="promo-audience"
+            className={inputClass}
+            value={hideIfHas}
+            onChange={(e) => setHideIfHas(e.target.value)}
+          >
+            <option value="">Everyone</option>
+            {PLAN_KEYS.map((k) => (
+              <option key={k} value={k}>
+                Everyone except {k} members
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate/50 mt-1">
+            Hides the offer from people who already bought it.
+          </p>
+        </div>
+
+        <div>
+          <label className={labelClass} htmlFor="promo-note">
+            Note
+          </label>
+          <input
+            id="promo-note"
+            className={inputClass}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Fall cohort launch"
           />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass} htmlFor="promo-cta-label">
-              Button text
-            </label>
-            <input
-              id="promo-cta-label"
-              className={inputClass}
-              value={ctaLabel}
-              onChange={(e) => setCtaLabel(e.target.value)}
-              placeholder="Save my seat"
-            />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="promo-cta-url">
-              Button link
-            </label>
-            <input
-              id="promo-cta-url"
-              className={inputClass}
-              value={ctaUrl}
-              onChange={(e) => setCtaUrl(e.target.value)}
-              placeholder="https://showyourspark.com/cohort"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass} htmlFor="promo-audience">
-              Who sees this
-            </label>
-            <select
-              id="promo-audience"
-              className={inputClass}
-              value={requiresMissingPlan}
-              onChange={(e) => setRequiresMissingPlan(e.target.value)}
-            >
-              <option value="">Everyone</option>
-              {PLAN_KEYS.map((k) => (
-                <option key={k} value={k}>
-                  Only members without {k}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate/50 mt-1">
-              Hides the offer from people who already bought it.
-            </p>
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="promo-kind">
-              Style
-            </label>
-            <select
-              id="promo-kind"
-              className={inputClass}
-              value={kind}
-              onChange={(e) => setKind(e.target.value as 'buy' | 'inclusion')}
-            >
-              <option value="buy">Offer to buy</option>
-              <option value="inclusion">Included with their plan</option>
-            </select>
-            <p className="text-xs text-slate/50 mt-1">
-              &quot;Included&quot; is for things they already have access to.
-            </p>
-          </div>
+          <p className="text-xs text-slate/50 mt-1">
+            Just for you — members never see this. It helps you tell rules apart at a glance.
+          </p>
         </div>
 
         <details className="border-t border-slate/10 pt-3">
           <summary className="font-label text-xs text-slate/60 cursor-pointer hover:text-slate">
-            Scheduling and order
+            Scheduling
           </summary>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
             <div>
               <label className={labelClass} htmlFor="promo-starts">
                 Start showing
@@ -255,22 +220,9 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
                 onChange={(e) => setEndsAt(e.target.value)}
               />
             </div>
-            <div>
-              <label className={labelClass} htmlFor="promo-sort">
-                Order
-              </label>
-              <input
-                id="promo-sort"
-                type="number"
-                className={inputClass}
-                value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value)}
-              />
-            </div>
           </div>
           <p className="text-xs text-slate/50 mt-2">
-            Leave the dates empty to show it until you pause it. Lower order numbers appear
-            first.
+            Leave both empty to show it until you pause it.
           </p>
         </details>
       </div>
@@ -287,7 +239,7 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
           disabled={saving}
           className="bg-plum text-gold font-label text-sm px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create promo'}
+          {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create rule'}
         </button>
         <button
           type="button"

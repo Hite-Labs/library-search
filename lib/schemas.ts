@@ -209,37 +209,42 @@ export type UpdateLibraryItemInput = z.infer<typeof UpdateLibraryItemSchema>;
 
 // ── Promos ───────────────────────────────────────────────────────────────────
 
-// requiresMissingPlan is a plain string, not an enum of plan keys: the plan registry lives
-// in lib/memberstack.ts and a Zod enum here would have to be kept in lockstep with it. An
+// A promo row is an access rule, not content: the block itself is authored in Webflow and
+// matched to this row by `code` (the element's data-promo attribute).
+//
+// The code shape is constrained because it ends up inside an attribute selector in
+// portal.js — `[data-promo="..."]`. Restricting it here, at the boundary, is what lets the
+// client match on it without escaping concerns. It also keeps codes typeable: Lindsay has
+// to reproduce this string exactly in Webflow.
+const PROMO_CODE = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9-]+$/, 'Use lowercase letters, numbers and hyphens only');
+
+// hideIfHas is a plain string, not an enum of plan keys: the plan registry lives in
+// lib/plan-keys.ts and a Zod enum here would have to be kept in lockstep with it. An
 // unknown key can't match a held plan, so the promo simply shows to everyone — the safe
 // direction for an upsell, and the same reasoning as the DB column having no CHECK.
 export const PromoCreateSchema = z.object({
-  title: z.string().min(1),
-  body: z.string().optional(),
-  ctaLabel: z.string().optional(),
-  ctaUrl: z.string().optional(),
-  requiresMissingPlan: z.string().nullable().optional(),
-  kind: z.enum(['buy', 'inclusion']).optional(),
-  sortOrder: z.number().int().optional(),
+  code: PROMO_CODE,
+  hideIfHas: z.string().nullable().optional(),
+  note: z.string().optional(),
   startsAt: z.string().datetime().nullable().optional(),
   endsAt: z.string().datetime().nullable().optional(),
 });
 
 // PATCH semantics — every field optional. The clear* flags exist because omitting a field
 // already means "leave it alone", so there would otherwise be no way to empty a nullable
-// column (un-schedule a promo, or make a plan-targeted one universal).
+// column (un-schedule a promo, or widen a plan-targeted one back to everyone).
 export const PromoUpdateSchema = z.object({
-  title: z.string().min(1).optional(),
-  body: z.string().optional(),
-  ctaLabel: z.string().optional(),
-  ctaUrl: z.string().optional(),
-  requiresMissingPlan: z.string().nullable().optional(),
-  kind: z.enum(['buy', 'inclusion']).optional(),
+  code: PROMO_CODE.optional(),
+  hideIfHas: z.string().nullable().optional(),
+  note: z.string().optional(),
   active: z.boolean().optional(),
-  sortOrder: z.number().int().optional(),
   startsAt: z.string().datetime().nullable().optional(),
   endsAt: z.string().datetime().nullable().optional(),
-  clearRequiresMissingPlan: z.boolean().optional(),
+  clearHideIfHas: z.boolean().optional(),
   clearStartsAt: z.boolean().optional(),
   clearEndsAt: z.boolean().optional(),
 });

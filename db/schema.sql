@@ -217,3 +217,46 @@ CREATE TABLE promos (
 );
 -- The portal's only query: active promos in display order.
 CREATE INDEX promos_active_idx ON promos (active, sort_order) WHERE active;
+
+-- ── Promos v2: codes and access rules, not content ───────────────────────────
+--
+-- The first cut (above) stored the promo's title, body and button here, and portal.js
+-- cloned a Webflow template and filled them in. That put one job in two places: Lindsay
+-- built the block in Webflow, then re-typed its words into the dashboard.
+--
+-- So the split flips. The promo IS the Webflow element — its image, copy, layout and
+-- hardcoded button all live there and are never touched by the script. This table answers
+-- one question about each: may this member see it?
+--
+-- The join is a code. Lindsay marks the element `data-promo="cohort-upsell"` and creates a
+-- row with the same code. A block whose code has no row here stays HIDDEN: a typo then
+-- costs an impression, which she notices, rather than advertising the cohort to someone who
+-- already bought it, which nobody notices.
+--
+-- Recreated rather than migrated: the v1 table never held a production row.
+DROP INDEX IF EXISTS promos_active_idx;
+DROP TABLE IF EXISTS promos;
+
+CREATE TABLE promos (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Matches the data-promo attribute in Webflow. UNIQUE because two rows claiming one code
+  -- would make a block's visibility depend on which row happened to be read first.
+  code          text NOT NULL UNIQUE,
+  -- The plan key (lib/plan-keys.ts PLAN_KEYS) a member must NOT hold for this to show.
+  -- NULL means "show to everyone". Deliberately un-constrained text, as in v1: the plan
+  -- registry lives in TS, and a CHECK here would need migrating in lockstep every time a
+  -- plan is added. An unknown key never matches a held plan, so it shows to everyone — the
+  -- safe direction for an upsell, and the dashboard flags it in amber.
+  hide_if_has   text,
+  -- Operator-facing only. Never sent to the portal, never rendered to a member: with no
+  -- title in this table any more, a row needs something human to recognise it by.
+  note          text NOT NULL DEFAULT '',
+  active        boolean NOT NULL DEFAULT true,
+  starts_at     timestamptz,
+  ends_at       timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- The portal's only query: which codes are live right now. sort_order is gone — display
+-- order is the Webflow page's own DOM order, since the blocks are authored in place.
+CREATE INDEX promos_active_idx ON promos (active) WHERE active;

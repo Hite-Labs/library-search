@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { updatePromo, deletePromo } from '@/lib/db';
+import { updatePromo, deletePromo, DuplicatePromoCodeError } from '@/lib/db';
 import { PromoUpdateSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
@@ -20,11 +20,18 @@ export async function PATCH(
       { status: 400 },
     );
   }
-  const promo = await updatePromo(id, parsed.data);
-  if (!promo) {
-    return NextResponse.json({ error: 'Promo not found' }, { status: 404 });
+  try {
+    const promo = await updatePromo(id, parsed.data);
+    if (!promo) {
+      return NextResponse.json({ error: 'Promo not found' }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, promo });
+  } catch (err) {
+    if (err instanceof DuplicatePromoCodeError) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    throw err;
   }
-  return NextResponse.json({ ok: true, promo });
 }
 
 // DELETE /api/promos/[id] — hard delete. Retiring an offer should normally be

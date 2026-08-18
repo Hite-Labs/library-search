@@ -1,113 +1,128 @@
-# Promo blocks — field reference
+# Promo blocks — how they work
 
-Promo blocks are the upsell pieces that appear in the portal. They are managed
-from the database, so offers can be added and retired without a code change or
-a deploy.
+A promo is an offer shown inside the member portal: join the cohort, book coaching,
+take the challenge.
 
-**The table already exists.** It was created when the feature was built. There
-is one Neon database shared by local development and the droplet, so there is
-no separate production setup step.
+**The promo itself is built in Webflow.** Its heading, wording, image, layout and
+button are all authored there and hardcoded — nothing about how it looks comes from
+the database.
 
-To confirm it's there, run this in the Neon SQL Editor (neon.tech → your
-project → SQL Editor):
+**The dashboard controls only who may see it.** One rule per block, matched by a code.
 
-```sql
-SELECT column_name FROM information_schema.columns WHERE table_name = 'promos';
+That split is the whole design. Lindsay changes what a promo says by editing Webflow.
+Russell changes who sees it from the dashboard. Neither needs the other, and neither
+needs a deploy.
+
+---
+
+## The two halves
+
+### In Webflow
+
+Put the promo block on the page and give its outer element one attribute:
+
+```
+data-promo = cohort-upsell
 ```
 
-Eleven rows means it exists.
+Everything inside is yours — any layout, any copy, any button pointing anywhere.
+
+### In the dashboard
+
+Go to **Promos** and add a rule with the same code:
+
+| Field | Meaning |
+|---|---|
+| **Code** | Must match `data-promo` exactly. Lowercase letters, numbers and hyphens. |
+| **Who sees this** | Which plan holders to hide it from. "Everyone" shows it to all. |
+| **Note** | For you only. Members never see it. Helps tell rules apart. |
+| **Start / stop showing** | Optional. Leave empty to run until paused. |
 
 ---
 
 ## The rule that governs visibility
 
-A promo shows to a member only when **all** of these are true:
+A block appears only when **all** of these are true:
 
-1. `active` is true
-2. today is on or after `starts_at` (or `starts_at` is empty)
-3. `ends_at` has not yet passed (or `ends_at` is empty)
-4. the member does **not** hold the plan named in `requires_missing_plan`
-   (or `requires_missing_plan` is empty, meaning show to everyone)
+1. a rule exists for its code
+2. that rule is not paused
+3. today is on or after **Start showing** (or it is empty)
+4. **Stop showing** has not yet passed (or it is empty)
+5. the member does not hold the plan named in **Who sees this**
 
-Rule 4 is the important one: **you name the plan the member must be MISSING.**
-A promo for the cohort sets `requires_missing_plan` to `cohort`, so cohort
-members stop seeing it the moment they join.
+### A block with no rule stays hidden
 
-### What that looks like in practice
+This is deliberate and worth knowing before you build the Webflow side. If the
+attribute says `cohot-upsell` and the dashboard says `cohort-upsell`, **nobody sees
+the block.**
 
-| Member holds | Sees |
+The alternative would be to show anything unrecognised — but then the same typo would
+advertise the cohort to people who already paid for it. A promo that fails to appear
+is a problem you notice. One that appears to the wrong people is not.
+
+### What "Who sees this" does
+
+You name the plan the member must **not** have. A cohort offer set to "Everyone except
+cohort members" disappears the moment someone joins.
+
+| Member holds | Sees a rule set to "except cohort" |
 |---|---|
-| cohort only | the coaching offer, plus any general notices |
-| individual only | the cohort offer, plus any general notices |
-| both plans | general notices only |
-| no plans yet | everything |
+| cohort | hidden |
+| individual | shown |
+| both plans | hidden |
+| no plans yet | shown |
 
-That last row is the funnel: someone with an account but nothing purchased sees
-every offer.
-
----
-
-## The columns
-
-| Column | Purpose |
-|---|---|
-| `title` | The headline on the promo card |
-| `body` | Supporting text |
-| `cta_label` | Button text, e.g. "Join the cohort" |
-| `cta_url` | Where the button goes |
-| `requires_missing_plan` | The plan key the member must NOT have. Empty = show to everyone. |
-| `kind` | `buy` = an offer to purchase. `inclusion` = "included with your membership", styled differently. |
-| `active` | Turn a promo off without deleting it |
-| `sort_order` | Display order, lowest first |
-| `starts_at` | Optional — don't show before this date |
-| `ends_at` | Optional — don't show after this date |
-
-`requires_missing_plan` has no database constraint on purpose. If it holds a
-plan name that doesn't exist, the promo simply shows to everyone — the safe
-direction for an upsell, and it means adding a new plan later doesn't require
-a database change.
+That last row is the funnel: someone with an account but no purchase sees every offer.
 
 ---
 
 ## Retiring an offer
 
-Three ways, all without a deploy:
+Three ways, none needing a deploy or a Webflow edit:
 
-- **Pause it** — set `active` to false. Reversible.
-- **Schedule its end** — set `ends_at`. It disappears on its own.
-- **Delete it** — gone permanently.
-
-Prefer `active` for anything you might bring back.
-
----
-
-## Webflow side
-
-The portal renders promos into a Webflow-authored template. The page needs:
-
-- a container with the field name `promo-list`
-- one card inside it as the template, containing `promo-title`, `promo-body`,
-  `promo-cta-label`, and `promo-cta` (the link)
-- optionally a second container `promo-inclusion-list` for the
-  "included with your membership" style
-
-The first card inside the container is the template — the script clones it once
-per promo. If these elements are absent the script does nothing, so nothing
-breaks while the Webflow work is pending.
-
-Optional extras:
-
-- `promo-empty` / `promo-inclusion-empty` — an element shown instead of the
-  list when there are no promos to display. Leave these out if you'd rather
-  show nothing at all.
-- Each rendered card gets a `data-promo-kind` attribute set to `buy` or
-  `inclusion`, so the two can be styled differently from a single template if
-  you prefer that to two separate containers.
+- **Pause** — the block stops showing. Reversible; use this by default.
+- **Stop showing** — set a date and it retires itself.
+- **Delete** — removes the rule permanently. The Webflow block stays on the page but,
+  having no rule, no longer shows to anyone.
 
 ---
 
-## Managing promos today
+## Adding a second promo
 
-There is no dashboard page yet. Promos are created and edited through the API
-(`/api/promos`), which requires a logged-in dashboard session. A management UI
-is a separate piece of work — see `docs/open-questions.md`.
+Add another block in Webflow with a different code, then a second rule. There is no
+limit, and no ordering to manage — they appear in the order they sit on the page.
+
+For an "included with your membership" style block, that's just a second block with
+its own code and its own look, targeted at whoever should see it.
+
+---
+
+## Checking your work
+
+Open the Promos page. Each rule shows its own status:
+
+- **Showing now** — live
+- **Paused** — switched off
+- **Starts Sep 1** — scheduled, not yet live
+- **Ended Aug 3** — its window has passed
+
+If a rule reads "Showing now" and the block still doesn't appear in the portal, the
+code and the `data-promo` attribute don't match.
+
+An audience shown in **amber** means the plan name isn't one the system knows, so the
+rule isn't restricting anyone — the block is showing to everyone including people who
+already bought it.
+
+---
+
+## For developers
+
+- Rule storage and the `code` unique constraint: `db/schema.sql` (promos v2 block)
+- Which codes a member qualifies for: `visiblePromoCodes` in `app/api/portal/route.ts`
+- Reveal/hide in the browser: `renderPromos` in `public/portal.js`
+- CRUD: `app/api/promos/`, dashboard at `app/promos/`
+
+The API returns `promo_codes: string[]` — codes only. The rule behind them never
+reaches the browser, and the reveal decision stays server-side because `portal.js` and
+the server deliberately disagree about Memberstack plan detection (see the comment in
+`gateAndLoad`).

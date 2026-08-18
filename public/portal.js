@@ -670,54 +670,38 @@
 
     if (data.cohort) renderCohort(data.cohort);
 
-    renderPromos(data.promos);
+    renderPromos(data.promo_codes);
   }
 
   // ===== Promo blocks =====
 
-  // Promos arrive already filtered by the API — it drops anything selling a plan the member
-  // holds — so there is no visibility logic here. That deliberately keeps one source of
-  // truth: adding a plan changes the registry, not this script.
+  // A promo block is authored entirely in Webflow: its image, copy, layout and hardcoded
+  // button all live there, and this script never writes a word of it. Lindsay marks the
+  // element data-promo="cohort-upsell" and the dashboard holds a rule for that code.
   //
-  // Two lists, so Webflow can style a buy CTA and an "already included" notice differently
-  // without the script knowing anything about their markup. Either may be absent; renderList
-  // no-ops on a missing container.
-  function fillPromoCard(card, promo) {
-    setField(card, 'promo-title', promo.title || '');
-    setField(card, 'promo-body', promo.body || '');
-    setField(card, 'promo-cta-label', promo.cta_label || '');
-    setLink(card, 'promo-cta', promo.cta_url);
-
-    // Stamped so Webflow can style by kind without a second template if preferred.
-    card.setAttribute('data-promo-kind', promo.kind || 'buy');
-
-    // Whole card clickable, matching how every other card in the portal behaves. Guarded on
-    // a url so a promo with no link isn't a dead click target.
-    if (promo.cta_url) {
-      card.style.cursor = 'pointer';
-      card.addEventListener('click', function () {
-        window.open(promo.cta_url, '_blank', 'noopener,noreferrer');
-      });
-    }
-  }
-
-  function renderPromos(promos) {
-    promos = promos || [];
-
-    var buy = [];
-    var inclusion = [];
-    for (var i = 0; i < promos.length; i++) {
-      if (promos[i].kind === 'inclusion') inclusion.push(promos[i]);
-      else buy.push(promos[i]);
-    }
-
-    renderList(byField('promo-list'), byField('promo-empty'), buy, fillPromoCard);
-    renderList(
-      byField('promo-inclusion-list'),
-      byField('promo-inclusion-empty'),
-      inclusion,
-      fillPromoCard
-    );
+  // All this does is reveal the blocks whose code the API returned, and hide the rest.
+  //
+  // Hiding the rest is the load-bearing half. Anything without a matching live rule stays
+  // hidden, so a mistyped attribute costs an impression — which Lindsay notices — rather
+  // than showing a cohort offer to someone who already bought the cohort, which nobody
+  // notices. It also means the blocks are hidden by default without Webflow having to set
+  // that up, and re-running is idempotent.
+  //
+  // The decision is the API's, not this script's. portal.js and the server deliberately
+  // disagree about plan detection (see gateAndLoad: $memberstackDom's `active` is trusted
+  // only when explicitly false), and the server is authoritative — so it sends codes, not
+  // rules, and the client never learns which plan a promo targets.
+  //
+  // eachEl, not byField: Webflow duplicates elements for its mobile layout, and byField is
+  // a single-match querySelector. That exact bug already shipped once on the Zoom and
+  // Telegram links (see setLink).
+  function renderPromos(codes) {
+    codes = codes || [];
+    eachEl('[data-promo]', function (el) {
+      var code = el.getAttribute('data-promo');
+      if (code && codes.indexOf(code) !== -1) show(el);
+      else hide(el);
+    });
   }
 
   function loadPortal(token) {
