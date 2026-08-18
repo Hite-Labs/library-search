@@ -12,7 +12,8 @@ export interface ChallengeRow {
   total_days: number;
   reveal_time: string;
   reveal_timezone: string;
-  grace_days: number;
+  open_for_days: number;
+  join_cutoff_days: number;
   telegram_url: string;
   status: 'draft' | 'active' | 'complete' | 'archived';
   created_at: string;

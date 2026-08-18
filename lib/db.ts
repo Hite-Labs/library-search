@@ -1572,7 +1572,8 @@ export interface Challenge {
   total_days: number;
   reveal_time: string;
   reveal_timezone: string;
-  grace_days: number;
+  open_for_days: number;
+  join_cutoff_days: number;
   telegram_url: string;
   status: 'draft' | 'active' | 'complete' | 'archived';
   created_at: string;
@@ -1621,17 +1622,18 @@ export async function createChallenge(data: {
   totalDays?: number;
   revealTime?: string;
   revealTimezone?: string;
-  graceDays?: number;
+  openForDays?: number;
+  joinCutoffDays?: number;
   telegramUrl?: string;
 }): Promise<Challenge> {
   const sql = getSql();
   const rows = await sql`
     INSERT INTO challenges (name, description, start_date, total_days, reveal_time,
-                            reveal_timezone, grace_days, telegram_url)
+                            reveal_timezone, open_for_days, join_cutoff_days, telegram_url)
     VALUES (${data.name}, ${data.description ?? ''}, ${data.startDate ?? null},
             ${data.totalDays ?? 21}, ${data.revealTime ?? '06:00'},
-            ${data.revealTimezone ?? 'America/New_York'}, ${data.graceDays ?? 7},
-            ${data.telegramUrl ?? ''})
+            ${data.revealTimezone ?? 'America/New_York'}, ${data.openForDays ?? 45},
+            ${data.joinCutoffDays ?? 10}, ${data.telegramUrl ?? ''})
     RETURNING *`;
   return rows[0] as Challenge;
 }
@@ -1650,7 +1652,8 @@ export async function updateChallenge(
     totalDays?: number;
     revealTime?: string;
     revealTimezone?: string;
-    graceDays?: number;
+    openForDays?: number;
+    joinCutoffDays?: number;
     telegramUrl?: string;
     status?: string;
   },
@@ -1664,7 +1667,8 @@ export async function updateChallenge(
       total_days = COALESCE(${data.totalDays ?? null}, total_days),
       reveal_time = COALESCE(${data.revealTime ?? null}, reveal_time),
       reveal_timezone = COALESCE(${data.revealTimezone ?? null}, reveal_timezone),
-      grace_days = COALESCE(${data.graceDays ?? null}, grace_days),
+      open_for_days = COALESCE(${data.openForDays ?? null}, open_for_days),
+      join_cutoff_days = COALESCE(${data.joinCutoffDays ?? null}, join_cutoff_days),
       telegram_url = COALESCE(${data.telegramUrl ?? null}, telegram_url),
       status = COALESCE(${data.status ?? null}, status)
     WHERE id = ${id}

@@ -17,9 +17,11 @@ interface DetailData {
   access: {
     unlocked: number[];
     current_day: number | null;
-    access_ends_at: string | null;
+    closes_at: string | null;
+    join_closes_at: string | null;
     started: boolean;
-    ended: boolean;
+    closed: boolean;
+    join_closed: boolean;
   };
 }
 
@@ -249,11 +251,13 @@ function StatusSummary({ data }: { data: DetailData }) {
     ['Days unlocked', `${access.unlocked.length} of ${c.total_days}`],
     ['Current day', access.current_day == null ? 'Not started' : String(access.current_day)],
     ['Reveals at', `${c.reveal_time} ${tz.replace(/_/g, ' ')}`],
+    ['Closes', access.closes_at ? fmtInZone(access.closes_at, tz) : '—'],
     [
-      'Access ends',
-      access.access_ends_at ? fmtInZone(access.access_ends_at, tz) : '—',
+      'New joiners',
+      access.join_closes_at
+        ? (access.join_closed ? 'Closed ' : 'Until ') + fmtInZone(access.join_closes_at, tz)
+        : 'No cutoff',
     ],
-    ['Grace period', c.grace_days === 0 ? 'None' : `${c.grace_days} days`],
   ];
 
   return (
@@ -314,7 +318,8 @@ function EditChallengeModal({
   const [totalDays, setTotalDays] = useState(String(challenge.total_days));
   const [revealTime, setRevealTime] = useState(challenge.reveal_time);
   const [revealTimezone, setRevealTimezone] = useState(challenge.reveal_timezone);
-  const [graceDays, setGraceDays] = useState(String(challenge.grace_days));
+  const [openForDays, setOpenForDays] = useState(String(challenge.open_for_days));
+  const [joinCutoffDays, setJoinCutoffDays] = useState(String(challenge.join_cutoff_days));
   const [telegramUrl, setTelegramUrl] = useState(challenge.telegram_url);
   const [saving, setSaving] = useState(false);
 
@@ -332,7 +337,8 @@ function EditChallengeModal({
       totalDays: Number(totalDays) || 21,
       revealTime,
       revealTimezone,
-      graceDays: Number(graceDays) || 0,
+      openForDays: Number(openForDays) || Number(totalDays) || 21,
+      joinCutoffDays: Number(joinCutoffDays) || 0,
       telegramUrl: telegramUrl.trim(),
     });
     setSaving(false);
@@ -423,18 +429,38 @@ function EditChallengeModal({
               />
             </div>
             <div>
-              <label className={labelClass} htmlFor="e-grace">
-                Grace days
+              <label className={labelClass} htmlFor="e-open">
+                Open for (days)
               </label>
               <input
-                id="e-grace"
+                id="e-open"
                 type="number"
                 className={inputClass}
-                value={graceDays}
-                onChange={(e) => setGraceDays(e.target.value)}
+                value={openForDays}
+                onChange={(e) => setOpenForDays(e.target.value)}
               />
-              <p className="text-xs text-slate/50 mt-1">Extra days to catch up after the last one.</p>
+              <p className="text-xs text-slate/50 mt-1">
+                Counted from day 1, not added on the end. 21 days of content open for 45
+                leaves 24 days to catch up.
+              </p>
             </div>
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor="e-cutoff">
+              Stop new joiners after (days)
+            </label>
+            <input
+              id="e-cutoff"
+              type="number"
+              className={inputClass}
+              value={joinCutoffDays}
+              onChange={(e) => setJoinCutoffDays(e.target.value)}
+            />
+            <p className="text-xs text-slate/50 mt-1">
+              Joining late means missing the group, so this marks the run as closed to new
+              buyers. 0 means no cutoff. It never affects anyone already in the run.
+            </p>
           </div>
 
           <div>

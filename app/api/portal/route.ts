@@ -131,35 +131,70 @@ function visiblePromoCodes(promos: Promo[], planState: PlanFlags | null): string
 }
 
 /**
- * The portal-safe challenge object, or null when there is nothing to show.
+ * The portal-safe challenge object for a member who holds the challenge plan.
  *
- * `unlocked_days` is the entire point: the day content lives in Webflow, so the server
- * never holds it and cannot leak it. All it does is say which day numbers this member may
- * see, and portal.js reveals those blocks.
+ * `unlocked_days` is the entire point: the day content lives in Webflow, so the server never
+ * holds it and cannot leak it. All it does is say which day numbers this member may see, and
+ * portal.js reveals those blocks.
  *
- * A run with no start date, or one whose grace window has closed, returns null rather than
- * an empty shell — "there is no challenge for you right now" and "your challenge has zero
- * days visible" would look identical in the portal, and only the first is true.
+ * The `state` field carries WHY there is no content, and that distinction is the whole
+ * design. The challenge is the front door to the membership, not a product that expires:
+ *
+ *   'running'     — days are unlocking, show them
+ *   'not_started' — the run is scheduled but day 1 hasn't dropped
+ *   'join_closed' — they arrived too late for this run; the next one is coming
+ *   'finished'    — this run is over
+ *   'none'        — the plan is held but there is no run configured at all
+ *
+ * Only 'running' carries days. The other four still return an object, deliberately: an
+ * account here is permanent and nothing is ever revoked, so someone who just spent 21 days
+ * with Lindsay must land on "that run has finished — here's what's next" rather than a blank
+ * panel. That moment is the best upsell in the product, and returning null would waste it.
  *
  * Note the shape is not the DB shape (telegram_url → telegram_link), matching how
  * buildCohortObject renames on the way out. The portal contract is its own thing.
  */
 function buildChallengeObject(run: Challenge | null) {
-  if (!run || !run.start_date) return null;
+  const base = {
+    name: run?.name ?? '',
+    description: run?.description ?? '',
+    telegram_link: run?.telegram_url || null,
+    total_days: run?.total_days ?? 0,
+    unlocked_days: [] as number[],
+    current_day: null as number | null,
+    starts_at: run?.start_date ?? null,
+    closes_at: null as string | null,
+  };
+
+  if (!run) return { ...base, state: 'none' as const };
+  if (!run.start_date) return { ...base, state: 'not_started' as const };
 
   const access = challengeAccess(run);
-  if (access.ended) return null;
+  const withDates = {
+    ...base,
+    closes_at: access.closes_at,
+  };
 
+  if (access.closed) return { ...withDates, state: 'finished' as const };
+  if (!access.started) return { ...withDates, state: 'not_started' as const };
+
+  // The run is live and carries its days. The join cutoff deliberately does NOT gate this.
+  //
+  // Access is evaluated per request, with no record of when anyone joined, so the cutoff
+  // cannot tell a newcomer from someone who has been here since day 1. Withholding days
+  // once it passes would eject the entire group mid-run — the exact opposite of the intent,
+  // which is only ever to stop NEW people buying into a run they've mostly missed.
+  //
+  // So the cutoff belongs on the sales side: it drives whether the challenge is still on
+  // offer (a promo that retires itself, or Memberstack closing the purchase), not whether
+  // an existing member sees their own content. `join_closed` is reported so the dashboard
+  // and the promo can act on it, and is never used to take anything away.
   return {
-    name: run.name,
-    description: run.description,
-    telegram_link: run.telegram_url || null,
-    total_days: run.total_days,
+    ...withDates,
     unlocked_days: access.unlocked,
     current_day: access.current_day,
-    starts_at: run.start_date,
-    access_ends_at: access.access_ends_at,
-    started: access.started,
+    join_closed: access.join_closed,
+    state: 'running' as const,
   };
 }
 

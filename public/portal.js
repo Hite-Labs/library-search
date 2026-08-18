@@ -187,11 +187,12 @@
     // otherwise all be visible for the moment before the API answers — briefly showing
     // day 21 to someone on day 2.
     eachEl('[data-challenge-day]', hide);
-    eachEl('[data-field="challenge-not-started"]', hide);
+    eachEl('[data-challenge-state]', hide);
     eachEl('[data-field="challenge-name"]', hide);
     eachEl('[data-field="challenge-current-day"]', hide);
     eachEl('[data-field="challenge-total-days"]', hide);
     eachEl('[data-field="challenge-starts-at"]', hide);
+    eachEl('[data-field="challenge-closes-at"]', hide);
   }
 
   function showError(message) {
@@ -708,15 +709,28 @@
   //
   // eachEl throughout, never byField: Webflow duplicates elements for mobile.
   function renderChallenge(challenge) {
-    // No challenge, or not entitled to it — hide every day block and the panel chrome.
+    // Not entitled — no challenge plan at all. Hide everything challenge-related.
     if (!challenge) {
       eachEl('[data-challenge-day]', hide);
-      eachEl('[data-field="challenge-not-started"]', hide);
+      eachEl('[data-challenge-state]', hide);
       return;
     }
 
+    var state = challenge.state || 'none';
     var unlocked = challenge.unlocked_days || [];
 
+    // Webflow authors one block per state — data-challenge-state="finished" and so on —
+    // and exactly one shows. This is what keeps a finished run from going blank: the
+    // account is permanent and nothing is ever revoked, so a member who has just finished
+    // 21 days lands on "that run is over, here's what's next" rather than an empty panel.
+    // That moment is the best upsell in the product.
+    eachEl('[data-challenge-state]', function (el) {
+      if (el.getAttribute('data-challenge-state') === state) show(el);
+      else hide(el);
+    });
+
+    // Days only exist while the run is live. Every other state carries none, so this
+    // hides them all without needing to special-case each one.
     eachEl('[data-challenge-day]', function (el) {
       var n = parseInt(el.getAttribute('data-challenge-day'), 10);
       // A non-numeric or unlisted day stays hidden. Fails closed, so a typo in the Webflow
@@ -724,12 +738,6 @@
       if (!isNaN(n) && unlocked.indexOf(n) !== -1) show(el);
       else hide(el);
     });
-
-    // Before the run starts there is nothing to reveal, so say so rather than showing an
-    // empty page — "starts Monday" and "something is broken" look identical otherwise.
-    var notStarted = byField('challenge-not-started');
-    if (challenge.started) hide(notStarted);
-    else show(notStarted);
 
     eachEl('[data-field="challenge-name"]', function (el) {
       el.textContent = challenge.name || '';
@@ -745,6 +753,10 @@
     });
     eachEl('[data-field="challenge-starts-at"]', function (el) {
       el.textContent = formatDate(challenge.starts_at);
+      show(el);
+    });
+    eachEl('[data-field="challenge-closes-at"]', function (el) {
+      el.textContent = formatDate(challenge.closes_at);
       show(el);
     });
 

@@ -296,8 +296,20 @@ CREATE TABLE challenges (
   -- alternative is per-member local time, which would mean day 4 appearing at different
   -- absolute moments for different people and no single instant for the daily email.
   reveal_timezone text NOT NULL DEFAULT 'America/New_York',
-  -- Days of access AFTER the last day, for catching up. 0 = access ends with day 21.
-  grace_days    integer NOT NULL DEFAULT 7,
+  -- How long the run stays open, counted from day 1 — NOT extra days on the end. "21 days
+  -- of content, open for 45" is total_days=21, open_for_days=45, giving 24 days to catch
+  -- up. Clamped to at least total_days at read time so a mis-set value can never close a
+  -- run before its own content has finished dropping.
+  open_for_days integer NOT NULL DEFAULT 45,
+  -- How many days after the start someone can still join and get THIS run. 0 = no cutoff.
+  --
+  -- The community half of the challenge is why this exists: arriving with five days left
+  -- means missing the group entirely. Someone who buys after the cutoff keeps their account
+  -- and their plan — nothing is revoked, ever — they just wait for the next run.
+  --
+  -- A count of days rather than a date, like everything else here, so the whole schedule
+  -- moves with the run and a three-month challenge is the same fields with other numbers.
+  join_cutoff_days integer NOT NULL DEFAULT 10,
   telegram_url  text NOT NULL DEFAULT '',
   status        text NOT NULL DEFAULT 'draft'
                   CHECK (status IN ('draft','active','complete','archived')),

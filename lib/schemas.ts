@@ -279,7 +279,8 @@ export const CreateChallengeSchema = z.object({
   totalDays: z.number().int().positive().max(365).default(21),
   revealTime: REVEAL_TIME.default('06:00'),
   revealTimezone: TIMEZONE.default('America/New_York'),
-  graceDays: z.number().int().nonnegative().max(365).default(7),
+  openForDays: z.number().int().positive().max(730).default(45),
+  joinCutoffDays: z.number().int().nonnegative().max(730).default(10),
   telegramUrl: z.string().default(''),
 });
 
@@ -290,7 +291,8 @@ export const UpdateChallengeSchema = z.object({
   totalDays: z.number().int().positive().max(365).optional(),
   revealTime: REVEAL_TIME.optional(),
   revealTimezone: TIMEZONE.optional(),
-  graceDays: z.number().int().nonnegative().max(365).optional(),
+  openForDays: z.number().int().positive().max(730).optional(),
+  joinCutoffDays: z.number().int().nonnegative().max(730).optional(),
   telegramUrl: z.string().optional(),
   status: z.enum(['draft', 'active', 'complete', 'archived']).optional(),
 });
