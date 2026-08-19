@@ -26,12 +26,24 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       const data = await res.json();
 
       if (res.status === 429) {
-        const mins = Math.ceil(data.retryAfterSeconds / 60);
-        setError(`Too many attempts. Try again in ${mins} minute${mins !== 1 ? 's' : ''}.`);
+        // Say seconds when it's under a minute. Rounding up to "1 minute" for a 40-second
+        // wait reads as a much heavier punishment than it is, and the short lockouts are
+        // the common case now.
+        const secs = Math.max(1, Math.ceil(data.retryAfterSeconds));
+        const wait =
+          secs < 60
+            ? `${secs} second${secs !== 1 ? 's' : ''}`
+            : `${Math.ceil(secs / 60)} minute${Math.ceil(secs / 60) !== 1 ? 's' : ''}`;
+        setError(`Too many attempts. Try again in ${wait}.`);
         return;
       }
       if (!res.ok) {
-        setError('Incorrect password.');
+        const left = data.attemptsRemaining;
+        setError(
+          typeof left === 'number' && left > 0 && left <= 2
+            ? `Incorrect password. ${left} attempt${left !== 1 ? 's' : ''} left before a short lockout.`
+            : 'Incorrect password.',
+        );
         return;
       }
       onSuccess();

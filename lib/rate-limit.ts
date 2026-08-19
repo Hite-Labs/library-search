@@ -1,12 +1,44 @@
 interface LockoutEntry {
+  /** Failures in the current streak. Reset when the streak goes stale or a lockout fires. */
   count: number;
   lockedUntil: number | null;
+  /** When the most recent failure happened, so a stale streak can age out. */
+  lastFailureAt: number;
+  /** How many lockouts this IP has earned. Drives escalation; only a success clears it. */
+  lockoutCount?: number;
 }
 
 const store = new Map<string, LockoutEntry>();
 
-const MAX_ATTEMPTS = 3;
-const LOCKOUT_MS = 60 * 60 * 1000; // 1 hour
+const MAX_ATTEMPTS = 5;
+
+/**
+ * How long a failure counts against you. Without this the count only ever went up:
+ * two typos today and one next month added to three and earned a lockout, which is
+ * indistinguishable from an attack only if you ignore the month in between.
+ */
+const FAILURE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * Escalating lockouts, indexed by how many times this IP has already been locked out.
+ * The last entry repeats for anything beyond it.
+ *
+ * A flat hour after three attempts was the original rule, and it was wrong for the
+ * threat: the only person typing here is Lindsay or Russell on a known device, and the
+ * password is a long shared secret rather than something guessable. An hour's lockout
+ * on a mistyped password is a self-inflicted outage on the tool used to run the business.
+ *
+ * A minute stops automated guessing just as effectively — a bot managing 5 tries per
+ * minute needs millennia against a decent secret — while costing a human who fat-fingered
+ * it almost nothing. Repeat offenders still escalate quickly, so a real attacker lands on
+ * the long bans within a few rounds.
+ */
+const LOCKOUT_STEPS_MS = [
+  60 * 1000, // 1 minute
+  5 * 60 * 1000, // 5 minutes
+  15 * 60 * 1000, // 15 minutes
+  60 * 60 * 1000, // 1 hour, and every lockout after
+];
 
 /**
  * Extract the caller's IP for rate-limit keying.
@@ -42,19 +74,59 @@ export function isLockedOut(ip: string): { locked: boolean; retryAfterSeconds: n
     return { locked: true, retryAfterSeconds };
   }
 
-  store.delete(ip);
+  // The ban has expired. Keep the entry — `count` is what escalates the next lockout —
+  // but clear the ban and the failure streak so the next attempt starts clean. Deleting
+  // it here instead would reset the escalation and let an attacker sit at the shortest
+  // lockout forever.
+  entry.lockedUntil = null;
+  entry.lastFailureAt = 0;
+  store.set(ip, entry);
   return { locked: false, retryAfterSeconds: 0 };
 }
 
 export function recordFailure(ip: string): void {
-  const entry = store.get(ip) ?? { count: 0, lockedUntil: null };
-  entry.count += 1;
-  if (entry.count >= MAX_ATTEMPTS) {
-    entry.lockedUntil = Date.now() + LOCKOUT_MS;
+  const now = Date.now();
+  const existing = store.get(ip);
+
+  // A streak only counts while it's fresh. Past the window, start over — otherwise
+  // occasional typos accumulate across days into a lockout that looks like an attack.
+  // `lockoutCount` deliberately survives, so escalation is not reset by waiting.
+  const stale = existing !== undefined && now - existing.lastFailureAt > FAILURE_WINDOW_MS;
+
+  let entry: LockoutEntry;
+  if (existing && !stale) {
+    entry = existing;
+  } else {
+    entry = {
+      count: 0,
+      lockedUntil: null,
+      lastFailureAt: 0,
+      lockoutCount: existing?.lockoutCount,
+    };
   }
+
+  entry.count += 1;
+  entry.lastFailureAt = now;
+
+  if (entry.count >= MAX_ATTEMPTS) {
+    const step = Math.min(entry.lockoutCount ?? 0, LOCKOUT_STEPS_MS.length - 1);
+    entry.lockedUntil = now + LOCKOUT_STEPS_MS[step];
+    entry.lockoutCount = (entry.lockoutCount ?? 0) + 1;
+    entry.count = 0; // streak consumed by the lockout
+  }
+
   store.set(ip, entry);
 }
 
+/** Attempts left in the current streak before a lockout fires. */
+export function attemptsRemaining(ip: string): number {
+  const entry = store.get(ip);
+  if (!entry) return MAX_ATTEMPTS;
+  if (Date.now() - entry.lastFailureAt > FAILURE_WINDOW_MS) return MAX_ATTEMPTS;
+  return Math.max(0, MAX_ATTEMPTS - entry.count);
+}
+
+/** A correct password clears everything, including the escalation history. */
 export function clearFailures(ip: string): void {
   store.delete(ip);
 }

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword, setAuthCookie } from '@/lib/auth';
-import { isLockedOut, recordFailure, clearFailures, getClientIp } from '@/lib/rate-limit';
+import {
+  isLockedOut,
+  recordFailure,
+  clearFailures,
+  getClientIp,
+  attemptsRemaining,
+} from '@/lib/rate-limit';
 import { LoginSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
@@ -32,7 +38,13 @@ export async function POST(req: NextRequest) {
         { status: 429 },
       );
     }
-    return NextResponse.json({ error: 'invalid' }, { status: 401 });
+    // Tell the operator how many tries are left. This leaks nothing an attacker can't
+    // learn by counting their own requests, and it's the difference between "wrong
+    // password" and an unexplained lockout on the next keystroke.
+    return NextResponse.json(
+      { error: 'invalid', attemptsRemaining: attemptsRemaining(ip) },
+      { status: 401 },
+    );
   }
 
   clearFailures(ip);
