@@ -25,6 +25,30 @@ interface UploadPanelProps {
   onUploaded: (neonId: string) => void;
 }
 
+/**
+ * Parse a response that is supposed to be JSON, and say something useful when it isn't.
+ *
+ * A gateway that times out or can't reach the app answers with an HTML error page, and
+ * `res.json()` on that throws `Unexpected token '<'` — which tells the operator nothing
+ * and looks like a bug in the upload rather than the request never arriving. The status
+ * code is the part worth surfacing: 502/504 means the save may still have completed
+ * server-side, which changes what you do next.
+ */
+async function readJson(res: Response, step: string) {
+  const body = await res.text();
+  try {
+    return JSON.parse(body);
+  } catch {
+    const gateway = res.status === 502 || res.status === 503 || res.status === 504;
+    throw {
+      step,
+      error: gateway
+        ? `The server didn't respond in time (HTTP ${res.status}). The item may still have been saved — check the library before retrying, to avoid a duplicate.`
+        : `Expected JSON but got HTTP ${res.status}. First of the response: ${body.slice(0, 120)}`,
+    };
+  }
+}
+
 function getContentType(file: File): string {
   if (file.name.endsWith('.m4a')) return 'audio/x-m4a';
   return file.type || 'application/octet-stream';
@@ -114,7 +138,7 @@ export function UploadPanel({ onUploaded }: UploadPanelProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ publicUrl: presign.publicUrl, mediaType }),
       });
-      const analyzeData = await analyzeRes.json();
+      const analyzeData = await readJson(analyzeRes, 'analyze');
       if (!analyzeData.ok) {
         throw { step: analyzeData.step ?? 'analyze', error: analyzeData.error ?? 'Analyze failed' };
       }
@@ -203,7 +227,7 @@ export function UploadPanel({ onUploaded }: UploadPanelProps) {
           transcript,
         }),
       });
-      const finalizeData = await finalizeRes.json();
+      const finalizeData = await readJson(finalizeRes, 'finalize');
       if (!finalizeData.ok) {
         throw { step: finalizeData.step ?? 'finalize', error: finalizeData.error ?? 'Unknown error' };
       }
