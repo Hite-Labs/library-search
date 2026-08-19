@@ -945,9 +945,53 @@
     });
   }
 
+  /**
+   * Wait for Memberstack before doing anything.
+   *
+   * gateAndLoad() calls window.$memberstackDom.getCurrentMember() on its first line, and
+   * used to run straight off DOMContentLoaded. Memberstack attaches $memberstackDom from
+   * its own async script, which frequently lands AFTER DOMContentLoaded — so the very
+   * first statement threw TypeError on undefined, outside the try/catch that guards the
+   * body, and the page sat there with nothing shown and no message. Load order on the
+   * Webflow page decided whether the portal worked, which is why it could look fine one
+   * reload and dead the next.
+   *
+   * Polling rather than an event: Memberstack exposes no documented ready hook, and this
+   * is the same approach their own snippets use.
+   */
+  var MS_POLL_MS = 100;
+  var MS_TIMEOUT_MS = 10000;
+
+  function whenMemberstackReady(callback) {
+    var waited = 0;
+    (function check() {
+      if (window.$memberstackDom && window.$memberstackDom.getCurrentMember) {
+        callback();
+        return;
+      }
+      waited += MS_POLL_MS;
+      if (waited >= MS_TIMEOUT_MS) {
+        // Say so rather than failing silently. If Memberstack never loads, the member is
+        // looking at a blank panel with no idea why — and neither would we.
+        console.error(
+          '[portal] Memberstack ($memberstackDom) did not load within ' +
+            MS_TIMEOUT_MS / 1000 +
+            's. Check that the Memberstack script is on this page and loads before portal.js.',
+        );
+        showError('Membership service is unavailable. Please refresh the page.');
+        return;
+      }
+      setTimeout(check, MS_POLL_MS);
+    })();
+  }
+
+  function start() {
+    whenMemberstackReady(gateAndLoad);
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', gateAndLoad);
+    document.addEventListener('DOMContentLoaded', start);
   } else {
-    gateAndLoad();
+    start();
   }
 })();
