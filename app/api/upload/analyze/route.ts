@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
   let moodTags: string[] = [];
   let useCases: string[] = [];
   let modality = 'Other';
+  // Set when the transcript came back but couldn't be analysed. The upload still
+  // succeeds — the form just opens empty for manual entry, and this explains why.
+  let analyzeNote: string | undefined;
 
   if (transcript.trim()) {
     try {
@@ -59,7 +62,16 @@ export async function POST(req: NextRequest) {
         ? (result.modality as string)
         : 'Other';
     } catch (err) {
-      return NextResponse.json({ ok: false, step: 'analyze', error: String(err) }, { status: 500 });
+      // Metadata is a convenience, not the substance: the file is already in R2 and the
+      // transcript and duration are in hand, so failing the whole upload here threw away
+      // good work and left the operator with a stack trace and no item.
+      //
+      // A subliminal recording is the case that showed this up — the transcript comes back
+      // as garbled multi-script text and a safety classifier declines it. That is a normal
+      // outcome for that kind of audio, not an error worth blocking on. Degrade to manual
+      // entry, the same way an empty transcript already does.
+      console.error('[analyze] metadata step failed, continuing without it:', err);
+      analyzeNote = String(err instanceof Error ? err.message : err);
     }
   }
 
@@ -71,5 +83,6 @@ export async function POST(req: NextRequest) {
     moodTags: moodTags.join(', '),
     useCases: useCases.join(', '),
     modality,
+    ...(analyzeNote && { analyzeNote }),
   });
 }

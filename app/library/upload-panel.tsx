@@ -62,12 +62,14 @@ export function UploadPanel({ onUploaded }: UploadPanelProps) {
   // all visible in the detail panel of the row this creates.
   const [savedTitle, setSavedTitle] = useState<string | null>(null);
   const [stepError, setStepError] = useState<StepError | null>(null);
+  const [analyzeNote, setAnalyzeNote] = useState<string | null>(null);
 
   function onFileChange(f: File | null) {
     setFile(f);
     setAnalyzed(false);
     setSavedTitle(null);
     setStepError(null);
+    setAnalyzeNote(null);
     setTranscript(null);
     setR2Key(null);
     setPublicUrl(null);
@@ -79,6 +81,7 @@ export function UploadPanel({ onUploaded }: UploadPanelProps) {
     if (!file) return;
     setAnalyzing(true);
     setStepError(null);
+    setAnalyzeNote(null);
     setSavedTitle(null);
 
     try {
@@ -125,6 +128,9 @@ export function UploadPanel({ onUploaded }: UploadPanelProps) {
         setDurationMinutes((analyzeData.durationSeconds / 60).toFixed(1));
       }
       setTranscript(analyzeData.transcript ?? null);
+      // The upload worked but the AI couldn't fill the fields in. Not an error —
+      // the form opens for manual entry — but say why rather than leaving it blank.
+      setAnalyzeNote(analyzeData.analyzeNote ?? null);
       setAnalyzed(true);
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'step' in err) setStepError(err as StepError);
@@ -246,6 +252,13 @@ export function UploadPanel({ onUploaded }: UploadPanelProps) {
         <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-4 text-sm">
           <p className="font-medium text-red-800">Error at step: {stepError.step}</p>
           <p className="text-red-600 mt-1 font-mono text-xs">{stepError.error}</p>
+        </div>
+      )}
+
+      {analyzeNote && (
+        <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">
+          <p className="font-medium text-amber-900">Uploaded — fill the details in yourself</p>
+          <p className="text-amber-700 mt-1">{analyzeNote}</p>
         </div>
       )}
 
