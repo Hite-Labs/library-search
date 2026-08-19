@@ -1,23 +1,17 @@
 'use client';
 
 import { ResultCard } from './ResultCard';
-
-interface Result {
-  id: string;
-  title: string;
-  description: string;
-  mediaType: string;
-  contentPageUrl: string | null;
-  similarity: number;
-}
+import type { Result } from './types';
 
 interface ResultsListProps {
   /** null when the summary was skipped or failed — render cards alone, not an empty box. */
   response: string | null;
   results: Result[];
+  selectedId: string | null;
+  onSelect: (item: Result) => void;
 }
 
-export function ResultsList({ response, results }: ResultsListProps) {
+export function ResultsList({ response, results, selectedId, onSelect }: ResultsListProps) {
   return (
     <div className="space-y-4">
       {response && (
@@ -28,7 +22,12 @@ export function ResultsList({ response, results }: ResultsListProps) {
       {results.length > 0 && (
         <div className="space-y-3">
           {results.map((result) => (
-            <ResultCard key={result.id} {...result} />
+            <ResultCard
+              key={result.id}
+              item={result}
+              selected={result.id === selectedId}
+              onSelect={onSelect}
+            />
           ))}
         </div>
       )}

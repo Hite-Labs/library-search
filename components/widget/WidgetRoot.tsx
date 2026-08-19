@@ -1,23 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { SearchBox } from './SearchBox';
 import { ResultsList } from './ResultsList';
+import { DetailPanel } from './DetailPanel';
+import type { Result } from './types';
 
 type State = 'idle' | 'searching' | 'results' | 'error';
 
-interface Result {
-  id: string;
-  title: string;
-  description: string;
-  mediaType: string;
-  contentPageUrl: string | null;
-  similarity: number;
-}
-
-function notifyHeight() {
-  if (typeof window === 'undefined') return;
-  const height = document.documentElement.scrollHeight;
+/**
+ * Report our height to embed.js, which sets the iframe's height from it.
+ *
+ * Measures our own root element, not `document.documentElement.scrollHeight`. The
+ * document is the dashboard's root layout (see app/widget/layout.tsx), whose body
+ * carries `min-h-full` — so scrollHeight could never report *less* than the iframe's
+ * current height, which embed.js had just set from the previous measurement. The frame
+ * could grow but never shrink, and closing a tall detail view would leave a gap.
+ * An element's own box height has no such floor.
+ */
+function notifyHeight(el: HTMLElement | null) {
+  if (typeof window === 'undefined' || !el) return;
+  const height = Math.ceil(el.getBoundingClientRect().height);
   window.parent.postMessage({ type: 'resize', height }, '*');
 }
 
@@ -30,6 +33,16 @@ export function WidgetRoot() {
   const [errorMsg, setErrorMsg] = useState('');
   const [memberstackUserId, setMemberstackUserId] = useState<string | null>(null);
   const [memberToken, setMemberToken] = useState<string | null>(null);
+
+  // The item whose player is open above the list. Deliberately NOT a member of `State`:
+  // selection is orthogonal to the request lifecycle, and a 'detail' state would imply
+  // the results are gone — they stay on screen underneath, which is the whole point.
+  //
+  // Holds the object, not an id, so the player's props keep a stable identity across
+  // re-renders of the list and there's no find() that could come back undefined.
+  const [selected, setSelected] = useState<Result | null>(null);
+
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // Listen for the Memberstack user id + JWT from the parent page (forwarded by
   // embed.js). The token is what the backend actually verifies; the id is kept for
@@ -68,18 +81,24 @@ export function WidgetRoot() {
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
-  // Notify parent of height changes
+  // Notify parent of height changes. Observing our own root rather than document.body
+  // for the same reason notifyHeight measures it — see that function.
   useEffect(() => {
-    notifyHeight();
-    const observer = new ResizeObserver(notifyHeight);
-    observer.observe(document.body);
+    const el = rootRef.current;
+    if (!el) return;
+    notifyHeight(el);
+    const observer = new ResizeObserver(() => notifyHeight(el));
+    observer.observe(el);
     return () => observer.disconnect();
-  }, [state, results]);
+  }, [state, results, selected]);
 
   async function handleSearch() {
     if (!query.trim()) return;
     setState('searching');
     setErrorMsg('');
+    // Drop the open player: it belongs to the previous set of results, and leaving it
+    // above a fresh list would show an item that may not be in it.
+    setSelected(null);
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -115,10 +134,11 @@ export function WidgetRoot() {
     setResponse(null);
     setResults([]);
     setErrorMsg('');
+    setSelected(null);
   }
 
   return (
-    <div className="p-4 space-y-4 font-sans">
+    <div ref={rootRef} className="p-4 space-y-4 font-sans">
       <SearchBox
         query={query}
         onChange={setQuery}
@@ -135,7 +155,19 @@ export function WidgetRoot() {
 
       {state === 'results' && (
         <div className="space-y-4">
-          <ResultsList response={response} results={results} />
+          {/*
+            Rendered unconditionally, with the emptiness handled inside, so the panel
+            keeps a fixed position among its siblings. React reconciles by position:
+            toggling this subtree in and out would shift ResultsList's index and could
+            unmount the <audio> element mid-playback.
+          */}
+          <DetailPanel item={selected} onClose={() => setSelected(null)} />
+          <ResultsList
+            response={response}
+            results={results}
+            selectedId={selected?.id ?? null}
+            onSelect={setSelected}
+          />
           <button
             type="button"
             onClick={handleReset}

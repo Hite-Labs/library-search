@@ -12,7 +12,11 @@
   var iframe = document.createElement('iframe');
   iframe.src = APP_URL + '/widget';
   iframe.style.cssText = 'width:100%;border:0;min-height:400px;display:block;';
-  iframe.allow = 'microphone';
+  // microphone: the voice search button. fullscreen: video playback — without it the
+  // fullscreen button in our own player chrome silently does nothing in a cross-origin
+  // frame. autoplay: lets playback that a member started continue across a src change
+  // (picking a second track) instead of needing a fresh tap.
+  iframe.allow = 'microphone; fullscreen; autoplay';
   iframe.title = 'Content Search';
 
   // Forward Memberstack user ID to widget via postMessage

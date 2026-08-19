@@ -91,12 +91,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ response: SEARCH_NO_MATCH_RESPONSE, results: [] });
   }
 
+  // Everything the widget needs to play an item and describe it, in the search response
+  // itself. All of these are already selected by both retrieval paths and sit unused on
+  // MatchResult, so this costs no extra query and no second round-trip — the member taps
+  // a result and it plays, with nothing further to fetch.
+  //
+  // publicUrl is the stable R2 URL, deliberately not a presigned one. Members play these
+  // for sleep, so a track has to survive being started at 11pm and seeked at 3am; a
+  // 1-hour signature would 403 on the next range request with no recovery path in the
+  // audio element. Entitlement is enforced upstream instead, and strictly: an anonymous
+  // caller goes through match_content_items, whose SQL hard-filters cohort and client
+  // rows out, and a verified member only ever matches their own cohorts. So this cannot
+  // hand anyone a URL for content they weren't already entitled to see.
+  //
+  // contentPageUrl is dropped: it was the per-item Webflow CMS page, null for every row,
+  // and the detail panel replaces the page it pointed at.
   const results = strong.map((m) => ({
     id: m.id,
     title: m.title,
     description: m.description,
     mediaType: m.media_type,
-    contentPageUrl: m.content_page_url,
+    publicUrl: m.public_url,
+    durationSeconds: m.duration_seconds,
+    useCases: m.use_cases,
+    moodTags: m.mood_tags,
+    modality: m.modality,
     similarity: m.similarity,
   }));
 

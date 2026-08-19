@@ -13,7 +13,13 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' https://*.webflow.io https://*.webflow.com https://*.webflow-ext.com",
+            // showyourspark.com is the live custom domain the Webflow site is published
+            // to (www.showyourspark.com, 200, Webflow-hosted). It was missing here while
+            // WidgetRoot's postMessage check already trusted it — so on the real member
+            // page the browser refused the frame outright and search never appeared. The
+            // *.webflow.* entries stay for Webflow's preview/staging domains.
+            value:
+              "frame-ancestors 'self' https://showyourspark.com https://*.showyourspark.com https://*.webflow.io https://*.webflow.com https://*.webflow-ext.com",
           },
           // Explicitly unset X-Frame-Options so CSP frame-ancestors takes full control
           {
