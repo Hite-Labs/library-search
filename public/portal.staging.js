@@ -829,7 +829,21 @@
   // The Stripe price for SYS Society. A price id, not a plan id — checkout is priced, and
   // purchasePlansWithCheckout takes prc_*, while the PLANS registry above matches pln_*.
   // They are different identifiers for the same product and are not interchangeable.
-  var SYS_SOCIETY_PRICE_ID = 'prc_founding-member-launch-hj3n0e5z';
+  //
+  // ⚠️ TEST PRICE. This is the ONE line where this file deliberately differs from
+  // portal.js — a $1 price on the same plan (pln_sys-society-6h2m809m5), so the buy flow
+  // can be proved end to end for a dollar instead of the $33/mo founding-member price.
+  // Because it is the same plan, a test purchase grants the same entitlement, which is
+  // what makes the gating check meaningful rather than a simulation.
+  //
+  // portal.js keeps the real price and is what the live page must load. When the test is
+  // done, re-sync and the divergence disappears:
+  //
+  //     cp public/portal.js public/portal.staging.js
+  //
+  // `diff public/portal.js public/portal.staging.js` should report exactly this one hunk
+  // and nothing else — any other difference means an edit landed in one file only.
+  var SYS_SOCIETY_PRICE_ID = 'prc_test-4c30oup';
 
   /**
    * Wire the promo card's buy button to Memberstack checkout.
