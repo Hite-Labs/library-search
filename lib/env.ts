@@ -40,6 +40,11 @@ const envSchema = z.object({
   // holding this plan IS the enrolment, so a Memberstack automation has to attach it on
   // every purchase route. Unset → nobody sees the challenge.
   MEMBERSTACK_CHALLENGE_PLAN_ID: z.string().optional(),
+  // Optional: the Memberstack plan id for SYS Society, the audio membership. Unlike the
+  // coaching plans there is no enrolment behind it — the member buys it themselves and
+  // holding it IS the entitlement. Unset → the audio-membership offer shows to everyone,
+  // including people who already bought it, which is the failure this id prevents.
+  MEMBERSTACK_MEMBERSHIP_PLAN_ID: z.string().optional(),
 
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),

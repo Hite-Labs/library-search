@@ -35,8 +35,35 @@
       panelId: 'portal-challenge',
       tabField: 'tab-challenge',
       has: false
+    },
+    {
+      // SYS Society, the audio membership. The first plan here with no panel of its own:
+      // it unlocks content elsewhere on the page rather than a tab, and is tracked so promo
+      // gating can tell a member who already bought it from one who hasn't.
+      //
+      // panelId/tabField are null rather than omitted, and the two places that assume a
+      // panel skip entries without one — so a member holding only this plan still sees the
+      // upsell, and a cohort member who buys it doesn't get a tab header pointing at a
+      // panel that isn't on the page.
+      //
+      // `key` must match the server's PlanKey exactly: promos compare hide_if_has against
+      // it, and a mismatch would silently never match, showing the offer to everyone.
+      key: 'membership',
+      planId: 'pln_sys-society-6h2m809m5',
+      panelId: null,
+      tabField: null,
+      has: false
     }
   ];
+
+  /** Plans with a panel of their own — the ones tabs and the upsell gate care about. */
+  function panelPlans() {
+    var out = [];
+    for (var i = 0; i < PLANS.length; i++) {
+      if (PLANS[i].panelId) out.push(PLANS[i]);
+    }
+    return out;
+  }
 
   function planByKey(key) {
     for (var i = 0; i < PLANS.length; i++) {
@@ -275,7 +302,10 @@
 
   function initTabs() {
     var tabsHeader = byField('plan-tabs-header');
-    var held = heldPlans();
+
+    // Only plans with a panel can be tabbed to. Counting the audio membership here would
+    // give a cohort member who buys it a two-tab header whose second tab points at nothing.
+    var held = heldPlans().filter(function (p) { return !!p.panelId; });
 
     // Show tabs whenever the member holds MORE THAN ONE panel — previously this required
     // holding BOTH of exactly two, so a member with any other combination would have got no
@@ -794,6 +824,52 @@
     });
   }
 
+  // ===== Buy the audio membership, without leaving the page =====
+
+  // The Stripe price for SYS Society. A price id, not a plan id — checkout is priced, and
+  // purchasePlansWithCheckout takes prc_*, while the PLANS registry above matches pln_*.
+  // They are different identifiers for the same product and are not interchangeable.
+  var SYS_SOCIETY_PRICE_ID = 'prc_founding-member-launch-hj3n0e5z';
+
+  /**
+   * Wire the promo card's buy button to Memberstack checkout.
+   *
+   * The button is deliberately NOT a data-ms-price attribute in Webflow: that would hand
+   * the element to Memberstack's own click handler, competing with the show/hide the rest
+   * of this file does. Driving it here keeps one owner.
+   *
+   * Called once from init(), never from renderPromos — that runs on every load, and
+   * re-binding would stack listeners and fire checkout several times per click.
+   *
+   * Note purchasePlansWithCheckout does nothing at all for a logged-out visitor. Inside the
+   * portal that is fine, since gateAndLoad has already resolved a member before init runs.
+   * A public page needs the save-price-then-resume-after-login dance instead.
+   */
+  function initBuyButtons() {
+    // eachEl, not byField: Webflow duplicates elements for its mobile layout, and a
+    // single-match querySelector would leave the mobile button dead. Same bug as setLink.
+    eachEl('[data-field="sys-society-buy-button"]', function (btn) {
+      btn.addEventListener('click', function (e) {
+        // The button is an anchor in Webflow; without this the page navigates away mid-checkout.
+        e.preventDefault();
+
+        if (!window.$memberstackDom || !window.$memberstackDom.purchasePlansWithCheckout) {
+          console.error('[portal] Memberstack checkout is unavailable.');
+          return;
+        }
+
+        window.$memberstackDom
+          .purchasePlansWithCheckout({
+            priceId: SYS_SOCIETY_PRICE_ID,
+            returnUrl: window.location.href
+          })
+          .catch(function (err) {
+            console.error('[portal] audio membership checkout failed:', err);
+          });
+      });
+    });
+  }
+
   function loadPortal(token) {
     if (!token) {
       showError('You must be signed in to view your portal.');
@@ -847,6 +923,7 @@
     hideAll();
     initModal();
     initTabs();
+    initBuyButtons();
 
     if (!window.$memberstackDom || !window.$memberstackDom.getMemberCookie) {
       showError('Membership service is unavailable. Please try again later.');
@@ -912,10 +989,17 @@
         }
 
         // Resolve every plan from the registry rather than two hardcoded lookups.
-        var anyHeld = false;
         for (i = 0; i < PLANS.length; i++) {
           PLANS[i].has = plans.indexOf(PLANS[i].planId) !== -1;
-          if (PLANS[i].has) anyHeld = true;
+        }
+
+        // The upsell asks "is any PANEL going to appear?", not "does this member hold
+        // anything". A member whose only plan is the audio membership reveals no panel, so
+        // counting it here would hide the upsell and leave them looking at an empty page.
+        var panelled = panelPlans();
+        var anyHeld = false;
+        for (i = 0; i < panelled.length; i++) {
+          if (panelled[i].has) anyHeld = true;
         }
 
         // No plans at all is not an error state — it is the funnel. The member keeps their

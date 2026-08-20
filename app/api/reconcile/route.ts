@@ -138,11 +138,13 @@ export async function GET() {
     // per-plan "does the dashboard want it" signal comes from the enrollment query, which
     // is coaching-shaped.
     //
-    // `challenge` is deliberately absent and therefore never reported as drift. It has no
-    // enrollment: the Memberstack plan IS the entitlement, however it was obtained — bought
-    // directly, bundled with the audio membership, or added to an existing client. There is
-    // no dashboard-side intent to compare against, so every challenge member would otherwise
-    // read as "has a plan the dashboard didn't grant" and drown the real findings.
+    // `challenge` and `membership` are deliberately absent and therefore never reported as
+    // drift. Neither has an enrollment: the Memberstack plan IS the entitlement, however it
+    // was obtained — bought directly by the member, bundled with the audio membership, or
+    // added to an existing client. There is no dashboard-side intent to compare against, so
+    // every holder would otherwise read as "has a plan the dashboard didn't grant" and drown
+    // the real findings. This is an allowlist, not a denylist, so a new plan is excluded
+    // until someone deliberately adds it here.
     const wantsByKey: Partial<Record<PlanKey, boolean>> = {
       individual: c.wantsIndividual,
       cohort: c.wantsCohort,

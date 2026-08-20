@@ -9,8 +9,15 @@
 // Add a plan here first; lib/memberstack.ts re-exports these, so every server-side
 // consumer follows automatically.
 
-/** Every plan the portal knows about. */
-export const PLAN_KEYS = ['individual', 'cohort', 'challenge'] as const;
+/**
+ * Every plan the portal knows about.
+ *
+ * `membership` is SYS Society, the audio membership. It was live in Memberstack and held
+ * by real members long before it was listed here, which meant the portal didn't recognise
+ * it: someone bought it, held a plan id nothing matched, and kept seeing the upsell asking
+ * them to buy the thing they had just bought.
+ */
+export const PLAN_KEYS = ['individual', 'cohort', 'challenge', 'membership'] as const;
 
 export type PlanKey = (typeof PLAN_KEYS)[number];
 
