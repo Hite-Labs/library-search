@@ -7,6 +7,12 @@ interface ResultCardProps {
   item: Result;
   selected: boolean;
   onSelect: (item: Result) => void;
+  /**
+   * Outline treatment: a petal border over the transparent page instead of a petal fill.
+   * Used for the "other results" beneath an open player, where a second set of filled
+   * cards would carry the same visual weight as the thing currently playing.
+   */
+  outline?: boolean;
 }
 
 /**
@@ -19,31 +25,42 @@ interface ResultCardProps {
  * every item in the library, so in practice it always rendered a greyed-out
  * "Link unavailable". Selecting now opens the item in place instead.
  */
-export function ResultCard({ item, selected, onSelect }: ResultCardProps) {
-  const badge =
-    MEDIA_BADGES[item.mediaType] ?? { label: item.mediaType, className: 'tint-bg-forest-10 text-forest' };
+export function ResultCard({ item, selected, onSelect, outline }: ResultCardProps) {
+  // On an outline card the petal-tinted badges are illegible — they are built for a petal
+  // surface, and here the surface is the dark host page showing through.
+  const badge = outline
+    ? { label: MEDIA_BADGES[item.mediaType]?.label ?? item.mediaType, className: 'tint-bg-petal-15 text-petal' }
+    : MEDIA_BADGES[item.mediaType] ?? { label: item.mediaType, className: 'tint-bg-forest-10 text-forest' };
 
   return (
     <button
       type="button"
       onClick={() => onSelect(item)}
       aria-pressed={selected}
-      className={`w-full text-left bg-petal border rounded-xl p-4 space-y-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
-        selected
-          ? 'border-gold ring-1 tint-ring-gold-40'
-          : 'tint-border-forest-15 hover:tint-border-gold-60'
+      className={`w-full text-left border rounded-xl p-4 space-y-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gold ${
+        outline
+          ? `bg-transparent ${selected ? 'border-gold' : 'tint-border-petal-40 hover:tint-border-gold-60'}`
+          : `bg-petal ${
+              selected ? 'border-gold ring-1 tint-ring-gold-40' : 'tint-border-forest-15 hover:tint-border-gold-60'
+            }`
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-semibold text-forest leading-snug">{item.title}</h3>
+        <h3 className={`text-sm font-semibold leading-snug ${outline ? 'text-petal' : 'text-forest'}`}>
+          {item.title}
+        </h3>
         <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}>
           {badge.label}
         </span>
       </div>
-      <p className="text-xs tint-forest-70 leading-relaxed">{item.description}</p>
+      <p className={`text-xs leading-relaxed ${outline ? 'tint-petal-70' : 'tint-forest-70'}`}>
+        {item.description}
+      </p>
       <div className="flex items-center justify-between pt-1">
-        <span className="text-xs tint-forest-70">{Math.round(item.similarity * 100)}% match</span>
-        <span className="text-xs font-medium text-plum">
+        <span className={`text-xs ${outline ? 'tint-petal-70' : 'tint-forest-70'}`}>
+          {Math.round(item.similarity * 100)}% match
+        </span>
+        <span className={`text-xs font-medium ${outline ? 'text-petal' : 'text-plum'}`}>
           {selected ? 'Playing above' : 'Open →'}
         </span>
       </div>

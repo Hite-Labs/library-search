@@ -158,12 +158,19 @@ export function WidgetRoot() {
         {selected ? selected.title : 'Audio Membership'}
       </h1>
 
-      <SearchBox
-        query={query}
-        onChange={setQuery}
-        onSubmit={handleSearch}
-        disabled={state === 'searching'}
-      />
+      {/*
+        The search box is hidden while something is playing. Choosing is finished at that
+        point, and leaving the box up invited someone to start a new search over the top of
+        the track they had just settled on. "Back to results" above returns it.
+      */}
+      {!selected && (
+        <SearchBox
+          query={query}
+          onChange={setQuery}
+          onSubmit={handleSearch}
+          disabled={state === 'searching'}
+        />
+      )}
 
       {state === 'searching' && (
         <div className="flex items-center gap-2 text-sm tint-petal-80">
@@ -181,19 +188,28 @@ export function WidgetRoot() {
             unmount the <audio> element mid-playback.
           */}
           <DetailPanel item={selected} onClose={() => setSelected(null)} />
-          <ResultsList
-            response={response}
-            results={results}
-            selectedId={selected?.id ?? null}
-            onSelect={setSelected}
-          />
-          <button
-            type="button"
-            onClick={handleReset}
-            className="text-xs tint-petal-70 hover:text-gold underline underline-offset-2 transition-colors"
-          >
-            Search again
-          </button>
+          {/*
+            Breathing room between the open player and the alternatives below it. Without
+            it "Other results" reads as part of the player card rather than a new section.
+          */}
+          <div className={selected ? 'pt-6' : undefined}>
+            <ResultsList
+              response={response}
+              results={results}
+              selectedId={selected?.id ?? null}
+              onSelect={setSelected}
+              demoted={!!selected}
+            />
+          </div>
+          {!selected && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-xs tint-petal-70 hover:text-gold underline underline-offset-2 transition-colors"
+            >
+              Search again
+            </button>
+          )}
         </div>
       )}
 
