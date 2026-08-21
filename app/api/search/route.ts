@@ -12,17 +12,43 @@ export const maxDuration = 30;
 
 /**
  * Similarity floor for a match to stand on its own. Above this the results speak for
- * themselves and we skip Claude entirely; below it we return the fallback and NO cards.
+ * themselves; below it we return the fallback and NO cards.
  *
  * This used to live only as prose inside SEARCH_SYSTEM_PROMPT, which meant paying Claude to
  * evaluate a threshold the code had already computed — and worse, the route returned every
  * 0.4+ match regardless, so a 0.45 match rendered "no perfect fit" copy ABOVE visible cards.
  * The threshold belongs here, in one place.
+ *
+ * 0.35, not 0.5. The higher figure was calibrated on sentence-length queries like the
+ * placeholder's "How are you feeling?" — those score ~0.59 — but people type single words,
+ * and a bare word carries little for the embedding model to compare against a full
+ * description. Measured against the live library:
+ *
+ *     "confidence" → Camera Confidence          0.470
+ *     "hypnosis"   → Hidding to Shining         0.469
+ *     "hypnosis"   → Parts Integration Hypnosis 0.445
+ *     "tapping"    → Shift into Confidence      0.420
+ *     "car insurance" (nonsense)                0.236
+ *     "tax return"    (nonsense)                0.161
+ *     "pizza recipe"  (nonsense)                0.080
+ *
+ * So every real hit sits in 0.42–0.47 and every nonsense query below 0.24 — a wide empty
+ * band between them. At 0.5 a one-word search for a title we actually stock returned
+ * nothing, which reads as a broken library rather than a narrow threshold. 0.35 sits mid-gap:
+ * it admits the real matches and still rejects the closest nonsense by a clear margin.
+ *
+ * Re-measure this if the embedding model changes or the library grows substantially — the
+ * gap is a property of this content, not a universal constant.
  */
-const STRONG_MATCH = 0.5;
+const STRONG_MATCH = 0.35;
 
-/** Neon-side floor: anything below this never comes back at all (db/schema.sql). */
-const MATCH_FLOOR = 0.4;
+/**
+ * Neon-side floor: anything below this never comes back at all (db/schema.sql).
+ *
+ * Must stay <= STRONG_MATCH, or it silently becomes the real threshold — rows are dropped
+ * in SQL before the filter below ever sees them.
+ */
+const MATCH_FLOOR = 0.3;
 
 // This route is public by design (the search box is open to non-members) and each call
 // spends Voyage + Anthropic credits, so it needs a budget. Generous for a person typing
@@ -66,7 +92,10 @@ export async function POST(req: NextRequest) {
   // Step 1: Embed query
   let queryEmbedding: number[];
   try {
-    queryEmbedding = await embed(query);
+    // 'query', not the default 'document': this is the short side of an asymmetric
+    // comparison. See lib/embeddings.ts for the measured difference — it is the whole
+    // reason one-word searches used to come back empty.
+    queryEmbedding = await embed(query, 'query');
   } catch (err) {
     return NextResponse.json({ error: `Embedding failed: ${String(err)}` }, { status: 500 });
   }
