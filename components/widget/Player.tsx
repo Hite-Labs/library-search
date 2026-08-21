@@ -221,7 +221,7 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
         href={src}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-2 text-sm font-medium text-stone-700 underline underline-offset-2"
+        className="inline-flex items-center gap-2 text-sm font-medium text-plum underline underline-offset-2 hover:text-forest"
       >
         Open document ↗
       </a>
@@ -253,7 +253,7 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
           type="button"
           onClick={toggle}
           aria-label={playing ? 'Pause' : 'Play'}
-          className="w-11 h-11 shrink-0 rounded-full bg-stone-800 text-white flex items-center justify-center hover:bg-stone-700 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:ring-offset-2"
+          className="w-11 h-11 shrink-0 rounded-full bg-plum text-gold border border-gold flex items-center justify-center hover:bg-gold hover:text-plum transition-colors focus:outline-none focus:ring-2 focus:ring-gold focus:ring-offset-2"
         >
           {playing ? (
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -270,7 +270,7 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
         <button
           type="button"
           onClick={() => seekTo(current - SKIP_SECONDS)}
-          className="text-xs text-stone-500 hover:text-stone-800 tabular-nums"
+          className="text-xs tint-forest-70 hover:text-plum tabular-nums"
           aria-label={`Back ${SKIP_SECONDS} seconds`}
         >
           −{SKIP_SECONDS}s
@@ -278,7 +278,7 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
         <button
           type="button"
           onClick={() => seekTo(current + SKIP_SECONDS)}
-          className="text-xs text-stone-500 hover:text-stone-800 tabular-nums"
+          className="text-xs tint-forest-70 hover:text-plum tabular-nums"
           aria-label={`Forward ${SKIP_SECONDS} seconds`}
         >
           +{SKIP_SECONDS}s
@@ -293,7 +293,7 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
               const next = SPEEDS[(SPEEDS.indexOf(speed as (typeof SPEEDS)[number]) + 1) % SPEEDS.length];
               el.playbackRate = next;
             }}
-            className="ml-auto text-xs text-stone-500 hover:text-stone-800 tabular-nums"
+            className="ml-auto text-xs font-medium text-plum hover:text-forest tabular-nums"
             aria-label="Playback speed"
           >
             {speed}×
@@ -302,7 +302,7 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
       </div>
 
       <div className="flex items-center gap-3">
-        <span className="text-xs text-stone-400 tabular-nums w-10 shrink-0">{formatTime(current)}</span>
+        <span className="text-xs tint-forest-70 tabular-nums w-10 shrink-0">{formatTime(current)}</span>
         <input
           type="range"
           min={0}
@@ -320,9 +320,9 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
           // A scrubber with no known length would be a lie, so it stays disabled until
           // loadedmetadata lands. Elapsed time still ticks.
           aria-label="Seek"
-          className="flex-1 accent-stone-800 disabled:opacity-30"
+          className="flex-1 accent-gold disabled:opacity-30"
         />
-        <span className="text-xs text-stone-400 tabular-nums w-10 shrink-0 text-right">
+        <span className="text-xs tint-forest-70 tabular-nums w-10 shrink-0 text-right">
           {canScrub ? formatTime(duration) : '--:--'}
         </span>
       </div>

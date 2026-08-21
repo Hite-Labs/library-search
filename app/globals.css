@@ -41,6 +41,61 @@ body {
   font-family: var(--font-manrope), system-ui, sans-serif;
 }
 
+/* ── Translucent brand tints ─────────────────────────────────────────────
+ *
+ * ⚠️ `bg-petal/40`-style opacity modifiers DO NOT WORK on the brand colours. They fail
+ * SILENTLY, rendering at full opacity — so a 10%-tint badge background comes out solid.
+ * There are ~374 such usages across the admin pages, all currently rendering flat.
+ *
+ * Cause: the palette is registered under `@theme inline`, so Tailwind emits
+ * `color-mix(in srgb, var(--sys-forest) 20%, transparent)` rather than a resolved
+ * colour — and Lightning CSS (via Turbopack) then folds that color-mix against a var()
+ * it cannot see through down to the solid colour. Verified in the built stylesheet:
+ * `.border-forest\/20` ships as `border-color:var(--sys-forest)`.
+ *
+ * Fixing it properly means dropping `inline` from the @theme block, which would change
+ * the rendering of every admin page at once — a deliberate decision, not a side effect
+ * of restyling the search widget. Until that call is made, the widget (which sits on an
+ * unknown host background and genuinely depends on these tints) uses the classes below.
+ *
+ * When the theme is fixed, delete these and switch callers back to plain `/nn`.
+ */
+/* Values are literal rgb() with an explicit alpha, NOT color-mix(). Lightning CSS (via
+ * Turbopack) resolves color-mix() at build time and, against a var() it cannot see through,
+ * folds it to the solid colour — verified: `color-mix(in srgb, var(--sys-forest) 70%,
+ * transparent)` shipped as `color:var(--sys-forest)`. rgb() with a literal alpha is already
+ * minimal, so there is nothing for it to collapse.
+ *
+ * Channels match the tokens at the top of this file. Keep them in sync by hand:
+ *   forest #143428 = 20 52 40 · plum #4e1a24 = 78 26 36
+ *   gold   #dda637 = 221 166 55 · petal #fff2df = 255 242 223
+ *   scarlet #f85001 = 248 80 1
+ */
+/* 70% is the floor for small text on petal: it measures 5.01:1, while 60% (3.77:1)
+ * and 50% (2.89:1) both fail AA — they were in use for "% match" and the timestamps
+ * until the contrast pass, and are deliberately not defined here. */
+.tint-forest-70 { color: rgb(20 52 40 / 0.70); }
+.tint-petal-70  { color: rgb(255 242 223 / 0.70); }
+.tint-petal-80  { color: rgb(255 242 223 / 0.80); }
+
+.tint-bg-forest-10 { background-color: rgb(20 52 40 / 0.10); }
+.tint-bg-plum-10   { background-color: rgb(78 26 36 / 0.10); }
+.tint-bg-gold-20   { background-color: rgb(221 166 55 / 0.20); }
+
+.tint-border-forest-15 { border-color: rgb(20 52 40 / 0.15); }
+.tint-border-forest-20 { border-color: rgb(20 52 40 / 0.20); }
+.tint-border-gold-40   { border-color: rgb(221 166 55 / 0.40); }
+.tint-border-gold-60   { border-color: rgb(221 166 55 / 0.60); }
+.tint-border-scarlet-30 { border-color: rgb(248 80 1 / 0.30); }
+.tint-border-petal-30   { border-color: rgb(255 242 223 / 0.30); }
+
+.tint-ring-gold-40 { --tw-ring-color: rgb(221 166 55 / 0.40); }
+
+/* The placeholder needs its own rule: Tailwind's `placeholder:` variant only wraps
+ * utilities it generated, so `placeholder:tint-forest-50` produced nothing and the
+ * placeholder inherited the input's own colour — reading as already-typed text. */
+.tint-placeholder-forest-50::placeholder { color: rgb(20 52 40 / 0.60); }
+
 /* ── Brand component utilities ──────────────────────────────────────────── */
 
 /* Oswald uppercase label/eyebrow (section headers, nav, button text) */

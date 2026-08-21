@@ -8,13 +8,13 @@
  * 'pdf' displays as "Written", matching the Webflow collection's option name.
  */
 export const MEDIA_BADGES: Record<string, { label: string; className: string }> = {
-  audio: { label: 'Audio', className: 'bg-violet-100 text-violet-700' },
-  video: { label: 'Video', className: 'bg-blue-100 text-blue-700' },
-  pdf: { label: 'Written', className: 'bg-amber-100 text-amber-700' },
+  audio: { label: 'Audio', className: 'tint-bg-plum-10 text-plum' },
+  video: { label: 'Video', className: 'tint-bg-forest-10 text-forest' },
+  pdf: { label: 'Written', className: 'tint-bg-gold-20 text-plum' },
 };
 
 export function MediaBadge({ type, className = '' }: { type: string; className?: string }) {
-  const badge = MEDIA_BADGES[type] ?? { label: type, className: 'bg-stone-100 text-stone-600' };
+  const badge = MEDIA_BADGES[type] ?? { label: type, className: 'tint-bg-forest-10 text-forest' };
   return (
     <span
       className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className} ${className}`}

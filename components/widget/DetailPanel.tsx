@@ -25,7 +25,7 @@ export function DetailPanel({ item, onClose }: DetailPanelProps) {
   if (!item) return null;
 
   const badge =
-    MEDIA_BADGES[item.mediaType] ?? { label: item.mediaType, className: 'bg-stone-100 text-stone-600' };
+    MEDIA_BADGES[item.mediaType] ?? { label: item.mediaType, className: 'tint-bg-forest-10 text-forest' };
 
   // Stored as comma-separated text, not arrays. Split for display and drop the blanks
   // that a trailing comma or an empty column leaves behind.
@@ -35,22 +35,22 @@ export function DetailPanel({ item, onClose }: DetailPanelProps) {
     .filter(Boolean);
 
   return (
-    <div className="bg-white border border-stone-200 rounded-xl p-4 space-y-3 shadow-sm">
+    <div className="bg-petal border tint-border-gold-40 rounded-xl p-4 space-y-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-base font-semibold text-stone-800 leading-snug">{item.title}</h2>
+          <h2 className="text-base font-semibold text-forest leading-snug">{item.title}</h2>
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}>
               {badge.label}
             </span>
-            {item.modality && <span className="text-xs text-stone-400">{item.modality}</span>}
+            {item.modality && <span className="text-xs tint-forest-70">{item.modality}</span>}
           </div>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="shrink-0 text-stone-400 hover:text-stone-700 text-lg leading-none px-1"
+          className="shrink-0 tint-forest-70 hover:text-plum text-lg leading-none px-1"
         >
           ×
         </button>
@@ -69,13 +69,13 @@ export function DetailPanel({ item, onClose }: DetailPanelProps) {
       />
 
       {item.description && (
-        <p className="text-xs text-stone-500 leading-relaxed">{item.description}</p>
+        <p className="text-xs tint-forest-70 leading-relaxed">{item.description}</p>
       )}
 
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pt-1">
           {tags.map((tag) => (
-            <span key={tag} className="text-[11px] text-stone-500 bg-stone-100 rounded-full px-2 py-0.5">
+            <span key={tag} className="text-[11px] tint-forest-70 tint-bg-forest-10 rounded-full px-2 py-0.5">
               {tag}
             </span>
           ))}

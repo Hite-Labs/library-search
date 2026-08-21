@@ -84,10 +84,10 @@ export function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
       onClick={listening ? stop : start}
       disabled={disabled}
       aria-label={listening ? 'Stop listening' : 'Speak your query'}
-      className={`p-2 rounded-full transition-colors disabled:opacity-40 ${
+      className={`p-2.5 rounded-full transition-colors disabled:opacity-40 ${
         listening
-          ? 'bg-red-100 text-red-600 hover:bg-red-200 animate-pulse'
-          : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+          ? 'bg-scarlet text-petal hover:opacity-90 animate-pulse'
+          : 'bg-petal tint-forest-70 border tint-border-forest-20 hover:text-plum hover:border-gold'
       }`}
     >
       {listening ? (

@@ -139,6 +139,25 @@ export function WidgetRoot() {
 
   return (
     <div ref={rootRef} className="p-4 space-y-4 font-sans">
+      {/*
+        The heading names whatever is on screen, so it lives here rather than in Webflow.
+        The iframe is a sealed box: the host page cannot see this widget's state, so a
+        Webflow-authored H1 would still read "Audio Membership" while a track was playing.
+        Derived from `selected` — no extra state to keep in sync.
+      */}
+      {selected && (
+        <button
+          type="button"
+          onClick={() => setSelected(null)}
+          className="text-xs tint-petal-70 hover:text-gold transition-colors"
+        >
+          &lsaquo; Back to results
+        </button>
+      )}
+      <h1 className="font-serif text-2xl text-petal leading-snug">
+        {selected ? selected.title : 'Audio Membership'}
+      </h1>
+
       <SearchBox
         query={query}
         onChange={setQuery}
@@ -147,8 +166,8 @@ export function WidgetRoot() {
       />
 
       {state === 'searching' && (
-        <div className="flex items-center gap-2 text-sm text-stone-500">
-          <div className="w-4 h-4 border-2 border-stone-200 border-t-stone-500 rounded-full animate-spin shrink-0" />
+        <div className="flex items-center gap-2 text-sm tint-petal-80">
+          <div className="w-4 h-4 border-2 tint-border-petal-30 border-t-gold rounded-full animate-spin shrink-0" />
           Looking through the library…
         </div>
       )}
@@ -171,7 +190,7 @@ export function WidgetRoot() {
           <button
             type="button"
             onClick={handleReset}
-            className="text-xs text-stone-400 hover:text-stone-600 underline underline-offset-2"
+            className="text-xs tint-petal-70 hover:text-gold underline underline-offset-2 transition-colors"
           >
             Search again
           </button>
@@ -179,13 +198,13 @@ export function WidgetRoot() {
       )}
 
       {state === 'error' && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+        <div className="bg-petal border tint-border-scarlet-30 rounded-xl p-3 text-sm text-scarlet">
           <p className="font-medium">Something went wrong</p>
-          <p className="text-xs mt-1 text-red-500">{errorMsg}</p>
+          <p className="text-xs mt-1 tint-forest-70">{errorMsg}</p>
           <button
             type="button"
             onClick={handleReset}
-            className="mt-2 text-xs underline"
+            className="mt-2 text-xs text-forest underline underline-offset-2 hover:text-plum"
           >
             Try again
           </button>

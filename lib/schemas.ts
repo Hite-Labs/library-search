@@ -35,7 +35,15 @@ export const SuggestSchema = z.object({
 
 export const SearchSchema = z.object({
   query: z.string().min(1).max(500),
-  memberstackUserId: z.string().optional(),
+  // .nullish(), not .optional(): the widget sends `memberstackUserId: null` whenever it
+  // has no member yet — its state initialises to null and JSON.stringify preserves that,
+  // so the field is present-and-null rather than absent. `.optional()` accepts undefined
+  // only, so every search from a logged-out visitor (and any search racing Memberstack's
+  // postMessage) was rejected with "Invalid request" before it reached the handler.
+  //
+  // The value is advisory in any case: route.ts derives access from the verified JWT and
+  // ignores this field for entitlement decisions.
+  memberstackUserId: z.string().nullish(),
 });
 
 // ── Client management ────────────────────────────────────────────────────────
