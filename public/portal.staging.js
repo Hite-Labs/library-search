@@ -96,12 +96,32 @@
     return document.getElementById(id);
   }
 
+  // The class Webflow uses to hide a block before this script runs. Putting it on every
+  // gated element is what removes the flash: the page paints with them already hidden, and
+  // this script's job becomes revealing the right ones rather than un-showing the wrong
+  // ones half a second later.
+  //
+  // It must be cleared as a CLASS. show() used to only clear the inline style, which does
+  // nothing against a stylesheet rule — an element carrying is-hidden would have stayed
+  // hidden forever, which is the trap waiting for anyone who adds the class expecting the
+  // script to undo it.
+  var HIDDEN_CLASS = 'is-hidden';
+
   function show(el) {
-    if (el) el.style.display = '';
+    if (!el) return;
+    el.style.display = '';
+    // classList is guarded rather than assumed: this file targets old mobile browsers, and
+    // a missing classList would otherwise throw and abort the whole render pass.
+    if (el.classList) el.classList.remove(HIDDEN_CLASS);
   }
 
   function hide(el) {
-    if (el) el.style.display = 'none';
+    if (!el) return;
+    // Both, deliberately. The class alone would lose to any Webflow rule with higher
+    // specificity; the inline style alone would be undone by a later show() but leave the
+    // class behind. Setting both means hide() and show() are exact inverses.
+    el.style.display = 'none';
+    if (el.classList) el.classList.add(HIDDEN_CLASS);
   }
 
   function eachEl(selector, fn) {
@@ -329,7 +349,8 @@
       for (var i = 0; i < PLANS.length; i++) {
         var p = PLANS[i];
         var panel = byId(p.panelId);
-        if (panel) panel.style.display = p.key === key ? 'block' : 'none';
+        if (p.key === key) show(panel);
+        else hide(panel);
         var tab = byField(p.tabField);
         if (tab) tab.classList.toggle('is-active', p.key === key);
       }
@@ -440,7 +461,10 @@
     items.forEach(function (item) {
       var card = template.cloneNode(true);
       card.removeAttribute('id');
-      card.style.display = '';
+      // show(), not a bare style reset: the clone inherits every class from the template,
+      // so a template carrying is-hidden would produce a list of invisible cards. This is
+      // the one place a hidden class propagates by copying rather than by being set.
+      show(card);
       fill(card, item);
       fragment.appendChild(card);
     });
@@ -1009,14 +1033,13 @@
         var upsell = byId('portal-upsell');
         var i;
 
-        if (upsell) upsell.style.display = 'none';
+        hide(upsell);
         for (i = 0; i < PLANS.length; i++) {
-          var panelEl = byId(PLANS[i].panelId);
-          if (panelEl) panelEl.style.display = 'none';
+          hide(byId(PLANS[i].panelId));
         }
 
         if (!member) {
-          if (upsell) upsell.style.display = 'block';
+          show(upsell);
           return;
         }
 
@@ -1062,12 +1085,11 @@
         // who most needs to see an offer never loaded any data — and so never got a promo.
         // init() still runs; the panels stay hidden because none are held, and the fetch
         // exists to populate the upsell.
-        if (!anyHeld && upsell) upsell.style.display = 'block';
+        if (!anyHeld) show(upsell);
 
         for (i = 0; i < PLANS.length; i++) {
           if (!PLANS[i].has) continue;
-          var held = byId(PLANS[i].panelId);
-          if (held) held.style.display = 'block';
+          show(byId(PLANS[i].panelId));
         }
 
         // Single fetch drives every panel — init() handles tabs + data load + promos

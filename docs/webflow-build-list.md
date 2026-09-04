@@ -283,11 +283,43 @@ all being live.
 
 ---
 
+## 5b. Stopping the flash — the `is-hidden` class
+
+**The problem.** The page paints before the script has decided anything, so for about half a
+second every block is visible — including ones the member shouldn't see. Then the script
+runs and yanks them away. It reads as a glitch.
+
+**The fix.** Put `is-hidden` on anything the script controls. The page then paints with those
+blocks already hidden and the script's job becomes *revealing* the right ones, which nobody
+notices, instead of hiding the wrong ones after the fact, which everybody does.
+
+Define it once in Webflow, on a class with no other styles:
+
+```
+.is-hidden { display: none; }
+```
+
+**Safe to put on:** promo blocks, the page wrappers, challenge day and state blocks, the
+plan panels (`portal-coaching`, `portal-cohort`, `portal-challenge`), `portal-upsell`, and
+any empty-state block.
+
+**Do NOT put it on:** the first card inside a list (`ind-sessions-list` and friends). That
+card is the template every row is copied from, and the copies would inherit the class. The
+script already hides the template for you.
+
+**Nothing else to do.** The script clears the class when it decides a block should show, and
+adds it back when it shouldn't — so the two stay in step. A block you mark hidden that the
+script never mentions simply stays hidden, which is the same rule as a promo with no
+dashboard rule.
+
+---
+
 ## 6. Quick reference
 
 | Attribute | Where it goes | Values |
 |---|---|---|
 | id `library-search-widget` | an empty div on the membership page | element **ID**. The search app mounts here. |
+| class `is-hidden` | anything the script shows/hides | `display: none` — stops the load flash (§5b) |
 | `data-promo-page="page"` | one wrapper per page | `membership`, `coaching`, `cohort`, `challenge` |
 | `data-promo="code"` | any promo block, inside a wrapper | must match a dashboard rule |
 | `data-challenge-day="N"` | each day's block | `1` … `21` |
