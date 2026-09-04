@@ -142,9 +142,25 @@ export function ClientsView() {
                           {t === 'cohort' ? 'Cohort' : 'Individual'}
                         </span>
                       ))}
-                      <span className="text-xs text-slate/50 shrink-0">
-                        {r.enrollments.length} program{r.enrollments.length === 1 ? '' : 's'}
-                      </span>
+                      {/*
+                        These people are only visible under "All" — the status tabs ask about
+                        enrollments they don't have. Naming the state matters: "0 programs"
+                        reads as a loading bug, while this reads as the thing it is, someone
+                        who bought a plan that carries no coaching pack (the challenge or the
+                        audio membership) and may need one adding.
+                      */}
+                      {r.enrollments.length === 0 ? (
+                        <span
+                          className="font-label text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 shrink-0"
+                          title="No coaching pack or cohort place. Bought a plan, or their program was removed."
+                        >
+                          No program
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate/50 shrink-0">
+                          {r.enrollments.length} program{r.enrollments.length === 1 ? '' : 's'}
+                        </span>
+                      )}
                     </button>
                     <Link
                       href={`/clients/${r.id}`}

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { PLAN_KEYS } from '@/lib/plan-keys';
+import { PROMO_PAGES, PROMO_PAGE_LABELS } from '@/lib/promo-pages';
 import type { Promo } from './promos-view';
 
 /**
@@ -49,6 +50,7 @@ interface Props {
 export function PromoForm({ promo, onCancel, onSaved }: Props) {
   const [code, setCode] = useState(promo?.code ?? '');
   const [hideIfHas, setHideIfHas] = useState(promo?.hide_if_has ?? '');
+  const [pages, setPages] = useState<string[]>(promo?.pages ?? []);
   const [note, setNote] = useState(promo?.note ?? '');
   const [followsChallengeWindow, setFollowsChallengeWindow] = useState(
     promo?.follows_challenge_window ?? false,
@@ -92,6 +94,7 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
           note: note.trim(),
           followsChallengeWindow,
           hideIfHas: hideIfHas || undefined,
+          pages,
           clearHideIfHas: !hideIfHas,
           startsAt: start ?? undefined,
           clearStartsAt: start === null,
@@ -103,6 +106,7 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
           note: note.trim(),
           followsChallengeWindow,
           hideIfHas: hideIfHas || null,
+          pages,
           startsAt: start,
           endsAt: end,
         };
@@ -178,6 +182,44 @@ export function PromoForm({ promo, onCancel, onSaved }: Props) {
           <p className="text-xs text-slate/50 mt-1">
             Hides the offer from people who already bought it.
           </p>
+        </div>
+
+        <div>
+          <span className={labelClass}>Where it shows</span>
+          <div className="mt-1 space-y-1.5">
+            {PROMO_PAGES.map((pageKey) => (
+              <label key={pageKey} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pages.includes(pageKey)}
+                  onChange={(e) =>
+                    setPages((prev) =>
+                      e.target.checked
+                        ? [...prev, pageKey]
+                        : prev.filter((x) => x !== pageKey),
+                    )
+                  }
+                />
+                <span className="text-sm text-slate/80">{PROMO_PAGE_LABELS[pageKey]}</span>
+              </label>
+            ))}
+          </div>
+          {/*
+            Tick nothing and the promo shows nowhere, which is almost always an unfinished
+            edit rather than an intention — so say so here, at the point of the mistake,
+            as well as flagging the saved rule in the list.
+          */}
+          {pages.length === 0 ? (
+            <p className="text-xs text-amber-700 mt-1">
+              No pages ticked — this promo will not appear anywhere.
+            </p>
+          ) : (
+            <p className="text-xs text-slate/50 mt-1">
+              In Webflow, wrap each page&rsquo;s promo blocks in an element with{' '}
+              <code className="font-mono text-slate/70">data-promo-page</code> set to that
+              page&rsquo;s name.
+            </p>
+          )}
         </div>
 
         <div>

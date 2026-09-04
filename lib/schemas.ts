@@ -234,9 +234,19 @@ const PROMO_CODE = z
 // lib/plan-keys.ts and a Zod enum here would have to be kept in lockstep with it. An
 // unknown key can't match a held plan, so the promo simply shows to everyone — the safe
 // direction for an upsell, and the same reasoning as the DB column having no CHECK.
+// pages is an array of plain strings, not a Zod enum of PROMO_PAGES, for the same reason
+// hideIfHas isn't one: the registry lives in lib/promo-pages.ts and an enum here would have
+// to be kept in lockstep with it. The failure direction is safe either way — an unknown page
+// key matches no wrapper in Webflow, so the promo simply doesn't show.
+//
+// No `clearPages` flag is needed alongside it, unlike the nullable columns below: an empty
+// array is itself the "shows nowhere" value, so [] already says what clearing would say.
+const PROMO_PAGES_FIELD = z.array(z.string().max(64)).max(20);
+
 export const PromoCreateSchema = z.object({
   code: PROMO_CODE,
   hideIfHas: z.string().nullable().optional(),
+  pages: PROMO_PAGES_FIELD.optional(),
   followsChallengeWindow: z.boolean().optional(),
   note: z.string().optional(),
   startsAt: z.string().datetime().nullable().optional(),
@@ -249,6 +259,7 @@ export const PromoCreateSchema = z.object({
 export const PromoUpdateSchema = z.object({
   code: PROMO_CODE.optional(),
   hideIfHas: z.string().nullable().optional(),
+  pages: PROMO_PAGES_FIELD.optional(),
   followsChallengeWindow: z.boolean().optional(),
   note: z.string().optional(),
   active: z.boolean().optional(),
@@ -305,4 +316,22 @@ export const UpdateChallengeSchema = z.object({
   joinCutoffDays: z.number().int().nonnegative().max(730).optional(),
   telegramUrl: z.string().optional(),
   status: z.enum(['draft', 'active', 'complete', 'archived']).optional(),
+});
+
+// ── Suggestions ──────────────────────────────────────────────────────────────
+
+// Public endpoint, so every field is bounded. The caps are generous enough not to truncate
+// a real submission and small enough that the route cannot be used to write arbitrary
+// volumes into the database.
+export const SuggestionCreateSchema = z.object({
+  source: z.enum(['no_match', 'idea']).default('no_match'),
+  query: z.string().max(500).default(''),
+  body: z.string().max(2000).default(''),
+  // Not z.string().email(): the field is optional, and an empty string must pass. Validated
+  // only when something was actually typed.
+  email: z.string().max(200).default(''),
+});
+
+export const SuggestionUpdateSchema = z.object({
+  status: z.enum(['new', 'reviewed', 'actioned', 'dismissed']),
 });

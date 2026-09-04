@@ -109,12 +109,18 @@ everything, or the newest few items. Say which and I'll tell you what it needs.
 **What it is.** A promo is any block you want to show some members and not others. The
 classic case: don't advertise the membership to people who already have it.
 
-**In Webflow.** Build the block however you like, then add one custom attribute to the
-outermost div:
+**In Webflow.** Two attributes, and the first is new.
 
-| Attribute | Value |
-|---|---|
-| `data-promo` | the code, e.g. `cohort-upsell` |
+Give each page **one wrapper** naming that page, and put all of that page's promo blocks
+inside it. Then each block gets its own code:
+
+| Attribute | Goes on | Value |
+|---|---|---|
+| `data-promo-page` | one wrapper per page | `membership`, `coaching`, `cohort`, `challenge` |
+| `data-promo` | each promo block inside it | the code, e.g. `cohort-upsell` |
+
+The point of the wrapper: you can now build every promo on every page and switch them on and
+off per page from the dashboard, without touching Webflow again.
 
 Codes are lowercase letters, numbers and hyphens only. That's enforced by the dashboard, so
 if it won't save, that's why.
@@ -126,6 +132,10 @@ when it runs (on/off, start date, end date).
 **Things worth knowing:**
 
 - A block with no matching dashboard rule **stays hidden**. Create the rule, or nothing shows.
+- A rule with **no pages ticked shows nowhere.** Tick the pages it belongs on. (Unlike "who
+  sees this", where blank means everyone — blank pages means nowhere.)
+- A block that sits outside any `data-promo-page` wrapper ignores the page rule and shows on
+  whatever page it is on, as it did before.
 - The code must match **exactly** — copy it from the dashboard, don't retype it.
 - You can put the **same code on more than one block** (e.g. a desktop and a mobile version).
   All of them reveal together. This is supported on purpose.
@@ -140,7 +150,7 @@ when it runs (on/off, start date, end date).
 
 ---
 
-## 3. The 21-day challenge — READY TO BUILD, ONE THING BLOCKED
+## 3. The 21-day challenge — READY TO BUILD
 
 **What it is.** The challenge is the front door. Someone buys it (or gets it bundled with
 the audio membership), creates a Memberstack account, and from that moment the account is
@@ -257,9 +267,11 @@ panels.
 These three are the only things standing between the promo and challenge work above and it
 all being live.
 
-1. **Create the challenge plan in Memberstack.** Then send me the plan ID (`pln_…`) so it can
-   replace the placeholder in the script, and set `MEMBERSTACK_CHALLENGE_PLAN_ID` on the
-   server. Until this happens the challenge panel stays hidden for everyone.
+1. ~~**Create the challenge plan in Memberstack.**~~ **DONE (2026-09-04)** —
+   `pln_tapping-challenge-ozb50yie` is now set in `portal.js`, `portal.staging.js` and
+   `MEMBERSTACK_CHALLENGE_PLAN_ID`. Still to do on the server: add that env var to
+   `/root/library-search/.env` on the droplet and reload, or the API keeps failing closed
+   and nobody sees the challenge.
 
 2. **Automation: attach the challenge plan when someone buys the audio membership.** The
    challenge is meant to be included with it, and right now nothing connects the two.
@@ -276,7 +288,8 @@ all being live.
 | Attribute | Where it goes | Values |
 |---|---|---|
 | id `library-search-widget` | an empty div on the membership page | element **ID**. The search app mounts here. |
-| `data-promo="code"` | any promo block | must match a dashboard rule |
+| `data-promo-page="page"` | one wrapper per page | `membership`, `coaching`, `cohort`, `challenge` |
+| `data-promo="code"` | any promo block, inside a wrapper | must match a dashboard rule |
 | `data-challenge-day="N"` | each day's block | `1` … `21` |
 | `data-challenge-state="s"` | four state blocks | `running`, `not_started`, `finished`, `none` |
 | `data-field="challenge-name"` | text element | filled by script |

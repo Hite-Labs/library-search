@@ -330,3 +330,65 @@ CREATE TABLE challenges (
 -- The portal's only query: the one runnable challenge. Partial index because every
 -- lookup filters to active.
 CREATE INDEX challenges_active_idx ON challenges (start_date) WHERE status = 'active';
+
+-- ── Suggestions (demand capture from search) ─────────────────────────────────
+--
+-- When search finds nothing, that is a member telling us what the library is missing.
+-- Today that signal is thrown away: the query lives in React state and is discarded on
+-- reset. This table keeps it, along with anything they choose to add.
+--
+-- source distinguishes how it arrived, because the two mean different things:
+--   'no_match'  — they searched, found nothing, and asked for it. Carries the query.
+--   'idea'      — unprompted suggestion.
+-- Kept as a CHECK rather than an enum type, matching the rest of this file.
+--
+-- memberstack_id is nullable and NOT a foreign key: search is public, so a suggestion can
+-- come from someone with no account at all — and those are worth having, since a person
+-- searching before they buy is describing what would make them buy. Nor is it joined to
+-- clients: most searchers have no clients row, and a FK would reject exactly the anonymous
+-- submissions this is for.
+CREATE TABLE suggestions (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source         text NOT NULL DEFAULT 'no_match'
+                   CHECK (source IN ('no_match','idea')),
+  -- What they searched for, when there was a search. This is the most valuable column:
+  -- it is the member's own words for something that does not exist yet.
+  query          text NOT NULL DEFAULT '',
+  -- What they typed into the form, if anything.
+  body           text NOT NULL DEFAULT '',
+  -- Optional contact, so Lindsay can reply. Not required: demanding an email would lose
+  -- the submissions from people who just want to say "I wish you had X".
+  email          text NOT NULL DEFAULT '',
+  memberstack_id text,
+  -- Operator workflow. 'new' until Lindsay has looked at it.
+  status         text NOT NULL DEFAULT 'new'
+                   CHECK (status IN ('new','reviewed','actioned','dismissed')),
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+-- The dashboard's default view: what still needs looking at, newest first.
+CREATE INDEX suggestions_new_idx ON suggestions (created_at DESC) WHERE status = 'new';
+
+-- Which pages a promo may appear on. The member-facing half of this is a wrapper Lindsay
+-- puts on each page — data-promo-page="membership" — with that page's promo blocks nested
+-- inside it. Every block can then live on every page, and this column decides where each
+-- one actually shows.
+--
+-- That inverts how placement used to work. Before, a promo appeared wherever its block was
+-- authored, so moving an offer meant editing Webflow. Now the block stays put and the
+-- dashboard moves it, which is the same split the rest of this table already makes:
+-- Webflow owns the words, the database owns the visibility.
+--
+-- text[] rather than a join table: the list is short, fixed, and never queried except as a
+-- whole. Unconstrained for the same reason hide_if_has is — the page registry lives in
+-- lib/promo-pages.ts, and a CHECK here would need migrating in lockstep with it.
+--
+-- Note the safety direction is the OPPOSITE of hide_if_has, deliberately. An unknown plan
+-- key there fails open (shows the promo to everyone), because a missed impression is worse
+-- than a wasted one. An unknown page key here fails closed: it matches no wrapper, so the
+-- block stays hidden. Same reasoning as a promo code with no rule — a promo that fails to
+-- appear is a problem you notice, one that appears in the wrong place is not.
+--
+-- Default '{}' means a promo with no pages set shows NOWHERE. The dashboard flags that in
+-- amber, since a rule that can never fire is almost always a half-finished edit.
+ALTER TABLE promos ADD COLUMN pages text[] NOT NULL DEFAULT '{}';

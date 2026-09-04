@@ -657,6 +657,25 @@ export interface ClientListRow {
  * completed packs. Done as two whole queries because Neon's tagged-template driver can't
  * concatenate SQL fragments (same reason listCohorts branches this way).
  */
+/**
+ * The dashboard's client list.
+ *
+ * The two branches join differently, deliberately.
+ *
+ * A status filter ("active", "paused", "complete") asks about enrollments, so it INNER joins:
+ * someone with no enrollment has no status and cannot match one.
+ *
+ * The unfiltered "All" branch LEFT joins, because a client with no enrollment is a real
+ * person the dashboard was hiding completely. That happens to anyone who bought only the
+ * 21-day challenge or the audio membership — those plans have no enrollment behind them, the
+ * Memberstack plan IS the entitlement (see db/schema.sql) — and to any client whose pack was
+ * deleted. They existed in the database and appeared in no tab, including this one.
+ *
+ * The aggregates then need FILTER + coalesce: json_agg over a LEFT JOIN miss yields `[null]`
+ * rather than `[]`, which would render as a phantom enrollment card with every field empty.
+ * Ordering falls back to the client's own created_at for the same reason — max() of no rows
+ * is NULL, which would sort every one of these people to the bottom of the list.
+ */
 export async function listClientsWithEnrollments(statusFilter?: string): Promise<ClientListRow[]> {
   const sql = getSql();
   const rows = statusFilter
@@ -679,20 +698,22 @@ export async function listClientsWithEnrollments(statusFilter?: string): Promise
         ORDER BY max(e.created_at) DESC`
     : await sql`
         SELECT c.id, c.name, c.email,
-               bool_or(e.status = 'active') AS any_active,
-               array_agg(DISTINCT e.program_type) AS program_types,
-               json_agg(json_build_object(
+               coalesce(bool_or(e.status = 'active'), false) AS any_active,
+               coalesce(array_agg(DISTINCT e.program_type)
+                          FILTER (WHERE e.id IS NOT NULL), '{}') AS program_types,
+               coalesce(json_agg(json_build_object(
                  'id', e.id, 'program_type', e.program_type, 'goal', e.goal,
                  'status', e.status, 'total_sessions', e.total_sessions,
                  'sessions_done', e.sessions_done, 'cohort_id', e.cohort_id,
                  'cohort_name', co.name,
                  'last_session_at', (SELECT max(sl.session_date) FROM session_logs sl WHERE sl.enrollment_id = e.id)
-               ) ORDER BY e.created_at DESC) AS enrollments
+               ) ORDER BY e.created_at DESC)
+                 FILTER (WHERE e.id IS NOT NULL), '[]') AS enrollments
         FROM clients c
-        JOIN enrollments e ON e.client_id = c.id
+        LEFT JOIN enrollments e ON e.client_id = c.id
         LEFT JOIN cohorts co ON co.id = e.cohort_id
-        GROUP BY c.id, c.name, c.email
-        ORDER BY max(e.created_at) DESC`;
+        GROUP BY c.id, c.name, c.email, c.created_at
+        ORDER BY coalesce(max(e.created_at), c.created_at) DESC`;
   return rows as ClientListRow[];
 }
 
@@ -1439,6 +1460,11 @@ export interface Promo {
   hide_if_has: string | null;
   /** Stop showing this once the active challenge run closes to new joiners. */
   follows_challenge_window: boolean;
+  /**
+   * Which pages this promo may appear on (see lib/promo-pages.ts). Empty means NOWHERE,
+   * not everywhere — the opposite of hide_if_has's blank-means-everyone. See db/schema.sql.
+   */
+  pages: string[];
   note: string;
   active: boolean;
   starts_at: string | null;
@@ -1486,6 +1512,7 @@ export class DuplicatePromoCodeError extends Error {
 export async function createPromo(data: {
   code: string;
   hideIfHas?: string | null;
+  pages?: string[];
   followsChallengeWindow?: boolean;
   note?: string;
   startsAt?: string | null;
@@ -1494,8 +1521,9 @@ export async function createPromo(data: {
   const sql = getSql();
   try {
     const rows = await sql`
-      INSERT INTO promos (code, hide_if_has, follows_challenge_window, note, starts_at, ends_at)
-      VALUES (${data.code}, ${data.hideIfHas ?? null}, ${data.followsChallengeWindow ?? false},
+      INSERT INTO promos (code, hide_if_has, pages, follows_challenge_window, note, starts_at, ends_at)
+      VALUES (${data.code}, ${data.hideIfHas ?? null}, ${data.pages ?? []},
+              ${data.followsChallengeWindow ?? false},
               ${data.note ?? ''}, ${data.startsAt ?? null}, ${data.endsAt ?? null})
       RETURNING *`;
     return rows[0] as Promo;
@@ -1522,6 +1550,7 @@ export async function updatePromo(
   data: {
     code?: string;
     hideIfHas?: string | null;
+    pages?: string[];
     followsChallengeWindow?: boolean;
     note?: string;
     active?: boolean;
@@ -1539,6 +1568,8 @@ export async function updatePromo(
         code = COALESCE(${data.code ?? null}, code),
         hide_if_has = CASE WHEN ${data.clearHideIfHas ?? false}
           THEN NULL ELSE COALESCE(${data.hideIfHas ?? null}, hide_if_has) END,
+        pages = CASE WHEN ${data.pages === undefined}
+          THEN pages ELSE ${data.pages ?? []}::text[] END,
         follows_challenge_window = COALESCE(${data.followsChallengeWindow ?? null}, follows_challenge_window),
         note = COALESCE(${data.note ?? null}, note),
         active = COALESCE(${data.active ?? null}, active),
@@ -1688,5 +1719,72 @@ export async function updateChallenge(
 export async function deleteChallenge(id: string): Promise<boolean> {
   const sql = getSql();
   const rows = await sql`DELETE FROM challenges WHERE id = ${id} RETURNING id`;
+  return rows.length > 0;
+}
+
+// ── Suggestions (demand capture from search) ─────────────────────────────────
+
+export interface Suggestion {
+  id: string;
+  source: 'no_match' | 'idea';
+  query: string;
+  body: string;
+  email: string;
+  memberstack_id: string | null;
+  status: 'new' | 'reviewed' | 'actioned' | 'dismissed';
+  created_at: string;
+}
+
+export async function createSuggestion(data: {
+  source?: 'no_match' | 'idea';
+  query?: string;
+  body?: string;
+  email?: string;
+  memberstackId?: string | null;
+}): Promise<Suggestion> {
+  const sql = getSql();
+  const rows = await sql`
+    INSERT INTO suggestions (source, query, body, email, memberstack_id)
+    VALUES (${data.source ?? 'no_match'}, ${data.query ?? ''}, ${data.body ?? ''},
+            ${data.email ?? ''}, ${data.memberstackId ?? null})
+    RETURNING *`;
+  return rows[0] as Suggestion;
+}
+
+/**
+ * Suggestions for the dashboard, newest first.
+ *
+ * Capped at 500: this is a review queue, not an archive, and an uncapped SELECT here would
+ * quietly become the slowest page in the dashboard once the widget has been live a while.
+ */
+export async function listSuggestions(statusFilter?: string): Promise<Suggestion[]> {
+  const sql = getSql();
+  const rows = statusFilter
+    ? await sql`SELECT * FROM suggestions WHERE status = ${statusFilter}
+                ORDER BY created_at DESC LIMIT 500`
+    : await sql`SELECT * FROM suggestions ORDER BY created_at DESC LIMIT 500`;
+  return rows as Suggestion[];
+}
+
+/** How many are still unreviewed — drives the nav badge. */
+export async function countNewSuggestions(): Promise<number> {
+  const sql = getSql();
+  const rows = await sql`SELECT count(*)::int AS n FROM suggestions WHERE status = 'new'`;
+  return (rows[0]?.n as number) ?? 0;
+}
+
+export async function updateSuggestionStatus(
+  id: string,
+  status: 'new' | 'reviewed' | 'actioned' | 'dismissed',
+): Promise<Suggestion | null> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE suggestions SET status = ${status} WHERE id = ${id} RETURNING *`;
+  return (rows[0] as Suggestion) ?? null;
+}
+
+export async function deleteSuggestion(id: string): Promise<boolean> {
+  const sql = getSql();
+  const rows = await sql`DELETE FROM suggestions WHERE id = ${id} RETURNING id`;
   return rows.length > 0;
 }

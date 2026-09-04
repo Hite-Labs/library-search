@@ -28,10 +28,13 @@
       // The 21-day challenge. Unlike the two above, this plan is bought directly (or comes
       // bundled with the audio membership) rather than being attached when a coach enrols
       // someone — so holding it IS the entitlement, with no dashboard enrollment behind it.
-      // TODO: set planId once the Memberstack plan exists. Until then heldPlans() never
-      // includes it, so the panel stays hidden and nothing else is affected.
+      //
+      // A pln_ id, not the prc_ price that sells it. Memberstack issues both for the same
+      // product and they are not interchangeable: planConnections carry pln_, so a prc_
+      // here would match nothing and hide the challenge from everyone — the same symptom as
+      // the placeholder this replaced, but with nothing left to signal it was unfinished.
       key: 'challenge',
-      planId: 'pln_challenge-REPLACE_ME',
+      planId: 'pln_tapping-challenge-ozb50yie',
       panelId: 'portal-challenge',
       tabField: 'tab-challenge',
       has: false
@@ -801,6 +804,16 @@
   //
   // All this does is reveal the blocks whose code the API returned, and hide the rest.
   //
+  // Placement is the second half of the decision, and it is made here rather than on the
+  // server because only the browser knows which page it is on. Lindsay wraps each page's
+  // promo blocks in one element carrying that page's key —
+  //
+  //   <div data-promo-page="membership"> ... blocks ... </div>
+  //
+  // so the same block can be authored on every page and the dashboard decides where it
+  // actually appears. A block in no wrapper is page-agnostic and behaves exactly as before,
+  // which is what keeps this backwards compatible with pages built before wrappers existed.
+  //
   // Hiding the rest is the load-bearing half. Anything without a matching live rule stays
   // hidden, so a mistyped attribute costs an impression — which Lindsay notices — rather
   // than showing a cohort offer to someone who already bought the cohort, which nobody
@@ -815,11 +828,37 @@
   // eachEl, not byField: Webflow duplicates elements for its mobile layout, and byField is
   // a single-match querySelector. That exact bug already shipped once on the Zoom and
   // Telegram links (see setLink).
-  function renderPromos(codes) {
-    codes = codes || [];
+  function renderPromos(promos) {
+    promos = promos || [];
+
+    // The API used to send a flat array of code strings and now sends {code, pages}
+    // objects. Both are accepted because the two halves deploy separately: portal.js is
+    // cached by Webflow and a browser holding yesterday's copy will call today's API. Taking
+    // only the new shape would blank every promo for the length of that cache.
+    var pagesByCode = {};
+    for (var i = 0; i < promos.length; i++) {
+      var entry = promos[i];
+      if (typeof entry === 'string') pagesByCode[entry] = null; // legacy: no page rule
+      else if (entry && entry.code) pagesByCode[entry.code] = entry.pages || [];
+    }
+
     eachEl('[data-promo]', function (el) {
       var code = el.getAttribute('data-promo');
-      if (code && codes.indexOf(code) !== -1) show(el);
+
+      // No live rule for this code — stays hidden. This is the load-bearing default
+      // described above, and a mistyped attribute lands here.
+      if (!code || !Object.prototype.hasOwnProperty.call(pagesByCode, code)) return hide(el);
+
+      var pages = pagesByCode[code];
+      if (pages === null) return show(el); // legacy payload: no page dimension to apply
+
+      // Not inside a page wrapper: nothing to match against, so treat it as page-agnostic
+      // and let the plan rules alone decide. closest() is guarded for older browsers.
+      var wrapper = el.closest ? el.closest('[data-promo-page]') : null;
+      if (!wrapper) return show(el);
+
+      var page = wrapper.getAttribute('data-promo-page');
+      if (page && pages.indexOf(page) !== -1) show(el);
       else hide(el);
     });
   }

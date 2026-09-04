@@ -108,6 +108,15 @@ function pickEnrollment(enrollments: Enrollment[]): Enrollment | null {
  * plan. One rule covers the whole matrix — individual members see cohort and membership
  * offers, cohort members see individual, and so on.
  *
+ * Each entry carries the pages it may appear on. That second half of the decision is made
+ * in the BROWSER rather than here, because only the browser knows which page it is on — the
+ * portal is several Webflow pages sharing one script and one API call. So this sends a
+ * member's whole allowed set and portal.js narrows it to the page in front of them.
+ *
+ * Sending codes for pages they aren't looking at leaks nothing: a code is an opaque string
+ * with no copy attached, and the ownership filter below has already removed anything they
+ * shouldn't be sold. The rule itself — which plan a promo targets — still never leaves here.
+ *
  * Only codes go to the browser, never the rule behind them. The promo's words and images
  * are authored in Webflow; portal.js reveals the elements whose data-promo attribute is in
  * this list and hides the rest. That keeps the reveal decision here, on the server, which
@@ -124,7 +133,7 @@ function visiblePromoCodes(
   promos: Promo[],
   planState: PlanFlags | null,
   challengeRun: Challenge | null,
-): string[] {
+): Array<{ code: string; pages: string[] }> {
   // Has the active run stopped taking new people? Worked out once rather than per promo.
   //
   // No run, or a run with no start date, means nothing is closed — a promo that follows the
@@ -143,7 +152,7 @@ function visiblePromoCodes(
       if (!key || !isPlanKey(key)) return true;
       return planState?.[key] !== true;
     })
-    .map((p) => p.code);
+    .map((p) => ({ code: p.code, pages: p.pages ?? [] }));
 }
 
 /**

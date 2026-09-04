@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Nav } from '@/components/Nav';
 import { PromoForm } from './promo-form';
 import { PLAN_KEYS } from '@/lib/plan-keys';
+import { PROMO_PAGE_LABELS, type PromoPage } from '@/lib/promo-pages';
 
 /**
  * A promo's access rule. Not its content — the block itself is built in Webflow and matched
@@ -13,6 +14,8 @@ export interface Promo {
   id: string;
   code: string;
   hide_if_has: string | null;
+  /** Pages this promo may appear on. Empty means nowhere — see lib/promo-pages.ts. */
+  pages: string[];
   follows_challenge_window: boolean;
   note: string;
   active: boolean;
@@ -66,6 +69,19 @@ function audienceLabel(hideIfHas: string | null): string {
     return 'Everyone — "' + hideIfHas + '" is not a known plan';
   }
   return 'Everyone except ' + hideIfHas + ' members';
+}
+
+/**
+ * Where this promo shows, in the operator's terms.
+ *
+ * No pages is reported rather than shown as an empty space: unlike a blank audience (which
+ * means "everyone"), a blank page list means the promo appears nowhere at all. A rule that
+ * can never fire looks identical to a working one in a list, which is exactly how it stays
+ * broken — so it gets words and an amber tint, the same treatment as an unknown plan key.
+ */
+function pagesLabel(pages: string[] | null | undefined): string {
+  if (!pages || pages.length === 0) return 'No pages — shows nowhere';
+  return pages.map((p) => PROMO_PAGE_LABELS[p as PromoPage] ?? p).join(', ');
 }
 
 export function PromosView() {
@@ -271,6 +287,14 @@ export function PromosView() {
                         <span aria-hidden>·</span>
                         <span className={unknownPlan ? 'text-amber-700' : ''}>
                           {audienceLabel(p.hide_if_has)}
+                        </span>
+                        <span aria-hidden>·</span>
+                        <span
+                          className={
+                            !p.pages || p.pages.length === 0 ? 'text-amber-700' : ''
+                          }
+                        >
+                          {pagesLabel(p.pages)}
                         </span>
                         {p.follows_challenge_window && (
                           <>

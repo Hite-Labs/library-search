@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# oh-my-claudecode local tool state
+.omc/
+
+# stray working screenshots
+widget-live*.png

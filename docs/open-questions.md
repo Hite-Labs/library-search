@@ -74,6 +74,30 @@ add the `data-field` in Webflow if needed, and finalise the tile.
 
 ## Q-02 — How does a member who buys a paid plan get past the portal gate?
 
+**RESOLVED 2026-09-04 — the premise was wrong, and the real bug was smaller.**
+
+Checked against a live member holding the paid SYS Society plan
+(`scripts/whats-this-member-got.mjs`). A paid plan attaches its own `pln_` id as an ordinary
+active connection — `pln_sys-society-6h2m809m5`, exactly the id already in `portal.js`. So
+paid and free plans read identically and **no free-plan mirror or automation is needed**.
+
+What was actually broken: `MEMBERSTACK_MEMBERSHIP_PLAN_ID` was never set. `planIdFor()`
+returned undefined, `flagsFromPlanIds` scored the plan false for everyone, and the audio
+membership promo showed to people who had already bought it — the symptom this question was
+raised to explain, with a one-line cause.
+
+Set that var (and `MEMBERSTACK_CHALLENGE_PLAN_ID`) wherever the app runs. Both are now in
+`.env.local` and `.env.example`; **the droplet's `/root/library-search/.env` still needs
+them.** Verify with `node scripts/whats-this-member-got.mjs <email>` — every held plan should
+report `matches our config`, never `NOTHING`.
+
+The lesson worth keeping: an unset plan id is indistinguishable from "member doesn't hold it",
+which is exactly the conflation `planIdFor`'s docblock warns about. `/reconcile` refuses to
+run without all four ids for this reason; promos have no such guard and fail open instead.
+
+<details>
+<summary>Original question (kept for context)</summary>
+
 **Waiting on:** Russell (Memberstack dashboard) · **Raised:** 2026-08-17 · **Blocks:**
 selling any paid plan in the portal
 
@@ -92,6 +116,8 @@ duplicates plan ids into two JS files plus two env vars, which is the rotation p
 audit already flags.
 
 **Must be settled before anything goes on sale**, or buyers get nothing.
+
+</details>
 
 ---
 

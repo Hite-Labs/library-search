@@ -7,7 +7,7 @@ take the challenge.
 button are all authored there and hardcoded — nothing about how it looks comes from
 the database.
 
-**The dashboard controls only who may see it.** One rule per block, matched by a code.
+**The dashboard controls who may see it, and where.** One rule per block, matched by a code.
 
 That split is the whole design. Lindsay changes what a promo says by editing Webflow.
 Russell changes who sees it from the dashboard. Neither needs the other, and neither
@@ -19,13 +19,25 @@ needs a deploy.
 
 ### In Webflow
 
-Put the promo block on the page and give its outer element one attribute:
+Wrap each page's promos in one element naming that page, and give every promo block inside
+it its own code:
 
 ```
-data-promo = cohort-upsell
+<div data-promo-page="membership">      <-- one per page
+  <div data-promo="cohort-upsell">  ...  </div>
+  <div data-promo="challenge-offer"> ... </div>
+</div>
 ```
 
-Everything inside is yours — any layout, any copy, any button pointing anywhere.
+| Attribute | Goes on | Value |
+|---|---|---|
+| `data-promo-page` | one wrapper per page | `membership`, `coaching`, `cohort` or `challenge` |
+| `data-promo` | each promo block | the code, e.g. `cohort-upsell` |
+
+That means you can build **every** promo on **every** page and let the dashboard decide where
+each one actually appears — no Webflow edit to move an offer from one page to another.
+
+Everything inside a block is yours — any layout, any copy, any button pointing anywhere.
 
 ### In the dashboard
 
@@ -35,6 +47,7 @@ Go to **Promos** and add a rule with the same code:
 |---|---|
 | **Code** | Must match `data-promo` exactly. Lowercase letters, numbers and hyphens. |
 | **Who sees this** | Which plan holders to hide it from. "Everyone" shows it to all. |
+| **Where it shows** | Tick the pages it may appear on. Tick none and it shows nowhere. |
 | **Note** | For you only. Members never see it. Helps tell rules apart. |
 | **Start / stop showing** | Optional. Leave empty to run until paused. |
 
@@ -49,6 +62,7 @@ A block appears only when **all** of these are true:
 3. today is on or after **Start showing** (or it is empty)
 4. **Stop showing** has not yet passed (or it is empty)
 5. the member does not hold the plan named in **Who sees this**
+6. the page it is sitting on is ticked in **Where it shows**
 
 ### A block with no rule stays hidden
 
@@ -59,6 +73,14 @@ the block.**
 The alternative would be to show anything unrecognised — but then the same typo would
 advertise the cohort to people who already paid for it. A promo that fails to appear
 is a problem you notice. One that appears to the wrong people is not.
+
+### A promo with no pages ticked shows nowhere
+
+Same reasoning as the code, and the opposite of **Who sees this** — where blank means
+*everyone*. Blank pages means *nowhere*, because a promo that appears on a page you didn't
+choose is the mistake this field exists to prevent.
+
+The Promos page flags any such rule in amber, and the form warns you as you save.
 
 ### What "Who sees this" does
 
@@ -117,12 +139,16 @@ already bought it.
 
 ## For developers
 
-- Rule storage and the `code` unique constraint: `db/schema.sql` (promos v2 block)
+- Rule storage, the `code` unique constraint and the `pages` column: `db/schema.sql`
+  (promos v2 block); migration in `db/promo-pages.sql`
+- The page name registry: `lib/promo-pages.ts`
 - Which codes a member qualifies for: `visiblePromoCodes` in `app/api/portal/route.ts`
 - Reveal/hide in the browser: `renderPromos` in `public/portal.js`
 - CRUD: `app/api/promos/`, dashboard at `app/promos/`
 
-The API returns `promo_codes: string[]` — codes only. The rule behind them never
+The API returns `promo_codes: Array<{ code, pages }>`. The page half is applied in the
+browser because only it knows which page it is on; the plan rule is applied on the server and
+never leaves it. The rule behind them never
 reaches the browser, and the reveal decision stays server-side because `portal.js` and
 the server deliberately disagree about Memberstack plan detection (see the comment in
 `gateAndLoad`).
