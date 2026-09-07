@@ -299,6 +299,10 @@ Define it once in Webflow, on a class with no other styles:
 .is-hidden { display: none; }
 ```
 
+**On the membership/library page**, `library-upsell` is the "what is the membership" block.
+Mark it `is-hidden` and `embed.js` reveals it for anyone who does not hold the audio
+membership — logged-out visitors included. A member who already pays never sees it.
+
 **Safe to put on:** promo blocks, the page wrappers, challenge day and state blocks, the
 plan panels (`portal-coaching`, `portal-cohort`, `portal-challenge`), `portal-upsell`, and
 any empty-state block.
