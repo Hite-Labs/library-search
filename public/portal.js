@@ -284,6 +284,14 @@
     eachEl('[data-field="challenge-total-days"]', hide);
     eachEl('[data-field="challenge-starts-at"]', hide);
     eachEl('[data-field="challenge-closes-at"]', hide);
+    // Promos and their page wrappers, for the same reason as the challenge days above.
+    // These were the one gated thing hideAll never covered, which was survivable only while
+    // Webflow was left to hide them: a page that did NOT mark them hidden painted every
+    // offer for the moment before the API answered, including offers for things the member
+    // had already bought. Hiding here makes the script's default match the documented one
+    // instead of depending on how each page happened to be built.
+    eachEl('[data-promo]', hide);
+    eachEl('[data-promo-page]', hide);
   }
 
   function showError(message) {
@@ -923,6 +931,27 @@
       var page = wrapper.getAttribute('data-promo-page');
       if (page && pages.indexOf(page) !== -1) show(el);
       else hide(el);
+    });
+
+    // Now the wrapper itself, once every block inside it has been decided.
+    //
+    // Two things depend on this running LAST. Marking the wrapper hidden is what stops the
+    // flash — the row cannot paint before the API answers, because nothing reveals it until
+    // this line — and nothing else in the file would ever have cleared that class, so a
+    // hidden wrapper previously meant no promo ever appeared on any page.
+    //
+    // A wrapper whose blocks were all rejected stays hidden rather than opening as an empty
+    // row: it is usually a flex/grid parent with its own gap and padding, so revealing it
+    // empty leaves a band of blank space where an offer used to be. That is the case a
+    // member with every plan hits — exactly the person who should see nothing here.
+    eachEl('[data-promo-page]', function (wrap) {
+      var blocks = wrap.querySelectorAll('[data-promo]');
+      var anyVisible = false;
+      for (var b = 0; b < blocks.length; b++) {
+        if (blocks[b].style.display !== 'none') anyVisible = true;
+      }
+      if (anyVisible) show(wrap);
+      else hide(wrap);
     });
   }
 
