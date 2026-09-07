@@ -115,7 +115,12 @@
     }
 
     if (holds) return; // Already a member — leave it hidden.
-    el.classList.remove('is-hidden');
+    // Every spelling: the Webflow build uses `ishidden`, the docs said `is-hidden`, and
+    // removing only one leaves the block hidden by the other while looking revealed.
+    var names = ['is-hidden', 'ishidden', 'isHidden'];
+    if (el.classList) {
+      for (var n = 0; n < names.length; n++) el.classList.remove(names[n]);
+    }
     el.style.display = '';
   }
 })();

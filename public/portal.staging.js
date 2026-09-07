@@ -137,14 +137,23 @@
   // nothing against a stylesheet rule — an element carrying is-hidden would have stayed
   // hidden forever, which is the trap waiting for anyone who adds the class expecting the
   // script to undo it.
-  var HIDDEN_CLASS = 'is-hidden';
+  // Both spellings, deliberately. The build uses `ishidden`; earlier notes said `is-hidden`.
+  // Removing only one leaves the other on the element, and since either can carry the
+  // display:none rule the block stays invisible while the DOM looks like it was revealed —
+  // style="" and no matching class, which is exactly what makes this hard to spot.
+  //
+  // Accepting both costs one array iteration and means the page and the script cannot
+  // disagree about a hyphen.
+  var HIDDEN_CLASSES = ['is-hidden', 'ishidden', 'isHidden'];
+  var HIDDEN_CLASS = HIDDEN_CLASSES[0];
 
   function show(el) {
     if (!el) return;
     el.style.display = '';
     // classList is guarded rather than assumed: this file targets old mobile browsers, and
     // a missing classList would otherwise throw and abort the whole render pass.
-    if (el.classList) el.classList.remove(HIDDEN_CLASS);
+    if (!el.classList) return;
+    for (var h = 0; h < HIDDEN_CLASSES.length; h++) el.classList.remove(HIDDEN_CLASSES[h]);
   }
 
   function hide(el) {

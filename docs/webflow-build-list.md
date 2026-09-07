@@ -299,6 +299,11 @@ Define it once in Webflow, on a class with no other styles:
 .is-hidden { display: none; }
 ```
 
+The script accepts `is-hidden`, `ishidden` and `isHidden` and strips all three, so whichever
+Webflow generated from the class name you typed will work. Removing only one spelling would
+leave the block hidden by the other while the DOM looked revealed — hard to spot, since the
+element ends up with `style=""` and no obviously matching class.
+
 **On the membership/library page**, `library-upsell` is the "what is the membership" block.
 Mark it `is-hidden` and `embed.js` reveals it for anyone who does not hold the audio
 membership — logged-out visitors included. A member who already pays never sees it.
