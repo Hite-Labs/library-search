@@ -92,8 +92,40 @@
     return document.querySelector('[data-field="' + name + '"]');
   }
 
+  // Find a gate container by id OR by data-field, accepting either.
+  //
+  // These were getElementById only, which quietly assumed Webflow ids. Everything else in
+  // this file is addressed by data-field, so it is entirely reasonable to build the panels
+  // that way too — and doing so used to mean the script found nothing, revealed nothing,
+  // and (once the blocks were marked is-hidden) left a paying member staring at a blank
+  // page with no error anywhere.
+  //
+  // Ids are still checked first, so pages already built that way are untouched.
   function byId(id) {
-    return document.getElementById(id);
+    if (!id) return null;
+    return (
+      document.getElementById(id) ||
+      document.querySelector('[data-field="' + id + '"]') ||
+      document.querySelector('[data-panel="' + id + '"]')
+    );
+  }
+
+  // Every match, not just the first — Webflow duplicates elements for its mobile layout, so
+  // a desktop and mobile copy of the same panel both need showing. byId returns one node;
+  // this is what the gate actually iterates.
+  function eachById(id, fn) {
+    if (!id) return;
+    var seen = [];
+    var el = document.getElementById(id);
+    if (el) seen.push(el);
+    var sels = ['[data-field="' + id + '"]', '[data-panel="' + id + '"]'];
+    for (var s = 0; s < sels.length; s++) {
+      var nodes = document.querySelectorAll(sels[s]);
+      for (var i = 0; i < nodes.length; i++) {
+        if (seen.indexOf(nodes[i]) === -1) seen.push(nodes[i]);
+      }
+    }
+    for (var j = 0; j < seen.length; j++) fn(seen[j]);
   }
 
   // The class Webflow uses to hide a block before this script runs. Putting it on every
@@ -348,9 +380,7 @@
       // two panels, whose else-branch meant any unrecognised key showed the cohort panel.
       for (var i = 0; i < PLANS.length; i++) {
         var p = PLANS[i];
-        var panel = byId(p.panelId);
-        if (p.key === key) show(panel);
-        else hide(panel);
+        eachById(p.panelId, p.key === key ? show : hide);
         var tab = byField(p.tabField);
         if (tab) tab.classList.toggle('is-active', p.key === key);
       }
@@ -1016,16 +1046,15 @@
         var member = result && result.data;
 
         // FIX: the gate containers are IDs in Webflow, not data-field attributes.
-        var upsell = byId('portal-upsell');
         var i;
 
-        hide(upsell);
+        eachById('portal-upsell', hide);
         for (i = 0; i < PLANS.length; i++) {
-          hide(byId(PLANS[i].panelId));
+          eachById(PLANS[i].panelId, hide);
         }
 
         if (!member) {
-          show(upsell);
+          eachById('portal-upsell', show);
           return;
         }
 
@@ -1071,11 +1100,11 @@
         // who most needs to see an offer never loaded any data — and so never got a promo.
         // init() still runs; the panels stay hidden because none are held, and the fetch
         // exists to populate the upsell.
-        if (!anyHeld) show(upsell);
+        if (!anyHeld) eachById('portal-upsell', show);
 
         for (i = 0; i < PLANS.length; i++) {
           if (!PLANS[i].has) continue;
-          show(byId(PLANS[i].panelId));
+          eachById(PLANS[i].panelId, show);
         }
 
         // Single fetch drives every panel — init() handles tabs + data load + promos

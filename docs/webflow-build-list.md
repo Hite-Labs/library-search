@@ -307,6 +307,10 @@ membership — logged-out visitors included. A member who already pays never see
 plan panels (`portal-coaching`, `portal-cohort`, `portal-challenge`), `portal-upsell`, and
 any empty-state block.
 
+**The panels and upsell can be an id OR a `data-field` / `data-panel` attribute** — the
+script accepts all three and shows every match, so a desktop and mobile copy both reveal.
+Use whichever suits how you built the page; the *name* is what has to match.
+
 **Do NOT put it on:** the first card inside a list (`ind-sessions-list` and friends). That
 card is the template every row is copied from, and the copies would inherit the class. The
 script already hides the template for you.
