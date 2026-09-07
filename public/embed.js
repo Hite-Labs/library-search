@@ -1,4 +1,17 @@
 (function () {
+  // Every spelling Webflow might have generated from the class name. Removing only one
+  // leaves the block hidden by another while the DOM looks revealed — style="" and no
+  // obviously matching class, which is a genuinely hard failure to see.
+  var HIDDEN_CLASSES = ['is-hidden', 'ishidden', 'isHidden'];
+
+  function unhide(el) {
+    if (!el) return;
+    if (el.classList) {
+      for (var h = 0; h < HIDDEN_CLASSES.length; h++) el.classList.remove(HIDDEN_CLASSES[h]);
+    }
+    el.style.display = '';
+  }
+
   // Hardcoded deliberately, matching portal.js. This was 'NEXT_PUBLIC_APP_URL_PLACEHOLDER',
   // which nothing ever substituted — there is no build step for the files in public/, so the
   // literal string shipped to production. That broke the widget twice over: iframe.src
@@ -8,6 +21,12 @@
 
   var mount = document.getElementById('library-search-widget');
   if (!mount) return;
+
+  // Search is public, so the widget itself is never gated — but the mount div may still be
+  // marked hidden to stop it flashing in before the iframe paints. Nothing else would ever
+  // clear that: this script has no reveal step for the mount, so the class would sit there
+  // and the widget would be built inside an invisible box.
+  unhide(mount);
 
   var iframe = document.createElement('iframe');
   iframe.src = APP_URL + '/widget';
@@ -61,6 +80,10 @@
   // undefined at call time, so no connection ever matched and a paying member was shown the
   // pitch anyway — the one outcome this block must avoid.
   var LIBRARY_UPSELL_ID = 'library-upsell';
+  // The mirror of the upsell: content only members get — the custom audio and whatever else
+  // Lindsay adds to that column later. One id for the whole wrapper, so adding a second
+  // block inside it needs no code change.
+  var LIBRARY_MEMBER_ID = 'library-member-content';
   var MEMBERSHIP_PLAN_ID = 'pln_sys-society-6h2m809m5';
 
   // Run the upsell gate independently of the iframe, rather than only from its load
@@ -98,8 +121,10 @@
   // Deliberately not a promo block. Promos are gated server-side and rendered by portal.js,
   // which does not run on this page — the membership page loads this script instead.
   function revealLibraryUpsell(member) {
-    var el = document.getElementById(LIBRARY_UPSELL_ID);
-    if (!el) return; // Block not on this page — nothing to do.
+    var upsellEl = document.getElementById(LIBRARY_UPSELL_ID);
+    var memberEl = document.getElementById(LIBRARY_MEMBER_ID);
+    if (!upsellEl && !memberEl) return; // Neither block on this page — nothing to do.
+    var el = upsellEl;
 
     var data = (member && (member.data || member)) || null;
     var conns = (data && data.planConnections) || [];
@@ -114,13 +139,13 @@
       holds = true;
     }
 
-    if (holds) return; // Already a member — leave it hidden.
-    // Every spelling: the Webflow build uses `ishidden`, the docs said `is-hidden`, and
-    // removing only one leaves the block hidden by the other while looking revealed.
-    var names = ['is-hidden', 'ishidden', 'isHidden'];
-    if (el.classList) {
-      for (var n = 0; n < names.length; n++) el.classList.remove(names[n]);
-    }
-    el.style.display = '';
+    // Exactly one of the two shows, and the pair are deliberately asymmetric.
+    //
+    // The upsell is revealed for anyone who does NOT hold the membership — logged-out
+    // visitors included, since search is public and they are who it converts. Member
+    // content requires a positive, live connection: unknown reads as "not a member", so a
+    // failed lookup withholds paid content rather than leaking it.
+    if (holds) unhide(memberEl);
+    else unhide(el);
   }
 })();

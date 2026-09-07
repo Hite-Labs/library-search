@@ -304,6 +304,18 @@ Webflow generated from the class name you typed will work. Removing only one spe
 leave the block hidden by the other while the DOM looked revealed — hard to spot, since the
 element ends up with `style=""` and no obviously matching class.
 
+**On the membership/library page** there are three ids, all safe to mark hidden:
+
+| Id | Who sees it |
+|---|---|
+| `library-search-widget` | everyone — the search app mounts here and is revealed on load |
+| `library-upsell` | anyone WITHOUT the audio membership, logged-out visitors included |
+| `library-member-content` | only a live audio-membership holder — the custom audio and anything else members-only |
+
+`library-upsell` and `library-member-content` are opposites: exactly one of them shows. Put
+whatever members-only content you like inside the second wrapper; adding blocks to it needs
+no code change. A lapsed member sees the upsell again, not the content.
+
 **On the membership/library page**, `library-upsell` is the "what is the membership" block.
 Mark it `is-hidden` and `embed.js` reveals it for anyone who does not hold the audio
 membership — logged-out visitors included. A member who already pays never sees it.
