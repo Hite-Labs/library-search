@@ -7,6 +7,20 @@ import { checkRate, getClientIp } from '@/lib/rate-limit';
 export const runtime = 'nodejs';
 
 /**
+ * DORMANT (2026-09-07) — built, working, and deliberately not wired to anything.
+ *
+ * The empty-search state sends members to two Webflow pages instead (see ResultsList), and
+ * those forms email Lindsay. This route would store the same intent in Postgres, along with
+ * the actual search query, which is the better signal — but there is no email in this
+ * product: no Resend, no notifier of any kind. A suggestion written here would sit in a
+ * table until somebody thought to look, and nobody would.
+ *
+ * So the decision is Russell's and it is the right one: a worse signal that reaches a human
+ * beats a better one that does not. Kept rather than deleted because the missing piece is
+ * notification, not this code — wire it up when something can tell Lindsay a row arrived.
+ *
+ * Nothing calls this. It stays reachable, rate limited and safe if something ever does.
+ *
  * POST /api/suggestions — a member (or an anonymous searcher) tells us what is missing.
  *
  * PUBLIC, deliberately and carefully. The search box is open to non-members, so the most

@@ -225,6 +225,30 @@ as absolute timestamps and are unaffected; only future generations use it.
 the member's. Members always see their own local time — the portal formats dates in the
 browser's zone. A member in another country sees the correctly converted hour either way.
 
+
+---
+
+## Q-08 — Empty search: Webflow forms, not the suggestions table
+
+**RESOLVED 2026-09-07** · **Decided by:** Russell
+
+A search that finds nothing now offers two buttons — submit an idea (free), or commission a
+recording ($59) — both pointing at Webflow pages. `POST /api/suggestions` exists, works, and
+is deliberately left unwired.
+
+**Why the worse signal won.** The API would capture the member's actual search query, which
+is the most useful thing here: their own words for something we do not have. But this product
+sends no email — there is no Resend, no notifier, nothing. A row written to `suggestions`
+would wait for someone to remember to look at a dashboard page that does not exist yet. The
+Webflow forms already reach Lindsay's inbox.
+
+A weaker signal that reaches a human beats a stronger one that does not.
+
+**What would change the answer:** any notification path at all — Resend, a webhook, even a
+weekly digest. The route is kept intact for that day; the missing piece is delivery, not
+capture. If it is wired later it also wants a dashboard queue to read it, which is the other
+half that was never built.
+
 ---
 
 ## Q-05 — Staging can't authenticate against the live backend
