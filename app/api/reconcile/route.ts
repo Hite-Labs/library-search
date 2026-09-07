@@ -3,6 +3,7 @@ import { listClientEntitlements, setClientMemberstackId } from '@/lib/db';
 import {
   listMembersWithPlans,
   setMemberPlan,
+  isPlanAttachable,
   isMemberstackConfigured,
   planEnvVarFor,
   planIdFor,
@@ -234,6 +235,22 @@ export async function POST(req: Request) {
         error: `memberstackId, planType (${PLAN_KEYS.join('|')}) and action (attach|detach) are required`,
       },
       { status: 400 },
+    );
+  }
+
+  // Paid plans cannot be attached through the API — Memberstack answers `plan-not-free`.
+  // Caught here so the operator gets the reason instead of a 500, and so the app never looks
+  // like it is failing at something it was never allowed to do. Detach is still permitted:
+  // removing access an operator can see is wrong is a legitimate correction.
+  if (action === 'attach' && !isPlanAttachable(planType)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          `${planType} is a paid plan, so it can only be granted by purchase or by a ` +
+          `Memberstack automation — not from here. Add it in Memberstack directly.`,
+      },
+      { status: 422 },
     );
   }
 

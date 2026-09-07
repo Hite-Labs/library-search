@@ -346,6 +346,28 @@ export async function setMemberPlan(
 }
 
 /**
+ * Is this plan one the API can attach at all?
+ *
+ * Memberstack's addFreePlan refuses a paid plan outright — `plan-not-free`, "This plan
+ * requires payment" (confirmed against the live account, 2026-09-07). Paid plans arrive
+ * only through checkout or a Memberstack automation, never through us.
+ *
+ * That is not a bug to work around: a paid entitlement granted by an admin button would be
+ * access nobody was billed for. But the dashboard should say so before offering the button,
+ * rather than letting an operator click and collect a 500.
+ *
+ * Derived from the env config rather than asked of Memberstack, because the Admin SDK
+ * exposes no plans endpoint (there is no `client.plans`). The two paid plans are the two the
+ * member buys for themselves — the audio membership and the challenge — which is the same
+ * distinction `/reconcile` already draws when it declines to diff them.
+ */
+const PAID_PLAN_KEYS: readonly PlanKey[] = ['membership', 'challenge'];
+
+export function isPlanAttachable(key: PlanKey): boolean {
+  return !PAID_PLAN_KEYS.includes(key);
+}
+
+/**
  * Verify a member JWT (from the _ms-mid cookie). Returns the trusted member id, or
  * null for any invalid/expired token — callers should degrade gracefully, never 500.
  */

@@ -249,6 +249,53 @@ weekly digest. The route is kept intact for that day; the missing piece is deliv
 capture. If it is wired later it also wants a dashboard queue to read it, which is the other
 half that was never built.
 
+
+---
+
+## Q-09 — Bundling the challenge with the audio membership
+
+**Waiting on:** Russell (Memberstack dashboard) · **Raised:** 2026-09-07 · **Blocks:** the
+challenge being included with the membership, as intended
+
+The challenge is meant to come free with SYS Society. It does not: today it has to be bought
+separately, and nothing connects the two.
+
+### This cannot be done from the app — confirmed, not assumed
+
+Attaching the challenge plan through the Admin API was tried against the live account on
+2026-09-07 and Memberstack refused it:
+
+```
+{ "code": "plan-not-free", "message": "This plan requires payment." }
+```
+
+`addFreePlan` is the only attach method the SDK offers, and it takes free plans only. There
+is no plans endpoint on the Admin SDK either, so the app cannot even ask which plans are
+paid — `isPlanAttachable` in lib/memberstack.ts derives it from config instead.
+
+This is the right restriction rather than an obstacle: a paid entitlement handed out by an
+admin button is access nobody was billed for.
+
+### The fix, in Memberstack
+
+An automation: **when a member gains the SYS Society plan, also grant the challenge plan.**
+Both are paid, so both are granted through Memberstack's own billing rules, which is exactly
+what the API is refusing to bypass.
+
+Worth deciding at the same time: what happens when the membership lapses. Leaving the
+challenge attached means a cancelled member keeps it forever; removing it ejects someone
+possibly mid-run. Nothing in the app revokes plans, so whatever the automation does is what
+happens.
+
+### What is already handled in code
+
+Nothing needs building. `getMemberPlanState` reads whichever plans a member holds, and the
+portal grants the challenge on the plan alone — however it was obtained. The moment the
+automation attaches it, the challenge appears for that member with no deploy.
+
+`/reconcile`'s attach button now refuses paid plans with an explanation (422) rather than
+throwing, so the restriction is visible where an operator would otherwise meet it as a 500.
+
 ---
 
 ## Q-05 — Staging can't authenticate against the live backend
