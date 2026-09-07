@@ -163,3 +163,29 @@ body {
   color: var(--sys-plum);
 }
 .btn-spark-outline:disabled { opacity: 0.5; cursor: default; }
+
+/* Outline pill for dark grounds (the search widget, which is transparent over the plum
+   page). btn-spark-outline is built for the cream dashboard: its slate text and slate
+   border all but vanish on plum. Same shape, petal ink. */
+.btn-spark-outline-light {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.5rem;
+  border-radius: 9999px;
+  background-color: transparent;
+  border: 1px solid rgb(255 242 223 / 0.35);
+  color: rgb(255 242 223 / 0.90);
+  font-family: var(--font-oswald), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+.btn-spark-outline-light:hover {
+  border-color: var(--sys-gold);
+  color: var(--sys-gold);
+}

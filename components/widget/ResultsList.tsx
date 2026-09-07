@@ -23,6 +23,12 @@ function renderBold(text: string) {
   );
 }
 
+// Where a member goes when the library has nothing for them. Hardcoded rather than fetched:
+// they are two fixed Webflow pages, and a round trip to learn URLs that never change would
+// delay the one screen that most needs to be immediate.
+const SUGGEST_URL = 'https://www.showyourspark.com/coaching/sys-audio-suggestion';
+const CUSTOM_URL = 'https://www.showyourspark.com/coaching/sys-custom-hypnosis';
+
 interface ResultsListProps {
   /** null when the summary was skipped or failed — render cards alone, not an empty box. */
   response: string | null;
@@ -56,6 +62,41 @@ export function ResultsList({ response, results, selectedId, onSelect, demoted }
         above" is both redundant and a contradiction of the heading. Undemoted, the full
         list stays intact with the selection highlighted in place.
       */}
+      {/*
+        Nothing matched. This is the most valuable moment in the widget — a member has just
+        described something the library does not have — so it ends in two actions rather
+        than an apology.
+
+        The hierarchy is deliberate. Suggesting an idea is free, takes a sentence, and is
+        what we want most of: it costs the member nothing and tells us what to record next.
+        So it leads, in the filled button. Commissioning a recording is $59 and a much bigger
+        ask, so it sits second as an outline — present for the member who wants it now,
+        without pricing the free option out of the frame.
+
+        Both full width and stacked, at every size rather than just mobile: two pill buttons
+        side by side in a ~360px iframe would wrap mid-word, and a full-width target is the
+        easier tap on a phone, which is where these are read.
+      */}
+      {results.length === 0 && (
+        <div className="space-y-2">
+          <a
+            href={SUGGEST_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-spark w-full"
+          >
+            Submit your idea
+          </a>
+          <a
+            href={CUSTOM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-spark-outline-light w-full"
+          >
+            Request a tailored recording — $59
+          </a>
+        </div>
+      )}
       {visible.length > 0 && (
         <div className="space-y-3">
           {demoted && (

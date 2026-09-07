@@ -5,8 +5,14 @@
  * SEARCH_SYSTEM_PROMPT, which put the threshold in two places and let weak matches render
  * cards underneath this sentence.
  */
-export const SEARCH_NO_MATCH_RESPONSE =
-  "I don't have something that's a perfect fit for that — reach out to Lindsay directly and she can point you in the right direction.";
+// Deliberately just the question. The two ways to answer it — suggest an idea, or
+// commission a recording — are BUTTONS rendered by the widget (see ResultsList), not
+// sentences: "reach out to Lindsay directly" was unclickable prose, so the one moment a
+// member tells us what the library is missing ended in a dead end.
+//
+// Kept short for the same reason. It sits directly above two full-width CTAs, and a
+// paragraph there would compete with them for the eye.
+export const SEARCH_NO_MATCH_RESPONSE = 'Not finding what you need?';
 
 /**
  * Summarise-only. The route has already decided these matches are strong enough to show, so
