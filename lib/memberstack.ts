@@ -3,7 +3,7 @@
 import memberstackAdmin from '@memberstack/admin';
 import { randomBytes } from 'node:crypto';
 import { env } from './env';
-import { PLAN_KEYS, type PlanKey, type PlanFlags } from './plan-keys';
+import { PLAN_KEYS, isPlanKey as isPlanKeyFn, type PlanKey, type PlanFlags } from './plan-keys';
 
 type AdminClient = ReturnType<typeof memberstackAdmin.init>;
 
@@ -296,6 +296,54 @@ export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> 
   return out;
 }
 
+// ── Testing: pretend a member holds fewer plans than they do ─────────────────
+//
+// Every paid plan has to be BOUGHT to be held — addFreePlan refuses them (see
+// isPlanAttachable) — so the only account that can exercise the portal end to end is one
+// that owns everything. Which is precisely the account that can never see an upsell, an
+// empty state, or a locked panel: the states most likely to be broken are the ones the
+// tester is least able to reach.
+//
+// The alternatives are all worse. Detaching a paid plan risks not being able to re-attach
+// it without paying again; a second test account needs its own purchases; and editing the
+// live plan ids to lie about what exists breaks the real site while the test runs.
+//
+// So this subtracts at the one place every entitlement decision reads. Set
+// PORTAL_PRETEND_PLANS to the plans a member should APPEAR to hold:
+//
+//   PORTAL_PRETEND_PLANS=mem_abc123:cohort,challenge   → only those two
+//   PORTAL_PRETEND_PLANS=mem_abc123:none               → holds nothing (the funnel case)
+//   PORTAL_PRETEND_PLANS=                              → off, the normal state
+//
+// Deliberately subtract-only in spirit but not enforced as such: naming a plan the member
+// does not really hold would grant it, so this is a server-side env var an operator sets
+// knowingly, never anything a request can influence. It is scoped to ONE member id for the
+// same reason — a typo cannot silently re-gate the whole site.
+function pretendPlansFor(memberstackId: string): PlanFlags | null {
+  const raw = process.env.PORTAL_PRETEND_PLANS;
+  if (!raw) return null;
+
+  const sep = raw.indexOf(':');
+  if (sep === -1) return null;
+
+  const target = raw.slice(0, sep).trim();
+  if (target !== memberstackId) return null;
+
+  const flags = noPlans();
+  const listed = raw.slice(sep + 1).trim();
+  if (listed && listed !== 'none') {
+    for (const key of listed.split(',').map((k) => k.trim())) {
+      if (isPlanKeyFn(key)) flags[key] = true;
+    }
+  }
+  console.warn(
+    `[memberstack] PORTAL_PRETEND_PLANS active for ${target}: ` +
+      `${PLAN_KEYS.filter((k) => flags[k]).join(', ') || 'no plans'}. ` +
+      'This is a testing override — unset it in production.',
+  );
+  return flags;
+}
+
 /**
  * The active plan state of ONE member, for callers that need to know what a member
  * already holds before changing it (see `ensureMemberProvisioned`). `listMembersWithPlans`
@@ -312,6 +360,9 @@ export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> 
 export async function getMemberPlanState(memberstackId: string): Promise<PlanFlags | null> {
   const client = getClient();
   if (!client) return null;
+
+  const pretended = pretendPlansFor(memberstackId);
+  if (pretended) return pretended;
 
   try {
     const res = await client.members.retrieve({ id: memberstackId });
