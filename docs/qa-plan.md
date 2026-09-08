@@ -243,6 +243,19 @@ Bugs found and fixed during P0/P3, all of them in the reveal path rather than th
 5. The search widget was revealed to anyone reaching the page, handing the paid library to
    every coaching, cohort and challenge customer.
 
+### Cache gotcha — use portal.js, not portal.staging.js
+
+During P4 the cohort panel did not appear, and switching the page from
+`portal.staging.js` to `portal.js` fixed it immediately. Both files were verified identical
+on the server apart from the price hunk, and both carried every fix — so the failure was a
+**browser-cached copy** of the staging file, not a code difference. `Cache-Control:
+max-age=0` on both means a hard refresh normally suffices, but the staging file had been
+loaded across many reloads before the fixes landed.
+
+`portal.staging.js` exists only to point the buy button at a $1 test price. That purchase is
+done, so the member pages should load **`portal.js`** — the code that actually ships. If
+staging is ever needed again, hard-refresh it deliberately and re-check.
+
 ## 7. Cross-cutting checks
 
 - **Promo copy and links.** Can start now. ⚠️ Two buttons currently carry
