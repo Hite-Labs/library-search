@@ -59,6 +59,12 @@
     }
   ];
 
+  // True once gateAndLoad has deferred the reveal to the server's answer. Declared here,
+  // beside PLANS, because showError reads it: `var` hoists but its assignment does not, so
+  // declaring it lower down left it undefined for any error thrown before gateAndLoad ran —
+  // which would skip the reveal entirely and leave a blank page behind the error.
+  var pendingReveal = false;
+
   /** Plans with a panel of their own — the ones tabs and the upsell gate care about. */
   function panelPlans() {
     var out = [];
@@ -295,6 +301,10 @@
   }
 
   function showError(message) {
+    // A failed load must still resolve the page: gateAndLoad now defers every reveal to the
+    // server's answer, so without this a fetch failure would leave panels and upsell alike
+    // hidden forever — a blank page rather than an error with context around it.
+    if (pendingReveal) revealFromPlans();
     var errorEl = byField('portal-error');
     if (errorEl) {
       var msgEl = errorEl.querySelector('[data-field="message"]');
@@ -774,6 +784,7 @@
     data = data || {};
 
     applyServerPlans(data.plans);
+    revealFromPlans();
 
     if (data.client) renderClient(data.client);
 
@@ -820,25 +831,9 @@
   function applyServerPlans(plans) {
     if (!plans) return;
 
-    var changed = false;
     for (var i = 0; i < PLANS.length; i++) {
-      var truth = plans[PLANS[i].key] === true;
-      if (PLANS[i].has !== truth) changed = true;
-      PLANS[i].has = truth;
+      PLANS[i].has = plans[PLANS[i].key] === true;
     }
-    if (!changed) return; // The common case: both halves already agree.
-
-    var anyHeld = false;
-    for (i = 0; i < PLANS.length; i++) {
-      if (PLANS[i].panelId && PLANS[i].has) anyHeld = true;
-      eachById(PLANS[i].panelId, PLANS[i].has ? show : hide);
-    }
-    if (anyHeld) eachById('portal-upsell', hide);
-    else eachById('portal-upsell', show);
-
-    // Tabs are derived from what is held, so they have to be rebuilt rather than left
-    // pointing at panels that just closed.
-    initTabs();
   }
 
   // ===== 21-day challenge =====
@@ -1119,6 +1114,20 @@
     }
   }
 
+  // Open whatever the current PLANS[] state says should be open. Called once the server has
+  // answered — or from the error path, so a failed fetch still resolves the page.
+  function revealFromPlans() {
+    pendingReveal = false;
+    var anyHeld = false;
+    for (var i = 0; i < PLANS.length; i++) {
+      if (PLANS[i].panelId && PLANS[i].has) anyHeld = true;
+      eachById(PLANS[i].panelId, PLANS[i].has ? show : hide);
+    }
+    if (anyHeld) eachById('portal-upsell', hide);
+    else eachById('portal-upsell', show);
+    initTabs();
+  }
+
   function gateAndLoad() {
     window.$memberstackDom.getCurrentMember().then(function (result) {
       try {
@@ -1179,12 +1188,23 @@
         // who most needs to see an offer never loaded any data — and so never got a promo.
         // init() still runs; the panels stay hidden because none are held, and the fetch
         // exists to populate the upsell.
-        if (!anyHeld) eachById('portal-upsell', show);
-
-        for (i = 0; i < PLANS.length; i++) {
-          if (!PLANS[i].has) continue;
-          eachById(PLANS[i].panelId, show);
-        }
+        // NOTHING is revealed here any more — not the panels, not the upsell.
+        //
+        // This pass reads $memberstackDom, which is a guess: it is the browser's view of the
+        // member, and the server is authoritative. Opening panels on the guess and letting
+        // applyServerPlans correct it a moment later is precisely the flash the hidden class
+        // exists to prevent — worse than the original one, because it flashes empty panels
+        // that then close.
+        //
+        // So the reveal waits for the fetch, which is the only thing that actually knows.
+        // The plans worked out above are still kept on PLANS[] for initTabs and for
+        // applyServerPlans to compare against.
+        //
+        // The risk in deferring is a page that never reveals anything if the fetch fails.
+        // That is covered: every failure path calls showError, and revealFromPlans runs from
+        // there too, so a member whose data could not load still gets their panels or the
+        // upsell rather than a blank page.
+        pendingReveal = true;
 
         // Single fetch drives every panel — init() handles tabs + data load + promos
         init();
