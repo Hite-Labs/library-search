@@ -285,6 +285,10 @@
     // day 21 to someone on day 2.
     eachEl('[data-challenge-day]', hide);
     eachEl('[data-challenge-state]', hide);
+    // Hidden up front like the rest, even though it shows for the OPPOSITE audience: a
+    // member who holds the challenge would otherwise see "join the challenge" flash before
+    // the API says they already have.
+    eachEl('[data-field="challenge-join"]', hide);
     eachEl('[data-field="challenge-name"]', hide);
     eachEl('[data-field="challenge-current-day"]', hide);
     eachEl('[data-field="challenge-total-days"]', hide);
@@ -859,6 +863,14 @@
   //
   // eachEl throughout, never byField: Webflow duplicates elements for mobile.
   function renderChallenge(challenge) {
+    // The join CTA is the one element on this page with INVERTED logic: it is for people who
+    // do NOT have the challenge, so it shows exactly when everything else here is hidden.
+    //
+    // `challenge` is non-null whenever the member holds either challenge plan — bought
+    // outright, or the free twin the audio membership carries — so this covers both routes
+    // without knowing which one applied.
+    eachEl('[data-field="challenge-join"]', challenge ? hide : show);
+
     // Not entitled — no challenge plan at all. Hide everything challenge-related.
     if (!challenge) {
       eachEl('[data-challenge-day]', hide);

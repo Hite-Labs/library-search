@@ -352,6 +352,18 @@ dashboard rule.
 
 ---
 
+### The join button, and the Telegram link
+
+**`data-field="challenge-join"`** goes on the "join the challenge" button. It is the one
+element on that page with inverted logic — it shows exactly when everything else is hidden,
+because it is for people who do *not* have the challenge yet. It disappears the moment they
+hold it, whether they bought it outright or got it free with the audio membership.
+
+**`data-field="challenge-telegram-link"`** goes on the `<a>` itself, not a wrapper. The
+script sets its `href` from the challenge's Telegram URL in the dashboard, so **do not paste
+the URL into Webflow** — set it at `/challenges` and it follows whichever run is live. A
+hardcoded link keeps pointing at last run's group after the next one starts.
+
 ## 6. Quick reference
 
 | Attribute | Where it goes | Values |
@@ -367,6 +379,7 @@ dashboard rule.
 | `data-field="challenge-total-days"` | text element | filled by script |
 | `data-field="challenge-starts-at"` | text element | filled by script |
 | `data-field="challenge-closes-at"` | text element | filled by script |
-| `data-field="challenge-telegram-link"` | link element | href set by script |
+| `data-field="challenge-telegram-link"` | link element | href set by script — set the URL at /challenges, don't hardcode it |
+| `data-field="challenge-join"` | the "join the challenge" button | shown ONLY to people who do NOT have the challenge |
 | `data-field="tab-challenge"` | the challenge tab/nav link | shown when entitled |
 | id `portal-challenge` | the challenge panel | shown when entitled |
