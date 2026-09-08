@@ -44,6 +44,11 @@ const CONFIGURED = {
   individual: process.env.MEMBERSTACK_INDIVIDUAL_PLAN_ID,
   cohort: process.env.MEMBERSTACK_COHORT_PLAN_ID,
   challenge: process.env.MEMBERSTACK_CHALLENGE_PLAN_ID,
+  // The free twin the audio membership carries. Reported as CHALLENGE too, because holding
+  // either id is the same entitlement — see planIdsFor in lib/memberstack.ts. Without it
+  // here, a member bundled into the challenge would read as "matches NOTHING", which is the
+  // line this script uses to mean "misconfiguration".
+  'challenge (included)': process.env.MEMBERSTACK_CHALLENGE_INCLUDED_PLAN_ID,
   membership: process.env.MEMBERSTACK_MEMBERSHIP_PLAN_ID,
 };
 
