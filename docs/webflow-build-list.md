@@ -308,9 +308,16 @@ element ends up with `style=""` and no obviously matching class.
 
 | Id | Who sees it |
 |---|---|
-| `library-search-widget` | everyone — the search app mounts here and is revealed on load |
-| `library-upsell` | anyone WITHOUT the audio membership, logged-out visitors included |
+| `library-search-widget` | everyone who reaches this page — the search app mounts here |
+| `library-upsell` | anyone WITHOUT a live audio membership |
 | `library-member-content` | only a live audio-membership holder — the custom audio and anything else members-only |
+
+**"Everyone" means everyone who reaches the page, which is not the public.** The search *API*
+is open, so the widget works without a login — but this page is member-gated in Webflow, so
+in practice its audience is people who hold *something*: a coaching client, a cohort member,
+a challenge buyer. The upsell is therefore a cross-sell to existing customers, not an
+acquisition surface. Cold prospects see the marketing landing page instead, which is outside
+this system.
 
 `library-upsell` and `library-member-content` are opposites: exactly one of them shows. Put
 whatever members-only content you like inside the second wrapper; adding blocks to it needs

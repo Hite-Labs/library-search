@@ -41,7 +41,13 @@
   // marked hidden to stop it flashing in before the iframe paints. Nothing else would ever
   // clear that: this script has no reveal step for the mount, so the class would sit there
   // and the widget would be built inside an invisible box.
-  if (mount) unhide(mount);
+  // NOT revealed here. Doing so showed the search bar immediately, then the gate resolved a
+  // moment later and the upsell appeared above it — the bar visibly jumping down the page.
+  // The widget is revealed alongside the gate's decision instead, so the column settles once.
+  //
+  // Kept out of the gate's own branches because it is not plan-dependent: everyone who
+  // reaches this page gets search, member or not.
+
 
   // The search widget itself. Skipped entirely on a page that has no mount for it —
   // the membership blocks below are a separate feature and must still be gated there.
@@ -192,7 +198,10 @@
   function revealLibraryUpsell(member) {
     var upsellEl = document.getElementById(LIBRARY_UPSELL_ID);
     var memberEl = document.getElementById(LIBRARY_MEMBER_ID);
-    if (!upsellEl && !memberEl) return; // Neither block on this page — nothing to do.
+    if (!upsellEl && !memberEl) {
+      unhide(mount); // No gated blocks here, so nothing to wait for.
+      return;
+    }
 
     // Withhold the members-only column until we know, rather than trusting the page to have
     // marked it hidden. It holds paid content, so "not yet decided" must look like "not a
@@ -234,6 +243,8 @@
         rehide(memberEl);
         unhide(el);
       }
+      // One paint: the widget arrives with whichever column won, rather than ahead of it.
+      unhide(mount);
     });
   }
 })();
