@@ -45,6 +45,12 @@ const envSchema = z.object({
   // holding it IS the entitlement. Unset → the audio-membership offer shows to everyone,
   // including people who already bought it, which is the failure this id prevents.
   MEMBERSTACK_MEMBERSHIP_PLAN_ID: z.string().optional(),
+  // Optional: the FREE "challenge included" plan id (pln_…). The paid challenge plan cannot
+  // be attached by anything but a purchase — Memberstack answers `plan-not-free` — so this
+  // free twin is what the audio membership grants instead, automatically, as part of buying
+  // SYS Society. Holding EITHER plan is challenge access; see planIdsFor.
+  // Unset → only the paid plan grants the challenge, and the bundle silently does nothing.
+  MEMBERSTACK_CHALLENGE_INCLUDED_PLAN_ID: z.string().optional(),
 
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),

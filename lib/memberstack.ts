@@ -68,6 +68,33 @@ export type { PlanKey, PlanFlags } from './plan-keys';
  * this plan", which callers must distinguish from "member doesn't hold it" — conflating the
  * two is what would silently paywall everyone.
  */
+/**
+ * Every plan id that counts as holding this key.
+ *
+ * The challenge has two: the paid plan someone buys directly, and a free "challenge
+ * included" twin that Memberstack grants automatically with the audio membership. That twin
+ * exists because a paid plan cannot be attached by anything but a purchase — `plan-not-free`
+ * — so bundling had to be expressed as a second, free plan rather than as an API call.
+ *
+ * Holding either is access. They are not ranked and nothing distinguishes them downstream:
+ * the member is in the challenge, and how they got there is a billing question, not an
+ * entitlement one.
+ *
+ * Every other key has exactly one id, so this collapses to planIdFor for them.
+ */
+export function planIdsFor(key: PlanKey): string[] {
+  const ids = [planIdFor(key)];
+  if (key === 'challenge') ids.push(env.MEMBERSTACK_CHALLENGE_INCLUDED_PLAN_ID);
+  return ids.filter((id): id is string => Boolean(id));
+}
+
+/**
+ * The single plan id to WRITE for this key — what attach/detach targets.
+ *
+ * Deliberately still one id, and deliberately the paid one for the challenge: granting the
+ * free twin by hand would hand out a membership perk to someone who has not bought the
+ * membership. `isPlanAttachable` refuses the challenge anyway, so this is belt and braces.
+ */
 export function planIdFor(key: PlanKey): string | undefined {
   switch (key) {
     case 'individual':
@@ -106,8 +133,10 @@ export function noPlans(): PlanFlags {
  */
 export function flagsFromPlanIds(activePlanIds: Set<string>): PlanFlags {
   return PLAN_KEYS.reduce((acc, key) => {
-    const id = planIdFor(key);
-    acc[key] = id ? activePlanIds.has(id) : false;
+    // Any of the key's ids counts — see planIdsFor. A key whose ids are all unset reads as
+    // false, which is the caveat on planIdFor: "cannot evaluate" is not "does not hold".
+    const ids = planIdsFor(key);
+    acc[key] = ids.some((id) => activePlanIds.has(id));
     return acc;
   }, noPlans());
 }

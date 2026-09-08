@@ -254,6 +254,32 @@ half that was never built.
 
 ## Q-09 — Bundling the challenge with the audio membership
 
+**RESOLVED 2026-09-08 — solved in Memberstack, with a second plan.**
+
+The obstacle was that a paid plan cannot be attached by anything but a purchase
+(`plan-not-free`), so the app could never grant the challenge to a member.
+
+Russell's answer sidesteps it: a **second, free plan** — "challenge included" — that
+Memberstack grants automatically as part of buying SYS Society. Nothing has to call the API,
+because nothing is being attached after the fact; the membership simply carries both plans.
+
+In code, `planIdsFor('challenge')` now returns both ids and holding **either** is access. The
+two are not ranked and nothing downstream distinguishes them: the member is in the challenge,
+and how they got there is a billing question rather than an entitlement one.
+
+Writes still target the **paid** id — granting the free twin by hand would hand a membership
+perk to someone who has not bought the membership.
+
+Set `MEMBERSTACK_CHALLENGE_INCLUDED_PLAN_ID` wherever the app runs, or the bundle silently
+does nothing and only direct buyers get the challenge.
+
+**Still open:** what happens to the free twin when a membership lapses. If Memberstack
+removes it, a cancelled member loses the challenge — possibly mid-run. Nothing in the app
+revokes plans, so whatever the automation does is what happens.
+
+<details>
+<summary>Original question (kept for context)</summary>
+
 **Waiting on:** Russell (Memberstack dashboard) · **Raised:** 2026-09-07 · **Blocks:** the
 challenge being included with the membership, as intended
 
@@ -295,6 +321,8 @@ automation attaches it, the challenge appears for that member with no deploy.
 
 `/reconcile`'s attach button now refuses paid plans with an explanation (422) rather than
 throwing, so the restriction is visible where an operator would otherwise meet it as a 500.
+
+</details>
 
 ---
 
