@@ -225,6 +225,24 @@ cancellation in Memberstack, or accept it as untested.
 
 ---
 
+## 6b. Run log
+
+| Persona | Date | Result |
+|---|---|---|
+| **P0** — no plans | 2026-09-08 | **PASS**, after four fixes. Coaching page: no tabs, no panels, upsell shown. Membership page: upsell shown, member content and search both hidden. |
+| **P3** — membership | 2026-09-08 | **PASS.** Upsell hidden, member content and search both revealed, search returns and plays, empty-search CTAs correct and linking properly. Promos suppress `audio-membership` and keep the others. |
+
+Bugs found and fixed during P0/P3, all of them in the reveal path rather than the rules:
+
+1. The browser and server disagreed about plans; the server now sends its flags and wins.
+2. `initTabs` opened the header and first panel on the browser's guess, before the fetch.
+3. `embed.js` bailed on `if (!mount) return`, so the whole library gate never ran on a page
+   without the search widget.
+4. The token was read from `document.cookie`, which Memberstack does not populate — so the
+   server was never asked and every decision fell back to the local read.
+5. The search widget was revealed to anyone reaching the page, handing the paid library to
+   every coaching, cohort and challenge customer.
+
 ## 7. Cross-cutting checks
 
 - **Promo copy and links.** Can start now. ⚠️ Two buttons currently carry
