@@ -199,7 +199,10 @@
     var upsellEl = document.getElementById(LIBRARY_UPSELL_ID);
     var memberEl = document.getElementById(LIBRARY_MEMBER_ID);
     if (!upsellEl && !memberEl) {
-      unhide(mount); // No gated blocks here, so nothing to wait for.
+      // No gated blocks on this page, so there is no membership question being asked here —
+      // the widget is embedded somewhere that does its own gating (or none). Reveal it and
+      // leave the decision to that page.
+      unhide(mount);
       return;
     }
 
@@ -208,6 +211,10 @@
     // member" — and a block authored without the hidden class would otherwise be visible to
     // everyone, which is how it shipped: the upsell carried the class and this one did not.
     rehide(memberEl);
+    // And the widget, for the same reason: it is the paid product, so "not yet decided"
+    // must look like "not a member". The page does not carry a hidden class on it, and
+    // relying on it to is what let the library show to non-members in the first place.
+    rehide(mount);
     var el = upsellEl;
 
     var data = (member && (member.data || member)) || null;
@@ -243,8 +250,18 @@
         rehide(memberEl);
         unhide(el);
       }
-      // One paint: the widget arrives with whichever column won, rather than ahead of it.
-      unhide(mount);
+      // The widget follows the membership, not the page.
+      //
+      // It was revealed for anyone who reached this page, on the reasoning that the search
+      // API is public. That confused two different things: the API being open is why the
+      // widget CAN run without a login, not a reason it SHOULD. The library is the paid
+      // product, and this page is reachable by every coaching, cohort and challenge
+      // customer — so revealing it here handed the membership to everyone who bought
+      // anything else.
+      //
+      // Hidden for a non-member, alongside the upsell that asks them to buy it.
+      if (decided) unhide(mount);
+      else rehide(mount);
     });
   }
 })();

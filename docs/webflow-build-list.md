@@ -308,16 +308,22 @@ element ends up with `style=""` and no obviously matching class.
 
 | Id | Who sees it |
 |---|---|
-| `library-search-widget` | everyone who reaches this page — the search app mounts here |
+| `library-search-widget` | **members only** — the library IS the paid product |
 | `library-upsell` | anyone WITHOUT a live audio membership |
 | `library-member-content` | only a live audio-membership holder — the custom audio and anything else members-only |
 
-**"Everyone" means everyone who reaches the page, which is not the public.** The search *API*
-is open, so the widget works without a login — but this page is member-gated in Webflow, so
-in practice its audience is people who hold *something*: a coaching client, a cohort member,
-a challenge buyer. The upsell is therefore a cross-sell to existing customers, not an
-acquisition surface. Cold prospects see the marketing landing page instead, which is outside
-this system.
+**The widget is gated on the membership, not on reaching the page.** The search API is open,
+which is why the widget *can* run without a login — but that is not a reason it should. This
+page is reachable by every coaching, cohort and challenge customer, so revealing search here
+would hand the library to everyone who bought anything else.
+
+A non-member gets the upsell and no search. The upsell is therefore a cross-sell to existing
+customers rather than an acquisition surface; cold prospects see the marketing landing page,
+outside this system.
+
+None of the three needs a hidden class in Webflow — the script hides all of them up front and
+reveals only what the answer allows. A class is still worth adding, since it removes the
+brief moment before the script runs.
 
 `library-upsell` and `library-member-content` are opposites: exactly one of them shows. Put
 whatever members-only content you like inside the second wrapper; adding blocks to it needs
