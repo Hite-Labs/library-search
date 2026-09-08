@@ -188,7 +188,7 @@ buckets. Cohort and 1-on-1 must not cross-suppress.
 
 | ID | Appears to hold | Must NOT see | Must see | Also covers |
 |---|---|---|---|---|
-| **P0** | *nothing* | — | every promo, every page | The funnel. New — the draft ruled this out |
+| **P0** | *nothing* | — | `portal-upsell` only — **no promos** | The funnel. See the nesting note below |
 | **P1** | challenge, window open | challenge promo | membership, cohort, 1-on-1 | Challenge panel + day blocks; non-member empty state |
 | **P2** | challenge, past cutoff | challenge promo **and** its offer | the others | **Needs B2.** Day content must still show |
 | **P3** | membership | membership promo | coaching promos | Library member content; `library-upsell` hidden; empty-search CTAs |
@@ -198,6 +198,19 @@ buckets. Cohort and 1-on-1 must not cross-suppress.
 | **P7** | *lapsed* cancelled membership | — | membership promo again | New. Cancelled reads as not-held: panels close, upsell returns |
 
 `P0` and `P7` are the cases the original matrix missed, and both are real paths.
+
+### Promo wrappers are nested inside the panels (confirmed 2026-09-08)
+
+On the coaching page the `data-promo-page` wrappers sit **inside** `portal-coaching` and
+`portal-cohort`. So when a panel is hidden its promos go with it — a member who holds nothing
+sees `portal-upsell` alone, and no offers at all.
+
+That is the intended design, not a gap: the upsell block carries its own calls to action, and
+a promo row underneath an empty panel would be a second, competing pitch. It does mean promo
+visibility can only be tested by a persona that actually holds the panel the promo lives in,
+so P0 verifies the upsell and nothing more.
+
+An earlier draft of this plan asserted P0 should see every promo. It should not.
 
 ### Setting each persona
 
