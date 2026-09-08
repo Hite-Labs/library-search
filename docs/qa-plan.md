@@ -232,6 +232,7 @@ cancellation in Memberstack, or accept it as untested.
 | **P0** — no plans | 2026-09-08 | **PASS**, after four fixes. Coaching page: no tabs, no panels, upsell shown. Membership page: upsell shown, member content and search both hidden. |
 | **P3** — membership | 2026-09-08 | **PASS.** Upsell hidden, member content and search both revealed, search returns and plays, empty-search CTAs correct and linking properly. Promos suppress `audio-membership` and keep the others. |
 | **P4** — cohort | 2026-09-08 | **PASS**, once the page was moved off the cached `portal.staging.js`. Cohort panel renders with its sessions, links and files; no tab header (one panel held); upsell hidden. Library page correctly withholds member content and search while showing the upsell. |
+| **P5** — individual | 2026-09-08 | **PASS.** Coaching panel renders with sessions, recordings and files. **Cross-suppression confirmed:** holding `individual` hides only `ind-coaching` and leaves `cohort-coaching` showing — the two coaching buckets are genuinely independent, which was an open question in the original draft. |
 
 Bugs found and fixed during P0/P3, all of them in the reveal path rather than the rules:
 
