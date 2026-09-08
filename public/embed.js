@@ -85,6 +85,8 @@
   // block inside it needs no code change.
   var LIBRARY_MEMBER_ID = 'library-member-content';
   var MEMBERSHIP_PLAN_ID = 'pln_sys-society-6h2m809m5';
+  // Same endpoint the portal uses. Asked here only for its `plans` flags.
+  var PORTAL_API_URL = 'https://dashboard.showyourspark.com/api/portal';
 
   // Run the upsell gate independently of the iframe, rather than only from its load
   // handler. Two paths above return early — no Memberstack on the page, or a throw — and
@@ -120,6 +122,34 @@
   //
   // Deliberately not a promo block. Promos are gated server-side and rendered by portal.js,
   // which does not run on this page — the membership page loads this script instead.
+  /**
+   * Ask the server whether this member holds the membership, and fall back to reading it
+   * here if that fails.
+   *
+   * The local read below is the browser's own view of Memberstack. That is usually the same
+   * answer, but it is not the authoritative one — the server decides entitlement everywhere
+   * else in this product, and it is the only half that honours PORTAL_PRETEND_PLANS. Reading
+   * only locally is why a tester set to hold nothing still saw member content here while the
+   * portal correctly showed them the upsell.
+   *
+   * Falls back rather than failing: no token, a network error, or an older server without
+   * `plans` in its payload all drop through to the local check, which is what this did
+   * before.
+   */
+  function resolveMembership(member) {
+    var m = document.cookie.match(/_ms-mid=([^;]+)/);
+    var token = m ? decodeURIComponent(m[1]) : null;
+    if (!token || !window.fetch) return Promise.resolve(null);
+
+    return fetch(PORTAL_API_URL, { headers: { Authorization: 'Bearer ' + token } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.plans) return null;
+        return d.plans.membership === true;
+      })
+      .catch(function () { return null; });
+  }
+
   function revealLibraryUpsell(member) {
     var upsellEl = document.getElementById(LIBRARY_UPSELL_ID);
     var memberEl = document.getElementById(LIBRARY_MEMBER_ID);
@@ -145,7 +175,12 @@
     // visitors included, since search is public and they are who it converts. Member
     // content requires a positive, live connection: unknown reads as "not a member", so a
     // failed lookup withholds paid content rather than leaking it.
-    if (holds) unhide(memberEl);
-    else unhide(el);
+    //
+    // The server is asked first and wins when it answers; `holds` above is the fallback.
+    resolveMembership(member).then(function (serverSays) {
+      var decided = serverSays === null ? holds : serverSays;
+      if (decided) unhide(memberEl);
+      else unhide(el);
+    });
   }
 })();
