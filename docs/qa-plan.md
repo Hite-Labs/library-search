@@ -280,6 +280,33 @@ staging is ever needed again, hard-refresh it deliberately and re-check.
 
 ---
 
+## 6b-ii. Challenge states — blocked on Webflow content (2026-09-08)
+
+Three of the four challenge states have never been seen, because **the blocks do not exist in
+Webflow yet**. The script reveals `[data-challenge-state="…"]` for whichever state the API
+reports, so an unbuilt block simply shows nothing.
+
+| State | Trigger | Build it for |
+|---|---|---|
+| `not_started` | start date in the future | A run that is scheduled but has not dropped day 1. Members who bought early land here. |
+| `finished` | `open_for_days` elapsed | **The most valuable one.** Someone has just spent 21 days with Lindsay — the code calls this the best upsell in the product, and returning nothing wastes it. Say what comes next. |
+| `none` | no active run configured | Holds the plan, nothing scheduled. Between runs. |
+
+`running` is built and verified.
+
+**How to test each once built** (as `:challenge`, one edit at a time at `/challenges`, hard
+refresh between):
+
+- `not_started` — set the start date to a future date
+- `finished` — restore the start date, then set `open_for_days` to 1
+- `none` — restore `open_for_days`, then set status to `draft`
+
+**Restore afterwards.** The active run's real values as of 2026-09-08:
+`status active · start 2026-09-03 · total_days 21 · open_for_days 45 · join_cutoff_days 10`.
+
+Each should show its own block, no day blocks, and nothing should error. `none` also proves
+the page degrades cleanly when `getActiveChallenge` returns null.
+
 ## 6c. What is left
 
 | Persona | Blocked on |
