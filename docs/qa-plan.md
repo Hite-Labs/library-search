@@ -84,6 +84,26 @@ Two rows exist:
 Only one run can be active at a time. Testing P1 against the test run is fine, but the real
 run needs dates before launch, and a draft run reveals nothing.
 
+### Deferred: everything challenge-related (decided 2026-09-08)
+
+The challenge depends on a Memberstack change that cannot be made from the app — the
+membership→challenge bundle (Q-09) — so it is **parked, and the rest of the matrix runs
+without it.** Nothing needs changing to allow this: `PORTAL_PRETEND_PLANS` sets any
+combination, so the non-challenge personas are unaffected.
+
+**Test now:** P0, P3, P4, P5, P6. Verified against the live rules — every one resolves
+correctly on all three pages.
+
+**Test later, once the bundle is settled:** P1, P2, and any membership+challenge combination.
+
+⚠️ **One thing to fix first, whichever way the bundle goes.** The `challenge` promo has
+`hide_if_has = membership`, not `challenge`. So today it is hidden from members — who do NOT
+actually have challenge access — and shown to people who have already bought the challenge,
+which is the one thing the field exists to prevent. Setting it to `challenge` is correct now
+and stays correct after the bundle, with no second edit.
+
+While the promo is mis-targeted, treat any challenge-promo result in P0/P3–P6 as unverified.
+
 ### Not blockers, but decide before launch
 
 - **The membership→challenge bundle does not exist.** The challenge is meant to be included
