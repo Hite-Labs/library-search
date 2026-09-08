@@ -233,6 +233,10 @@ cancellation in Memberstack, or accept it as untested.
 | **P3** — membership | 2026-09-08 | **PASS.** Upsell hidden, member content and search both revealed, search returns and plays, empty-search CTAs correct and linking properly. Promos suppress `audio-membership` and keep the others. |
 | **P4** — cohort | 2026-09-08 | **PASS**, once the page was moved off the cached `portal.staging.js`. Cohort panel renders with its sessions, links and files; no tab header (one panel held); upsell hidden. Library page correctly withholds member content and search while showing the upsell. |
 | **P5** — individual | 2026-09-08 | **PASS.** Coaching panel renders with sessions, recordings and files. **Cross-suppression confirmed:** holding `individual` hides only `ind-coaching` and leaves `cohort-coaching` showing — the two coaching buckets are genuinely independent, which was an open question in the original draft. |
+| **P6** — membership + cohort | 2026-09-08 | **PASS.** Combined suppression works: `cohort-coaching` and `audio-membership` hidden at once, the other two still showing. Only the cohort panel appears and no tab header does — correct, since `membership` has `panelId: null` and unlocks the library rather than a tab. The library page is where its second plan shows: upsell hidden, member content and search revealed. |
+
+**The matrix is complete for every persona that can be tested today.** Five of eight pass;
+the remaining three are blocked on things outside the app — see below.
 
 Bugs found and fixed during P0/P3, all of them in the reveal path rather than the rules:
 
@@ -273,6 +277,23 @@ staging is ever needed again, hard-refresh it deliberately and re-check.
   is no blank gap for P6.
 
 ---
+
+## 6c. What is left
+
+| Persona | Blocked on |
+|---|---|
+| **P1, P2** — challenge | The membership→challenge bundle (Q-09). A Memberstack automation; the app cannot attach a paid plan. |
+| **P7** — lapsed member | A real cancellation. `PORTAL_PRETEND_PLANS` can subtract a plan but cannot produce a *cancelled* connection, which is what the liveness filter actually reads. |
+
+Not personas, but still outstanding:
+
+- **Reconciliation pass.** The override bypasses Memberstack entirely, so nothing in this run
+  exercised it. Needs real toggles on the two free plans, checking `/reconcile` either side.
+- **Stripe membership checkout.** The challenge half is proven — a $1 purchase on 2026-09-04
+  went through checkout, Memberstack and the portal correctly.
+- **Background audio** on two devices, at least one iOS.
+- **Remove `PORTAL_PRETEND_PLANS` from the droplet.** Left set, it silently restricts that
+  account on the live site.
 
 ## 8. Sequencing
 
