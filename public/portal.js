@@ -397,7 +397,14 @@
       return;
     }
 
-    show(tabsHeader);
+    // Not shown while the reveal is still pending. init() runs this before the fetch
+    // returns, so `held` here is the browser's guess — and revealing the header plus the
+    // first panel on a guess is a flash when the server disagrees, which is exactly what
+    // it looked like: the tabs and the individual panel opened and then shut again.
+    //
+    // revealFromPlans calls initTabs again once the server has answered, so nothing is lost
+    // by staying shut now; the handlers below are still bound either way.
+    if (!pendingReveal) show(tabsHeader);
 
     function activate(key) {
       // Only switch to a panel the member actually holds.
@@ -425,7 +432,10 @@
     // Default to the first plan the member actually holds, in registry order. Was hardcoded
     // to 'individual', which the guard then rejected for a cohort-only member — leaving no
     // tab visually active.
-    activate(held[0].key);
+    // Same reason as the header above: opening the first panel now would be acting on the
+    // guess. Once the server answers, revealFromPlans opens the held panels and calls this
+    // again, and this line then picks the tab to start on.
+    if (!pendingReveal) activate(held[0].key);
   }
 
   // ===== Individual coaching render (unchanged) =====
