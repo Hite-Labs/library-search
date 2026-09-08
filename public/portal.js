@@ -773,6 +773,8 @@
   function render(data) {
     data = data || {};
 
+    applyServerPlans(data.plans);
+
     if (data.client) renderClient(data.client);
 
     renderList(
@@ -798,6 +800,45 @@
 
     renderChallenge(data.challenge);
     renderPromos(data.promo_codes);
+  }
+
+  /**
+   * Re-apply the gate using the plans the SERVER decided on.
+   *
+   * gateAndLoad runs first, from $memberstackDom, because panels have to be resolved before
+   * the fetch returns — otherwise the page sits blank while the request is in flight. That
+   * is fine when both halves read the same account, which is every real case.
+   *
+   * It is not fine when the two disagree. PORTAL_PRETEND_PLANS makes the server believe
+   * something different for one member, and it cannot reach the browser: the chrome opened
+   * tabs and panels for plans the payload was empty for, and hid the upsell that the empty
+   * payload was there to serve. Whatever the server says is authoritative, so once it has
+   * spoken, the gate is applied again from its answer.
+   *
+   * Absent `plans` (an older server), this no-ops and the original behaviour stands.
+   */
+  function applyServerPlans(plans) {
+    if (!plans) return;
+
+    var changed = false;
+    for (var i = 0; i < PLANS.length; i++) {
+      var truth = plans[PLANS[i].key] === true;
+      if (PLANS[i].has !== truth) changed = true;
+      PLANS[i].has = truth;
+    }
+    if (!changed) return; // The common case: both halves already agree.
+
+    var anyHeld = false;
+    for (i = 0; i < PLANS.length; i++) {
+      if (PLANS[i].panelId && PLANS[i].has) anyHeld = true;
+      eachById(PLANS[i].panelId, PLANS[i].has ? show : hide);
+    }
+    if (anyHeld) eachById('portal-upsell', hide);
+    else eachById('portal-upsell', show);
+
+    // Tabs are derived from what is held, so they have to be rebuilt rather than left
+    // pointing at panels that just closed.
+    initTabs();
   }
 
   // ===== 21-day challenge =====

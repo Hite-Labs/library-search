@@ -329,6 +329,27 @@ async function buildCohortObject(memberstackId: string) {
   };
 }
 
+/**
+ * The plan flags the SERVER used, echoed to the browser.
+ *
+ * portal.js does its own plan detection from $memberstackDom, and the two deliberately
+ * disagree in one direction — the client trusts `active` only when explicitly false, because
+ * that SDK's payload cannot be verified from the repo. That disagreement is harmless while
+ * both read the same account.
+ *
+ * PORTAL_PRETEND_PLANS breaks exactly that assumption: it changes what the server believes
+ * and cannot reach the browser, so a tester appears to hold nothing in the data and
+ * everything in the chrome — tabs and panels open on a payload with nothing in them. Sending
+ * the flags closes it, and costs nothing in normal operation because they simply agree.
+ *
+ * Not a security boundary in either direction: gating already happens server-side, and this
+ * only tells the browser which panels to bother showing.
+ */
+function planFlagsForClient(planState: PlanFlags | null): Record<string, boolean> | null {
+  if (!planState) return null;
+  return { ...planState };
+}
+
 // GET /api/portal — Memberstack-gated, member-scoped, portal-safe client data.
 // Verifies the _ms-mid token, resolves the client, and returns goal/progress + sessions
 // (NEVER internal notes/coach_actions) + recordings with fresh signed URLs.
@@ -380,6 +401,7 @@ export async function GET(req: NextRequest) {
         cohort: null,
         challenge: challengeOnly,
         promo_codes: codesOnly,
+        plans: planFlagsForClient(codesPlanState),
       },
       { headers: cors },
     );
@@ -452,7 +474,13 @@ export async function GET(req: NextRequest) {
     // Promos ride on this path too — a member with no coaching pack is exactly who the
     // upsell is for, so returning them here is the whole point rather than an afterthought.
     return NextResponse.json(
-      { ...emptyIndividual(), cohort, challenge, promo_codes: promoCodes },
+      {
+        ...emptyIndividual(),
+        cohort,
+        challenge,
+        promo_codes: promoCodes,
+        plans: planFlagsForClient(planState),
+      },
       { headers: cors },
     );
   }
@@ -518,6 +546,7 @@ export async function GET(req: NextRequest) {
       cohort,
       challenge,
       promo_codes: promoCodes,
+      plans: planFlagsForClient(planState),
     },
     { headers: cors },
   );
