@@ -26,59 +26,72 @@
   var APP_URL = 'https://dashboard.showyourspark.com';
 
   var mount = document.getElementById('library-search-widget');
-  if (!mount) return;
+
+  // NOT an early return any more.
+  //
+  // Everything below — including the whole library upsell / member-content gate — used to
+  // sit behind `if (!mount) return`, so a page carrying the membership blocks but no search
+  // widget ran none of it. The gate then never fired, the members-only column stayed
+  // whatever Webflow left it, and no server answer was ever asked for. The two features
+  // arrived at different times and only one of them needs the widget.
+  //
+  // The iframe setup is now guarded on `mount` individually, and the gate runs regardless.
 
   // Search is public, so the widget itself is never gated — but the mount div may still be
   // marked hidden to stop it flashing in before the iframe paints. Nothing else would ever
   // clear that: this script has no reveal step for the mount, so the class would sit there
   // and the widget would be built inside an invisible box.
-  unhide(mount);
+  if (mount) unhide(mount);
 
-  var iframe = document.createElement('iframe');
-  iframe.src = APP_URL + '/widget';
-  iframe.style.cssText = 'width:100%;border:0;min-height:400px;display:block;';
-  // microphone: the voice search button. fullscreen: video playback — without it the
-  // fullscreen button in our own player chrome silently does nothing in a cross-origin
-  // frame. autoplay: lets playback that a member started continue across a src change
-  // (picking a second track) instead of needing a fresh tap.
-  iframe.allow = 'microphone; fullscreen; autoplay';
-  iframe.title = 'Content Search';
+  // The search widget itself. Skipped entirely on a page that has no mount for it —
+  // the membership blocks below are a separate feature and must still be gated there.
+  if (mount) {
+    var iframe = document.createElement('iframe');
+    iframe.src = APP_URL + '/widget';
+    iframe.style.cssText = 'width:100%;border:0;min-height:400px;display:block;';
+    // microphone: the voice search button. fullscreen: video playback — without it the
+    // fullscreen button in our own player chrome silently does nothing in a cross-origin
+    // frame. autoplay: lets playback that a member started continue across a src change
+    // (picking a second track) instead of needing a fresh tap.
+    iframe.allow = 'microphone; fullscreen; autoplay';
+    iframe.title = 'Content Search';
 
-  // Forward Memberstack user ID to widget via postMessage
-  iframe.addEventListener('load', function () {
-    try {
-      var ms = window.$memberstackDom || window.MemberStack;
-      if (!ms) return;
-      var getUser = ms.getCurrentMember
-        ? ms.getCurrentMember()
-        : ms.getMember
-        ? ms.getMember()
-        : Promise.resolve(null);
-      Promise.resolve(getUser).then(function (m) {
-        var userId = (m && (m.id || (m.data && m.data.id))) || null;
-        // Memberstack stores the member JWT in the _ms-mid cookie. The backend
-        // verifies this token (the userId alone is not trusted for access).
-        var tokenMatch = document.cookie.match(/_ms-mid=([^;]+)/);
-        var token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : null;
-        iframe.contentWindow.postMessage(
-          { type: 'ms-user', userId: userId, token: token },
-          APP_URL
-        );
-      });
-    } catch (e) {
-      // Memberstack not available — that's fine
-    }
-  });
+    // Forward Memberstack user ID to widget via postMessage
+    iframe.addEventListener('load', function () {
+      try {
+        var ms = window.$memberstackDom || window.MemberStack;
+        if (!ms) return;
+        var getUser = ms.getCurrentMember
+          ? ms.getCurrentMember()
+          : ms.getMember
+          ? ms.getMember()
+          : Promise.resolve(null);
+        Promise.resolve(getUser).then(function (m) {
+          var userId = (m && (m.id || (m.data && m.data.id))) || null;
+          // Memberstack stores the member JWT in the _ms-mid cookie. The backend
+          // verifies this token (the userId alone is not trusted for access).
+          var tokenMatch = document.cookie.match(/_ms-mid=([^;]+)/);
+          var token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : null;
+          iframe.contentWindow.postMessage(
+            { type: 'ms-user', userId: userId, token: token },
+            APP_URL
+          );
+        });
+      } catch (e) {
+        // Memberstack not available — that's fine
+      }
+    });
 
-  // Auto-resize iframe to content height
-  window.addEventListener('message', function (e) {
-    if (e.source !== iframe.contentWindow) return;
-    if (e.data && e.data.type === 'resize' && typeof e.data.height === 'number') {
-      iframe.style.height = e.data.height + 'px';
-    }
-  });
+    // Auto-resize iframe to content height
+    window.addEventListener('message', function (e) {
+      if (e.source !== iframe.contentWindow) return;
+      if (e.data && e.data.type === 'resize' && typeof e.data.height === 'number') {
+        iframe.style.height = e.data.height + 'px';
+      }
+    });
 
-  mount.appendChild(iframe);
+    mount.appendChild(iframe);
+  }
 
   // Declared above the call below, not beside the function. `var` assignments do not hoist
   // with the function that reads them: leaving these underneath meant the plan id was
