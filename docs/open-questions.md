@@ -273,6 +273,16 @@ perk to someone who has not bought the membership.
 Set `MEMBERSTACK_CHALLENGE_INCLUDED_PLAN_ID` wherever the app runs, or the bundle silently
 does nothing and only direct buyers get the challenge.
 
+**The bundle grants on purchase, not retroactively.** Anyone who bought SYS Society before
+it existed does not hold the free twin, and so does not get the challenge. Confirmed on the
+test account, which holds the membership but not the twin.
+
+Not an issue today: Russell is the only such member (2026-09-08), so it is deliberately left
+alone. It becomes one the moment a real member buys before the bundle is live — they would be
+paying for a membership that advertises the challenge and does not grant it. The free plan is
+the one plan the API *can* attach, so a one-off backfill is straightforward if it is ever
+needed.
+
 **Still open:** what happens to the free twin when a membership lapses. If Memberstack
 removes it, a cancelled member loses the challenge — possibly mid-run. Nothing in the app
 revokes plans, so whatever the automation does is what happens.
