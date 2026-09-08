@@ -350,6 +350,27 @@ function planFlagsForClient(planState: PlanFlags | null): Record<string, boolean
   return { ...planState };
 }
 
+/**
+ * Can someone still join the active challenge run right now?
+ *
+ * Sent separately from the challenge object because they serve opposite audiences: that
+ * object is built only for members who already hold the plan, while this answers a question
+ * only a NON-member asks. Reading it off the challenge would mean the join CTA could never
+ * see it.
+ *
+ * No run, no start date, or an unparseable schedule all read as open. This only ever
+ * WITHDRAWS the offer, so every uncertain case leaves it up — matching the promo rule, and
+ * failing towards a sale rather than away from one.
+ */
+function joiningOpen(run: Challenge | null): boolean {
+  if (!run) return true;
+  try {
+    return !challengeAccess(run).join_closed;
+  } catch {
+    return true;
+  }
+}
+
 // GET /api/portal — Memberstack-gated, member-scoped, portal-safe client data.
 // Verifies the _ms-mid token, resolves the client, and returns goal/progress + sessions
 // (NEVER internal notes/coach_actions) + recordings with fresh signed URLs.
@@ -402,6 +423,7 @@ export async function GET(req: NextRequest) {
         challenge: challengeOnly,
         promo_codes: codesOnly,
         plans: planFlagsForClient(codesPlanState),
+        challenge_joining_open: joiningOpen(runOnly),
       },
       { headers: cors },
     );
@@ -480,6 +502,7 @@ export async function GET(req: NextRequest) {
         challenge,
         promo_codes: promoCodes,
         plans: planFlagsForClient(planState),
+        challenge_joining_open: joiningOpen(challengeRun),
       },
       { headers: cors },
     );
@@ -547,6 +570,7 @@ export async function GET(req: NextRequest) {
       challenge,
       promo_codes: promoCodes,
       plans: planFlagsForClient(planState),
+      challenge_joining_open: joiningOpen(challengeRun),
     },
     { headers: cors },
   );

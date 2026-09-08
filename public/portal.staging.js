@@ -824,7 +824,7 @@
 
     if (data.cohort) renderCohort(data.cohort);
 
-    renderChallenge(data.challenge);
+    renderChallenge(data.challenge, data.challenge_joining_open);
     renderPromos(data.promo_codes);
   }
 
@@ -863,14 +863,23 @@
   // recording URL to anyone reading the network tab.
   //
   // eachEl throughout, never byField: Webflow duplicates elements for mobile.
-  function renderChallenge(challenge) {
+  function renderChallenge(challenge, joiningOpen) {
     // The join CTA is the one element on this page with INVERTED logic: it is for people who
     // do NOT have the challenge, so it shows exactly when everything else here is hidden.
     //
     // `challenge` is non-null whenever the member holds either challenge plan — bought
     // outright, or the free twin the audio membership carries — so this covers both routes
     // without knowing which one applied.
-    eachEl('[data-field="challenge-join"]', challenge ? hide : show);
+    //
+    // It also disappears once the run stops taking joiners. That is the whole point of the
+    // cutoff: selling a 21-day group challenge to someone arriving with five days left is
+    // what it exists to prevent, and a cutoff that leaves the button up prevents nothing.
+    //
+    // joiningOpen is sent separately from `challenge` because that object is only built for
+    // members who already hold the plan — the audience this button is NOT for. Undefined
+    // (an older server) reads as open, so the button behaves as it did before.
+    var canJoin = joiningOpen !== false;
+    eachEl('[data-field="challenge-join"]', !challenge && canJoin ? show : hide);
 
     // Not entitled — no challenge plan at all. Hide everything challenge-related.
     if (!challenge) {
