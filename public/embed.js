@@ -4,6 +4,12 @@
   // obviously matching class, which is a genuinely hard failure to see.
   var HIDDEN_CLASSES = ['is-hidden', 'ishidden', 'isHidden'];
 
+  function rehide(el) {
+    if (!el) return;
+    if (el.classList) el.classList.add(HIDDEN_CLASSES[0]);
+    el.style.display = 'none';
+  }
+
   function unhide(el) {
     if (!el) return;
     if (el.classList) {
@@ -50,7 +56,6 @@
         : Promise.resolve(null);
       Promise.resolve(getUser).then(function (m) {
         var userId = (m && (m.id || (m.data && m.data.id))) || null;
-        revealLibraryUpsell(m);
         // Memberstack stores the member JWT in the _ms-mid cookie. The backend
         // verifies this token (the userId alone is not trusted for access).
         var tokenMatch = document.cookie.match(/_ms-mid=([^;]+)/);
@@ -93,8 +98,11 @@
   // both would have left the block hidden from a logged-out visitor, who is exactly the
   // person it exists to convert. Resolving to "no member" here shows it, which is right.
   //
-  // Calling it twice is harmless: it only ever removes a class, and the second call with a
-  // real member re-checks and leaves a genuine member's copy hidden.
+  // Called exactly once. It used to run from the iframe's load handler as well, which was
+  // harmless while the check was synchronous — but the decision now awaits the server, so
+  // two calls meant two in-flight answers and whichever landed first won. Since unhide()
+  // only ever reveals and nothing hides again, a stale local answer could open the members
+  // column and no later answer would close it.
   try {
     var msNow = window.$memberstackDom || window.MemberStack;
     var pending = msNow && msNow.getCurrentMember
@@ -179,8 +187,16 @@
     // The server is asked first and wins when it answers; `holds` above is the fallback.
     resolveMembership(member).then(function (serverSays) {
       var decided = serverSays === null ? holds : serverSays;
-      if (decided) unhide(memberEl);
-      else unhide(el);
+      // Explicitly hide the other one rather than merely revealing the right one. Revealing
+      // alone cannot correct anything: if a block is already open, leaving it open is a
+      // decision too, and the wrong one whenever the answer has changed.
+      if (decided) {
+        rehide(el);
+        unhide(memberEl);
+      } else {
+        rehide(memberEl);
+        unhide(el);
+      }
     });
   }
 })();
