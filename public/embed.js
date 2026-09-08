@@ -116,19 +116,33 @@
   // two calls meant two in-flight answers and whichever landed first won. Since unhide()
   // only ever reveals and nothing hides again, a stale local answer could open the members
   // column and no later answer would close it.
-  try {
-    var msNow = window.$memberstackDom || window.MemberStack;
-    var pending = msNow && msNow.getCurrentMember
-      ? msNow.getCurrentMember()
-      : msNow && msNow.getMember
-      ? msNow.getMember()
-      : Promise.resolve(null);
-    Promise.resolve(pending).then(revealLibraryUpsell).catch(function () {
+  // Wait for Memberstack before deciding. Its script is async and regularly lands after
+  // this one, so reading $memberstackDom straight away found nothing — and "nothing" is
+  // indistinguishable from "logged out", which would show the upsell to a paying member and
+  // withhold the content they bought. portal.js polls for the same reason; there is no
+  // documented ready event.
+  //
+  // The timeout still decides rather than hanging: a member the page cannot identify is
+  // treated as not-a-member, which shows the pitch and withholds paid content — the safe
+  // direction for both.
+  (function waitForMemberstack(waited) {
+    var ms = window.$memberstackDom || window.MemberStack;
+    var ready = ms && (ms.getCurrentMember || ms.getMember);
+
+    if (!ready) {
+      if (waited >= 10000) return revealLibraryUpsell(null);
+      return setTimeout(function () { waitForMemberstack(waited + 100); }, 100);
+    }
+
+    try {
+      var pending = ms.getCurrentMember ? ms.getCurrentMember() : ms.getMember();
+      Promise.resolve(pending).then(revealLibraryUpsell).catch(function () {
+        revealLibraryUpsell(null);
+      });
+    } catch (e) {
       revealLibraryUpsell(null);
-    });
-  } catch (e) {
-    revealLibraryUpsell(null);
-  }
+    }
+  })(0);
 
   // ===== "What is the membership?" block, for people who don't have it =====
 
@@ -158,8 +172,12 @@
    * before.
    */
   function resolveMembership(member) {
-    var m = document.cookie.match(/_ms-mid=([^;]+)/);
-    var token = m ? decodeURIComponent(m[1]) : null;
+    // getMemberCookie(), not document.cookie. Memberstack does not reliably expose _ms-mid
+    // to script — reading it directly returned nothing on the live page, so the fetch never
+    // ran and every decision silently fell back to the local read, which is exactly the
+    // half that cannot see the server's answer. portal.js has always used this API.
+    var ms = window.$memberstackDom;
+    var token = ms && ms.getMemberCookie ? ms.getMemberCookie() : null;
     if (!token || !window.fetch) return Promise.resolve(null);
 
     return fetch(PORTAL_API_URL, { headers: { Authorization: 'Bearer ' + token } })
@@ -175,6 +193,12 @@
     var upsellEl = document.getElementById(LIBRARY_UPSELL_ID);
     var memberEl = document.getElementById(LIBRARY_MEMBER_ID);
     if (!upsellEl && !memberEl) return; // Neither block on this page — nothing to do.
+
+    // Withhold the members-only column until we know, rather than trusting the page to have
+    // marked it hidden. It holds paid content, so "not yet decided" must look like "not a
+    // member" — and a block authored without the hidden class would otherwise be visible to
+    // everyone, which is how it shipped: the upsell carried the class and this one did not.
+    rehide(memberEl);
     var el = upsellEl;
 
     var data = (member && (member.data || member)) || null;
