@@ -289,6 +289,7 @@
     // member who holds the challenge would otherwise see "join the challenge" flash before
     // the API says they already have.
     eachEl('[data-field="challenge-join"]', hide);
+    eachEl('[data-field="challenge-telegram-link"]', hide);
     eachEl('[data-field="challenge-name"]', hide);
     eachEl('[data-field="challenge-current-day"]', hide);
     eachEl('[data-field="challenge-total-days"]', hide);
@@ -875,6 +876,11 @@
     if (!challenge) {
       eachEl('[data-challenge-day]', hide);
       eachEl('[data-challenge-state]', hide);
+      // The Telegram link too. setLink below only ever SETS an href, so a non-member kept
+      // whatever Webflow authored — a visible button into the members' group, sitting right
+      // next to the one asking them to join. It is the counterpart of challenge-join and
+      // must be its exact opposite.
+      eachEl('[data-field="challenge-telegram-link"]', hide);
       return;
     }
 
@@ -922,7 +928,14 @@
       show(el);
     });
 
-    setLink(document, 'challenge-telegram-link', challenge.telegram_link);
+    // Shown only now, on the entitled path, and only when there is somewhere to send them.
+    // A run with no Telegram URL leaves the button hidden rather than dead.
+    if (challenge.telegram_link) {
+      setLink(document, 'challenge-telegram-link', challenge.telegram_link);
+      eachEl('[data-field="challenge-telegram-link"]', show);
+    } else {
+      eachEl('[data-field="challenge-telegram-link"]', hide);
+    }
   }
 
   // ===== Promo blocks =====
