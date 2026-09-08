@@ -41,27 +41,37 @@ important untested case. It is **P0** below.
 
 ---
 
-## 2. Blockers — before Phase 2 can start
+## 2. Blockers — B1 and B2 cleared, B3 open
 
-Only three, and none are code.
+Verified against the live database 2026-09-08. Only **B3** remains.
 
-### B1. Two of the four promos do not exist (BLOCKING)
-
-Live rules today:
+### B1. All four promos exist — CLEARED 2026-09-08
 
 | code | hides from | pages | follows window |
 |---|---|---|---|
-| `audio-membership` | membership holders | all four | no |
-| `ind-coaching` | individual holders | all four | no |
+| `audio-membership` | membership | membership, coaching, cohort, challenge | no |
+| `ind-coaching` | individual | membership, coaching, cohort, challenge | no |
+| `cohort-coaching` | cohort | coaching, membership | no |
+| `challenge` | challenge | coaching, cohort | **yes** |
 
-There is **no cohort promo and no challenge promo**. P4, P5 and half of P1/P3 have nothing to
-assert against. Build both blocks in Webflow, add matching rules at `/promos`.
+Every plan now has a promo targeting it. Simulated against the live rules, each persona
+resolves correctly — P4 and P5 do not cross-suppress, and an account holding all four sees
+nothing at all.
 
-### B2. No promo is tied to the challenge window (BLOCKING for P2)
+**Two placement gaps worth a deliberate yes/no**, since both look like omissions:
 
-`follows_challenge_window` is `false` on both rules, so nothing retires when joining closes.
-**P2's assertion cannot pass as things stand.** Tick that box on the challenge promo once B1
-is done — one checkbox, no deploy.
+- **No promo appears on the challenge page except `ind-coaching` and `audio-membership`** —
+  the cohort promo is not placed there. Intentional, or should a challenge member be offered
+  the cohort?
+- **`challenge` is not placed on the membership page.** A member browsing the library is
+  never offered the challenge. Given the challenge is meant to be the front door, this may be
+  the highest-value missing placement.
+
+### B2. Challenge window wired — CLEARED 2026-09-08
+
+`follows_challenge_window` is `true` on the `challenge` promo, so it retires itself when the
+active run stops taking joiners. P2 is now testable — after 2026-09-13, or by shortening the
+run's `join_cutoff_days` to force it early.
 
 ### B3. Decide which challenge run is real
 
