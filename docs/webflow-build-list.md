@@ -198,13 +198,47 @@ attribute, and exactly one will show at a time:
 | `data-challenge-state` | Shows when | What to put in it |
 |---|---|---|
 | `running` | the run is live | the wrapper around your day blocks, the Telegram link, "day 4 of 21" |
-| `not_started` | a run exists but hasn't begun | "Starts March 3 — here's how to prepare" |
+| `not_started` | a run exists but hasn't begun | "The next challenge begins on March 3" |
 | `finished` | the run's open window has closed | **the upsell moment.** "That run is over. Here's what's next." |
-| `none` | no run is set up at all | a safe fallback — "Nothing scheduled right now" |
+| `none` | no run is set up at all | the waitlist — "Put your name down for the next challenge" |
 
 > The `finished` block is the most valuable one on the page. Someone has just spent 21 days
 > with you and their account doesn't expire — this is where they find out what else they can
 > buy. Don't leave it empty.
+
+**There is no `join_closed` state.** "Too late to join" is not something an existing member
+can be — they're already in — so a block with that name would never show. What the cutoff
+does is take away the *join button* and retire the promo; see §3e.
+
+#### The three sentences, and how to build them
+
+These go **above the Telegram button**, inside the challenge panel. Each is an ordinary
+Webflow heading — the script writes only the number or the date into a span inside it.
+
+**1. A run is scheduled but hasn't started** — block `data-challenge-state="not_started"`:
+
+> The next challenge begins on **[span: `data-field="challenge-starts-at"`]**
+
+**2. The run is open** — block `data-challenge-state="running"`:
+
+> This challenge will be available for **[span: `data-field="challenge-days-remaining"`]** more days
+
+This one covers the whole open window, not just the 21 days of content. Someone on day 3 and
+someone on day 30 who has finished every video both see it — the number just keeps counting
+down until access closes. That is why there's only one block for both, rather than a
+separate "you've finished but still have access" state.
+
+**3. Nothing is scheduled** — block `data-challenge-state="none"`:
+
+> Put your name on the waitlist for the next challenge — *plus your waitlist button*
+
+Paste the Go High Level waitlist link straight into that button in Webflow. The script
+doesn't touch it: the whole block is hidden unless there's genuinely no run set up, so the
+button can only ever be seen at the right moment. (This is unlike the Telegram link, whose
+URL *does* come from the dashboard — that one changes every run, the waitlist link doesn't.)
+
+Give all four state blocks the `is-hidden` class, same as everything else, so nothing flashes
+before the script decides which one to show.
 
 ### 3d. Optional text fields inside the panel
 
@@ -217,6 +251,11 @@ Add `data-field="..."` to any text element to have the script fill it in:
 | `challenge-total-days` | how long the run is | `21` |
 | `challenge-starts-at` | the start date | "March 3, 2026" |
 | `challenge-closes-at` | when access closes | "April 17, 2026" |
+| `challenge-days-remaining` | how many days of access are left | `16` |
+
+`challenge-days-remaining` is a plain number, so write the words around it: put the span
+inside your sentence rather than on its own. It counts down to the same moment
+`challenge-closes-at` names — use whichever reads better, or both.
 
 And one link — add `data-field="challenge-telegram-link"` to a link element and its href gets
 set to the run's Telegram URL. If no URL is set in the dashboard the link is left alone, so
@@ -379,6 +418,7 @@ hardcoded link keeps pointing at last run's group after the next one starts.
 | `data-field="challenge-total-days"` | text element | filled by script |
 | `data-field="challenge-starts-at"` | text element | filled by script |
 | `data-field="challenge-closes-at"` | text element | filled by script |
+| `data-field="challenge-days-remaining"` | text element (a span inside a sentence) | filled by script — days of access left |
 | `data-field="challenge-telegram-link"` | link element | href set by script — set the URL at /challenges, don't hardcode it |
 | `data-field="challenge-join"` | the "join the challenge" button | shown ONLY to people who do NOT have the challenge |
 | `data-field="tab-challenge"` | the challenge tab/nav link | shown when entitled |

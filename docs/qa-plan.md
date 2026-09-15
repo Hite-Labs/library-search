@@ -282,6 +282,23 @@ staging is ever needed again, hard-refresh it deliberately and re-check.
 
 ## 6b-ii. Challenge states — blocked on Webflow content (2026-09-08)
 
+> **Update 2026-09-15 — the copy is settled and the server side is done.** The client has
+> given the wording for `not_started`, `running` and `none`, and they are written up for her
+> at `docs/webflow-build-list.md` §3c. The API now also sends `days_remaining` (whole days of
+> access left) for the "available for X more days" line, exposed as
+> `data-field="challenge-days-remaining"`.
+>
+> The `running` state turned out to already cover what she described as two situations —
+> "the challenge has begun" and "it's finished but I still have access" are the same state
+> here, since `running` lasts until the access window closes, not until day 21. No new state
+> was needed.
+>
+> The waitlist button needs no code: its link is pasted into Webflow and the whole `none`
+> block is already hidden unless there is genuinely no run.
+>
+> **Still blocked on exactly the same thing: the blocks do not exist in Webflow.** Everything
+> below still applies.
+
 Three of the four challenge states have never been seen, because **the blocks do not exist in
 Webflow yet**. The script reveals `[data-challenge-state="…"]` for whichever state the API
 reports, so an unbuilt block simply shows nothing.
@@ -303,6 +320,25 @@ refresh between):
 
 **Restore afterwards.** The active run's real values as of 2026-09-08:
 `status active · start 2026-09-03 · total_days 21 · open_for_days 45 · join_cutoff_days 10`.
+
+**The day count needs no live run to check.** `challengeAccess` is pure, so the arithmetic —
+including the DST cases — is verified without touching the database or the active run:
+
+```
+npx tsx scripts/check-challenge-days.ts
+```
+
+Run that first. It covers mid-run, the last content day, the catch-up window after day 21,
+the day before close, a closed run (0, never negative), a null start date, and three points
+spanning the 2026-11-01 fall-back. Only the Webflow reveal itself needs the manual walk.
+
+**One trap found while writing it (2026-09-15).** A `start_date` written as a bare
+`YYYY-MM-DD` parses as UTC midnight, which is the *previous* calendar day in
+America/New_York — so day 1 and the close date both land 24h early. Runs saved through
+`/challenges` are fine, because the `datetime-local` input always includes a time. It only
+bites hand-written dates: test fixtures, and any direct SQL. If a run's days ever look a day
+early, check the stored `start_date` for a missing time component before suspecting the
+reveal logic.
 
 Each should show its own block, no day blocks, and nothing should error. `none` also proves
 the page degrades cleanly when `getActiveChallenge` returns null.
