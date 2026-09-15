@@ -29,6 +29,30 @@ function renderBold(text: string) {
 const SUGGEST_URL = 'https://www.showyourspark.com/coaching/sys-audio-suggestion';
 const CUSTOM_URL = 'https://www.showyourspark.com/coaching/sys-custom-hypnosis';
 
+// The two no-match CTAs, now inline in prose rather than pill buttons.
+//
+// Gold at rest, not on hover. The widget's other inline links (WidgetRoot's "Search again")
+// sit in petal and go gold on hover, but those are secondary controls beside something
+// louder. Here the links ARE the call to action and have no button to defer to, so they
+// carry the accent themselves. Measured 6.40:1 on plum and 6.18:1 on forest, both past the
+// 4.5:1 AA floor this file's tint comments hold small text to.
+//
+// Underlined for the same reason: the iframe runs ~360px on a phone, where these replaced
+// full-width tap targets, so colour alone is too thin an affordance — and colour alone
+// would fail anyone who cannot distinguish it.
+//
+// text-gold, never `text-gold/nn`: opacity modifiers fail SILENTLY on this palette (see the
+// warning in globals.css) and would render solid anyway.
+//
+// The hover goes to `text-petal`, a real Tailwind colour, NOT `hover:tint-petal-80`. The
+// tint-* utilities are hand-written in globals.css, and Tailwind's hover: variant only wraps
+// utilities it generated itself — so `hover:tint-petal-80` compiles to nothing at all and
+// the hover silently never fires. Verified against the built stylesheet: `hover:text-gold`
+// is present, `hover:tint-petal-80` is absent. Same trap the placeholder: rule at the bottom
+// of globals.css had to be written out by hand for.
+const CTA_LINK =
+  'text-gold underline underline-offset-2 hover:text-petal transition-colors';
+
 interface ResultsListProps {
   /** null when the summary was skipped or failed — render cards alone, not an empty box. */
   response: string | null;
@@ -67,34 +91,42 @@ export function ResultsList({ response, results, selectedId, onSelect, demoted }
         described something the library does not have — so it ends in two actions rather
         than an apology.
 
-        The hierarchy is deliberate. Suggesting an idea is free, takes a sentence, and is
-        what we want most of: it costs the member nothing and tells us what to record next.
-        So it leads, in the filled button. Commissioning a recording is $59 and a much bigger
-        ask, so it sits second as an outline — present for the member who wants it now,
-        without pricing the free option out of the frame.
+        The hierarchy is still deliberate, now carried by order and wording rather than by
+        button weight. Suggesting an idea is free and is what we want most of: it costs the
+        member nothing and tells us what to record next, so it leads. Commissioning is the
+        bigger ask and sits second.
 
-        Both full width and stacked, at every size rather than just mobile: two pill buttons
-        side by side in a ~360px iframe would wrap mid-word, and a full-width target is the
-        easier tap on a phone, which is where these are read.
+        These were two full-width pill buttons until the copy was rewritten to put each CTA
+        inside its own explaining sentence, which a pill cannot do without breaking the line.
+        The trade is a smaller tap target in a ~360px iframe, so the links are underlined and
+        gold-on-hover rather than colour-only — the affordance has to carry more here than it
+        did when the whole row was tappable.
       */}
       {results.length === 0 && (
-        <div className="space-y-2">
-          <a
-            href={SUGGEST_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-spark w-full"
-          >
-            Submit your idea
-          </a>
-          <a
-            href={CUSTOM_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-spark-outline-light w-full"
-          >
-            Request a tailored recording — $59
-          </a>
+        <div className="space-y-3 text-sm tint-petal-80 leading-relaxed">
+          <p>
+            <a
+              href={SUGGEST_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={CTA_LINK}
+            >
+              Suggest an idea.
+            </a>{' '}
+            Tell us what you need and if it’s a fit, it becomes part of the collection.
+          </p>
+          <p>
+            Get a custom audio, made just for you. We’ll create a custom hypnosis or
+            subliminal audio built around exactly what you need.{' '}
+            <a
+              href={CUSTOM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={CTA_LINK}
+            >
+              Commission a Custom Audio here.
+            </a>
+          </p>
         </div>
       )}
       {visible.length > 0 && (

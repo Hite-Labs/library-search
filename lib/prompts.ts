@@ -5,14 +5,16 @@
  * SEARCH_SYSTEM_PROMPT, which put the threshold in two places and let weak matches render
  * cards underneath this sentence.
  */
-// Deliberately just the question. The two ways to answer it — suggest an idea, or
-// commission a recording — are BUTTONS rendered by the widget (see ResultsList), not
-// sentences: "reach out to Lindsay directly" was unclickable prose, so the one moment a
-// member tells us what the library is missing ended in a dead end.
+// Just the opening line. The two ways to answer it — suggest an idea, or commission a
+// recording — are rendered by the widget (see ResultsList) as prose with inline links,
+// so both routes stay clickable: "reach out to Lindsay directly" was once unclickable
+// prose, and the one moment a member tells us what the library is missing ended in a
+// dead end.
 //
-// Kept short for the same reason. It sits directly above two full-width CTAs, and a
-// paragraph there would compete with them for the eye.
-export const SEARCH_NO_MATCH_RESPONSE = 'Not finding what you need?';
+// It ends in a colon because it introduces those two options rather than standing alone.
+// Changing this sentence to something self-contained would leave the list below it
+// dangling, so the two are written together even though they live in different files.
+export const SEARCH_NO_MATCH_RESPONSE = 'Hmm…We don’t have that one yet — but here are your options:';
 
 /**
  * Summarise-only. The route has already decided these matches are strong enough to show, so
