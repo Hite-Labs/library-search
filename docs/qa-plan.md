@@ -350,6 +350,98 @@ reveal logic.
 Each should show its own block, no day blocks, and nothing should error. `none` also proves
 the page degrades cleanly when `getActiveChallenge` returns null.
 
+## 6b-iii. Session runbook — challenge states (2026-09-15)
+
+Everything needed to walk the four states in one sitting. The account is
+`hi@hite-labs.com` = `mem_cmqpint2k027x0slbhoba2y8f`.
+
+### Before you start — two facts checked against the live DB today
+
+**The active run now starts 2026-09-20**, five days out. So the portal sits in
+`not_started` right now, and `not_started` is testable with **no edits at all** — do it
+first, before changing anything.
+
+Live values, for restoring afterwards:
+
+| | active run | draft run |
+|---|---|---|
+| name | TEST 21 EFT Tapping into Confidence | Tap into Confidence 21-Day EFT Challenge |
+| start | **2026-09-20 13:50 ET** | null |
+| total_days | 21 | 21 |
+| open_for_days | 45 | 40 |
+| join_cutoff_days | 10 | 2 |
+| telegram | set | set |
+
+⚠️ **Fix the `challenge` promo first.** It still has `hide_if_has = membership` — the
+correction flagged in §2 was never applied. Today it hides from audio-membership holders and
+shows to people who already bought the challenge, which is backwards. Edit it at `/promos`
+(no deploy needed) and set it to `challenge`. **This matters for this session specifically:**
+a persona holding nothing sees the promo either way, so the bug stays invisible while you
+test and you would sign off on a rule that is wrong.
+
+Its `pages` are now `coaching, cohort, membership` — the membership placement noted as
+missing in §2 has since been added. It is still absent from the challenge page.
+
+### Turning the pretend mode on
+
+On the droplet, in `/root/library-search/.env.local`:
+
+```
+PORTAL_PRETEND_PLANS=mem_cmqpint2k027x0slbhoba2y8f:none
+```
+
+then `pm2 restart library-search --update-env`. No rebuild — it is read per request, and it
+is not a `NEXT_PUBLIC_` var.
+
+Confirm it took by watching for the startup warning in `pm2 logs library-search`:
+`[memberstack] PORTAL_PRETEND_PLANS active for mem_… : no plans`.
+
+**Remove the line when you finish.** Left set, it silently restricts that account on the
+live site. That is the single most important step in this section.
+
+### The walk
+
+Do them in this order — it goes from zero edits to most edits, and each step restores.
+
+| # | State | How | What should appear |
+|---|---|---|---|
+| 1 | `not_started` | **nothing to change** (run starts 09-20) | "The next challenge begins on September 20, 2026" |
+| 2 | `running` | set start to a past date, e.g. 2026-09-10 | "This challenge will be available for … more days"; day blocks 1..N unlock |
+| 3 | `finished` | keep the past start, set `open_for_days` to 1 | your upsell block; **no** day blocks |
+| 4 | `none` | restore `open_for_days`, set status to `draft` | the waitlist block and button |
+
+For each: `:challenge` in the pretend var, one edit at a time at `/challenges`, hard refresh
+between. Then restore the table above.
+
+**The two sentences are written by the script**, so a wrong number is a code bug and missing
+text is a Webflow one — `node scripts/check-challenge-text.mjs` tells you which before you go
+looking. See §3c of the build list.
+
+### The non-holder half (what you actually asked for)
+
+With `:none`, on the challenge page:
+
+- [ ] Join button (`challenge-join`) **shows** — it is the one inverted element
+- [ ] Telegram link **hidden** — it is the join button's exact opposite
+- [ ] No day blocks, no state blocks at all
+- [ ] The `challenge` promo — once re-targeted — **shows**, since you hold nothing
+
+Then `:challenge` and re-check: join button gone, Telegram link back, state block showing,
+challenge promo suppressed.
+
+**A caution on the join button.** It also withdraws when the run stops taking joiners. With a
+start date of 09-20 and a cutoff of 10 days, joining stays open until 09-30 — so it should be
+up throughout this session. If it vanishes unexpectedly, check `join_cutoff_days` before
+suspecting the reveal.
+
+### Test codes
+
+The four promo codes are `audio-membership`, `challenge`, `cohort-coaching`,
+`ind-coaching` — the `data-promo` values, listed with their rules in §2/B1. With `:none`
+every one of them should show on the pages its `pages` column names.
+
+---
+
 ## 6c. What is left
 
 | Persona | Blocked on |
