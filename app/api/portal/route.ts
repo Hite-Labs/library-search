@@ -165,13 +165,21 @@ function visiblePromoCodes(
  * The `state` field carries WHY there is no content, and that distinction is the whole
  * design. The challenge is the front door to the membership, not a product that expires:
  *
- *   'running'     — days are unlocking, show them
+ *   'running'     — the run is open: days are unlocking, or all 21 have dropped and the
+ *                   catch-up window is still running. `days_remaining` says how much is left.
  *   'not_started' — the run is scheduled but day 1 hasn't dropped
- *   'join_closed' — they arrived too late for this run; the next one is coming
- *   'finished'    — this run is over
+ *   'finished'    — this run is over and access has closed
  *   'none'        — the plan is held but there is no run configured at all
  *
- * Only 'running' carries days. The other four still return an object, deliberately: an
+ * These four are exhaustive — there is deliberately no 'join_closed' state. Arriving too
+ * late to JOIN is not a state an existing member can be in (see the cutoff note below), so
+ * it ships as a boolean on 'running' instead. A Webflow block built for it would never show.
+ *
+ * Note that 'running' spans the whole open window, not just the 21 days of content: with
+ * open_for_days 45 it covers the 24 catch-up days after the last drop too. "The content is
+ * finished but I still have access" is 'running', not 'finished'.
+ *
+ * Only 'running' carries days. The other three still return an object, deliberately: an
  * account here is permanent and nothing is ever revoked, so someone who just spent 21 days
  * with Lindsay must land on "that run has finished — here's what's next" rather than a blank
  * panel. That moment is the best upsell in the product, and returning null would waste it.
@@ -189,15 +197,22 @@ function buildChallengeObject(run: Challenge | null) {
     current_day: null as number | null,
     starts_at: run?.start_date ?? null,
     closes_at: null as string | null,
+    days_remaining: null as number | null,
   };
 
   if (!run) return { ...base, state: 'none' as const };
   if (!run.start_date) return { ...base, state: 'not_started' as const };
 
   const access = challengeAccess(run);
+  // days_remaining rides along on every dated state, but it only MEANS anything on 'running'.
+  // On 'not_started' it counts to the close of a run that hasn't begun — a real number, and a
+  // nonsense sentence ("available for 59 days" before day 1). That block shows starts_at
+  // instead; see docs/webflow-build-list.md §3c. Left in rather than nulled so the field is
+  // one unconditional thing in the contract, not a state-dependent maybe.
   const withDates = {
     ...base,
     closes_at: access.closes_at,
+    days_remaining: access.days_remaining,
   };
 
   if (access.closed) return { ...withDates, state: 'finished' as const };

@@ -155,6 +155,32 @@ function zoneOffsetMs(date: Date, timeZone: string): number | null {
   }
 }
 
+/**
+ * Whole calendar days from `from` to `to`, counted in the given zone.
+ *
+ * Both instants are reduced to their calendar date in `timeZone` first, then subtracted as
+ * plain dates. That is what makes this DST-proof: the hour an offset change adds or removes
+ * never reaches the arithmetic, because the times of day are discarded before it.
+ *
+ * Counting dates also matches how someone reads "3 more days" — it is the number of day
+ * boundaries ahead, not a duration rounded down. A run closing tomorrow morning reads 1 all
+ * of today, rather than dropping to 0 once fewer than 24 hours remain.
+ *
+ * Never negative, and null if either instant can't be placed in the zone (an invalid IANA
+ * name, already the guarded case in zonedParts).
+ */
+function daysBetween(from: Date, to: Date, timeZone: string): number | null {
+  const a = zonedParts(from, timeZone);
+  const b = zonedParts(to, timeZone);
+  if (!a || !b) return null;
+
+  // UTC purely as a calendar here — no time component survives on either side, so this is a
+  // date subtraction and the 86400000 is exact rather than an approximation of elapsed time.
+  const fromDay = Date.UTC(a.year, a.month - 1, a.day);
+  const toDay = Date.UTC(b.year, b.month - 1, b.day);
+  return Math.max(0, Math.round((toDay - fromDay) / 86400000));
+}
+
 export interface ChallengeAccess {
   /** Day numbers this member may see right now. */
   unlocked: number[];
@@ -162,6 +188,19 @@ export interface ChallengeAccess {
   current_day: number | null;
   /** When the run closes to everyone. */
   closes_at: string | null;
+  /**
+   * Whole days of access left, for "available for X more days".
+   *
+   * Counted here rather than in the browser for the same reason everything else in this file
+   * is: the close instant is a wall-clock time in reveal_timezone, so a member's device clock
+   * and zone would give a different answer than the server's — and across a DST boundary the
+   * naive (ms / 86400000) the browser would reach for is off by an hour, which flips the
+   * floor on the day either side of the change.
+   *
+   * Null when there is no start date, matching how current_day signals "not applicable".
+   * Never negative: a closed run reads 0, not -3.
+   */
+  days_remaining: number | null;
   /** Last moment someone can join and still get this run. Null when there is no cutoff. */
   join_closes_at: string | null;
   started: boolean;
@@ -201,6 +240,7 @@ export function challengeAccess(
     unlocked: [],
     current_day: null,
     closes_at: closesAt ? closesAt.toISOString() : null,
+    days_remaining: null,
     join_closes_at: null,
     started: false,
     closed: false,
@@ -208,6 +248,12 @@ export function challengeAccess(
   });
 
   if (!schedule.start_date) return empty();
+
+  // Whole days from now until the run closes. Both instants are converted to calendar dates
+  // in the reveal zone before subtracting, so the answer is "how many more sleeps" as the
+  // run's own timezone counts them — not a millisecond division, which drifts by an hour
+  // across a DST change and would tip the floor on one of the two days around it.
+  const daysRemaining = closesAt === null ? null : daysBetween(now, closesAt, schedule.reveal_timezone);
 
   // 0 means no cutoff. Otherwise joining is open THROUGH that day, so the boundary is the
   // start of the following one — same convention as the open window above.
@@ -220,6 +266,8 @@ export function challengeAccess(
       unlocked: [],
       current_day: null,
       closes_at: closesAt.toISOString(),
+      // Past the close instant, so this is 0 rather than a negative count.
+      days_remaining: 0,
       join_closes_at: joinClosesAt ? joinClosesAt.toISOString() : null,
       started: true,
       closed: true,
@@ -239,6 +287,7 @@ export function challengeAccess(
     unlocked,
     current_day: unlocked.length > 0 ? unlocked[unlocked.length - 1] : null,
     closes_at: closesAt ? closesAt.toISOString() : null,
+    days_remaining: daysRemaining,
     join_closes_at: joinClosesAt ? joinClosesAt.toISOString() : null,
     started: unlocked.length > 0,
     closed: false,

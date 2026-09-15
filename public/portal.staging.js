@@ -295,6 +295,7 @@
     eachEl('[data-field="challenge-total-days"]', hide);
     eachEl('[data-field="challenge-starts-at"]', hide);
     eachEl('[data-field="challenge-closes-at"]', hide);
+    eachEl('[data-field="challenge-days-remaining"]', hide);
     // Promos and their page wrappers, for the same reason as the challenge days above.
     // These were the one gated thing hideAll never covered, which was survivable only while
     // Webflow was left to hide them: a page that did NOT mark them hidden painted every
@@ -934,6 +935,13 @@
     });
     eachEl('[data-field="challenge-closes-at"]', function (el) {
       el.textContent = formatDate(challenge.closes_at);
+      show(el);
+    });
+    // "Available for X more days". The server counts this, in the run's own timezone — the
+    // browser doing date math off closes_at would answer by the member's device clock and
+    // disagree by a day for anyone travelling or set to the wrong zone.
+    eachEl('[data-field="challenge-days-remaining"]', function (el) {
+      el.textContent = challenge.days_remaining == null ? '' : String(challenge.days_remaining);
       show(el);
     });
 
