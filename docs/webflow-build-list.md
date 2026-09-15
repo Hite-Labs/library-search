@@ -302,8 +302,14 @@ Nothing here changes the existing portal structure. Promo blocks can go anywhere
 inside the cohort panel, inside the upsell panel, on their own. Put them where the offer
 makes sense; the visibility rules travel with the block.
 
-The challenge panel is a new sibling to the existing `portal-coaching` and `portal-cohort`
-panels.
+**The challenge lives on its own page**, unlike `portal-coaching` and `portal-cohort`, which
+share one. (An earlier version of this line called it a sibling of those two — it isn't, and
+that assumption caused a blank-page bug on 2026-09-15.)
+
+Panels may be split across pages however suits the site. The script asks the DOM what is
+actually on the page it is running on, so the upsell and the tab header only ever count
+panels that are really there — a member holding the challenge sees their panel on the
+challenge page, and the upsell on the coaching page, rather than nothing on either.
 
 ---
 

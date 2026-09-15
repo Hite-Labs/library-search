@@ -393,7 +393,15 @@
 
     // Only plans with a panel can be tabbed to. Counting the audio membership here would
     // give a cohort member who buys it a two-tab header whose second tab points at nothing.
-    var held = heldPlans().filter(function (p) { return !!p.panelId; });
+    //
+    // panelOnPage for the same reason: the panel has to be on THIS page, not merely named in
+    // the registry. The challenge has its own page, so without this a member holding the
+    // challenge and a coaching plan got a two-tab header on the coaching page whose
+    // challenge tab pointed at a panel that isn't in this document — the identical
+    // "points at nothing" failure the line above already guards against for the membership.
+    var held = heldPlans().filter(function (p) {
+      return !!p.panelId && panelOnPage(p.panelId);
+    });
 
     // Show tabs whenever the member holds MORE THAN ONE panel — previously this required
     // holding BOTH of exactly two, so a member with any other combination would have got no
@@ -1213,13 +1221,35 @@
     }
   }
 
+  // Is this panel actually on the page being looked at right now?
+  //
+  // Counts the same three ways eachById reveals — id, data-field, data-panel — so a panel
+  // built any of those ways is found. Anything else would call a real panel missing and
+  // show the upsell on top of it.
+  function panelOnPage(id) {
+    if (!id) return false;
+    var found = false;
+    eachById(id, function () { found = true; });
+    return found;
+  }
+
   // Open whatever the current PLANS[] state says should be open. Called once the server has
   // answered — or from the error path, so a failed fetch still resolves the page.
   function revealFromPlans() {
     pendingReveal = false;
     var anyHeld = false;
     for (var i = 0; i < PLANS.length; i++) {
-      if (PLANS[i].panelId && PLANS[i].has) anyHeld = true;
+      // The panel must be HELD and PRESENT HERE to count.
+      //
+      // Presence is the half that was missing, and it only shows up once the plans stop
+      // sharing a page. The challenge lives on its own page, so a challenge member on the
+      // coaching page held a panel that is not in this DOM: nothing opened, and the upsell
+      // was suppressed on account of it. That is the blank-page failure — the one member
+      // who is definitely buying things is shown no offer at all.
+      //
+      // Asking the DOM rather than maintaining a page→panel map means a panel can move
+      // pages in Webflow, or be split across them, with no code change here.
+      if (PLANS[i].panelId && PLANS[i].has && panelOnPage(PLANS[i].panelId)) anyHeld = true;
       eachById(PLANS[i].panelId, PLANS[i].has ? show : hide);
     }
     if (anyHeld) eachById('portal-upsell', hide);
