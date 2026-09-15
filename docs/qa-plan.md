@@ -251,6 +251,14 @@ Bugs found and fixed during P0/P3, all of them in the reveal path rather than th
 5. The search widget was revealed to anyone reaching the page, handing the paid library to
    every coaching, cohort and challenge customer.
 
+Found later, on 2026-09-15 (`009f244`), in the same reveal path:
+
+6. **A challenge member saw a blank coaching page** — no panel and no upsell. `revealFromPlans`
+   counted "holds a panel" from the plan registry, which is true on every page, so holding the
+   challenge suppressed the upsell on pages where `portal-challenge` does not exist. Invisible
+   until the challenge moved to its own page: while every panel shared one, the registry and
+   the DOM agreed. Both it and `initTabs` now ask the DOM whether the panel is on *this* page.
+
 ### Cache gotcha — use portal.js, not portal.staging.js
 
 During P4 the cohort panel did not appear, and switching the page from
