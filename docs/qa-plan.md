@@ -296,6 +296,13 @@ staging is ever needed again, hard-refresh it deliberately and re-check.
 > The waitlist button needs no code: its link is pasted into Webflow and the whole `none`
 > block is already hidden unless there is genuinely no run.
 >
+> **2026-09-15, later the same day:** the two dated sentences are now written BY THE SCRIPT
+> into the state block itself — no spans to build. `data-challenge-state` on a plain heading
+> gets the whole line; a block with child elements is left alone, so the `running` wrapper
+> holding the day blocks is safe either way. `finished` and `none` are still pure Webflow
+> copy. Sentence wording lives in `stateText` in `public/portal.js`; check it with
+> `node scripts/check-challenge-text.mjs`.
+>
 > **Still blocked on exactly the same thing: the blocks do not exist in Webflow.** Everything
 > below still applies.
 

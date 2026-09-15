@@ -863,6 +863,51 @@
   // cohort session lock had to learn, where hiding a row client-side still shipped the
   // recording URL to anyone reading the network tab.
   //
+  // The sentence a state block says, written straight into the element.
+  //
+  // This is the one place the script authors member-facing copy rather than revealing what
+  // Webflow already holds. It earns the exception because both sentences are a fixed phrase
+  // wrapped around a server value — a date, a countdown — and threading those through
+  // separate data-field spans meant Lindsay hand-building a span inside every heading and
+  // keeping the wording either side of it in sync. Hardcoding the whole line is the trade
+  // she asked for: the text lives here, and Webflow holds only the styling.
+  //
+  // Returning '' means "say nothing" — the block still shows, carrying whatever Webflow
+  // authored. That is what keeps 'finished' and 'none' working as ordinary content blocks.
+  function stateText(state, challenge) {
+    if (state === 'not_started') {
+      var starts = formatDate(challenge.starts_at);
+      // No date yet (a run created before its dates are settled) has no sentence to make.
+      // Falls back to Webflow's own copy rather than "begins on " trailing into nothing.
+      return starts ? 'The next challenge begins on ' + starts : '';
+    }
+    if (state === 'running') {
+      var left = challenge.days_remaining;
+      if (left == null) return '';
+      // Singular on the last day. "available for 1 more days" is the kind of thing that
+      // reads as broken to the person it matters most to.
+      if (left <= 0) return 'This challenge closes today';
+      if (left === 1) return 'This challenge will be available for 1 more day';
+      return 'This challenge will be available for ' + left + ' more days';
+    }
+    // 'finished' and 'none' are pure Webflow content — an upsell and a waitlist button —
+    // so the script has nothing to add and must not clear what she wrote.
+    return '';
+  }
+
+  // Write a state's sentence, but ONLY into a leaf element.
+  //
+  // The guard is the whole point. data-challenge-state does double duty: on a bare heading
+  // it labels a sentence, but on a wrapper it marks the region holding the day blocks and
+  // the Telegram link (see the build list). Writing textContent into that wrapper would
+  // delete all of it. So anything with a child element is treated as a container and left
+  // untouched, which lets both usages share one attribute safely.
+  function writeStateText(el, state, challenge) {
+    if (el.children && el.children.length > 0) return;
+    var text = stateText(state, challenge);
+    if (text) el.textContent = text;
+  }
+
   // eachEl throughout, never byField: Webflow duplicates elements for mobile.
   function renderChallenge(challenge, joiningOpen) {
     // The join CTA is the one element on this page with INVERTED logic: it is for people who
@@ -903,8 +948,10 @@
     // 21 days lands on "that run is over, here's what's next" rather than an empty panel.
     // That moment is the best upsell in the product.
     eachEl('[data-challenge-state]', function (el) {
-      if (el.getAttribute('data-challenge-state') === state) show(el);
-      else hide(el);
+      if (el.getAttribute('data-challenge-state') === state) {
+        writeStateText(el, el.getAttribute('data-challenge-state'), challenge);
+        show(el);
+      } else hide(el);
     });
 
     // Days only exist while the run is live. Every other state carries none, so this

@@ -197,10 +197,10 @@ attribute, and exactly one will show at a time:
 
 | `data-challenge-state` | Shows when | What to put in it |
 |---|---|---|
-| `running` | the run is live | the wrapper around your day blocks, the Telegram link, "day 4 of 21" |
-| `not_started` | a run exists but hasn't begun | "The next challenge begins on March 3" |
-| `finished` | the run's open window has closed | **the upsell moment.** "That run is over. Here's what's next." |
-| `none` | no run is set up at all | the waitlist — "Put your name down for the next challenge" |
+| `running` | the run is live | a heading — **script writes the countdown sentence**. (Or the wrapper around your day blocks and Telegram link; see the rule below.) |
+| `not_started` | a run exists but hasn't begun | a heading — **script writes "The next challenge begins on …"** |
+| `finished` | the run's open window has closed | **the upsell moment**, your words — "That run is over. Here's what's next." |
+| `none` | no run is set up at all | the waitlist message and button, your words |
 
 > The `finished` block is the most valuable one on the page. Someone has just spent 21 days
 > with you and their account doesn't expire — this is where they find out what else they can
@@ -212,33 +212,50 @@ does is take away the *join button* and retire the promo; see §3e.
 
 #### The three sentences, and how to build them
 
-These go **above the Telegram button**, inside the challenge panel. Each is an ordinary
-Webflow heading — the script writes only the number or the date into a span inside it.
+These go **above the Telegram button**, inside the challenge panel.
 
-**1. A run is scheduled but hasn't started** — block `data-challenge-state="not_started"`:
+**For the first two, the script writes the whole sentence for you.** Put
+`data-challenge-state` straight on the heading — an H4, or whatever you like, styled however
+you like — and leave it empty or with placeholder text. Whatever is inside gets replaced. You
+do not need a span, and you do not need any `data-field` attribute.
 
-> The next challenge begins on **[span: `data-field="challenge-starts-at"`]**
+**1. A run is scheduled but hasn't started** — `data-challenge-state="not_started"` on the heading:
 
-**2. The run is open** — block `data-challenge-state="running"`:
+> The next challenge begins on September 3, 2026
 
-> This challenge will be available for **[span: `data-field="challenge-days-remaining"`]** more days
+**2. The run is open** — `data-challenge-state="running"` on the heading:
+
+> This challenge will be available for 16 more days
+
+The number counts itself down, and says "1 more day" on the last day rather than "1 more
+days". On the final day it reads "This challenge closes today".
 
 This one covers the whole open window, not just the 21 days of content. Someone on day 3 and
 someone on day 30 who has finished every video both see it — the number just keeps counting
 down until access closes. That is why there's only one block for both, rather than a
 separate "you've finished but still have access" state.
 
-**3. Nothing is scheduled** — block `data-challenge-state="none"`:
+**3. Nothing is scheduled** — `data-challenge-state="none"`, on a div this time:
 
 > Put your name on the waitlist for the next challenge — *plus your waitlist button*
 
-Paste the Go High Level waitlist link straight into that button in Webflow. The script
-doesn't touch it: the whole block is hidden unless there's genuinely no run set up, so the
-button can only ever be seen at the right moment. (This is unlike the Telegram link, whose
+Here the script writes nothing and only shows the block, so the wording and the button are
+entirely yours. Paste the Go High Level waitlist link straight into the button. It can only
+ever be seen when there's genuinely no run set up. (This is unlike the Telegram link, whose
 URL *does* come from the dashboard — that one changes every run, the waitlist link doesn't.)
+
+The same is true of `finished`: the script leaves it alone, so that upsell is yours to write.
+
+> **The one rule.** The script only writes into a block that has **no other elements inside
+> it** — a plain heading. A block containing anything else is treated as a container and left
+> completely alone, so the `running` wrapper holding your day blocks and the Telegram link is
+> safe. If a sentence isn't appearing, check whether that block has children.
 
 Give all four state blocks the `is-hidden` class, same as everything else, so nothing flashes
 before the script decides which one to show.
+
+To change the wording of the first two sentences, edit `stateText` in `public/portal.js`
+(and its staging twin) — that copy lives in the script, not in Webflow.
 
 ### 3d. Optional text fields inside the panel
 
@@ -253,9 +270,9 @@ Add `data-field="..."` to any text element to have the script fill it in:
 | `challenge-closes-at` | when access closes | "April 17, 2026" |
 | `challenge-days-remaining` | how many days of access are left | `16` |
 
-`challenge-days-remaining` is a plain number, so write the words around it: put the span
-inside your sentence rather than on its own. It counts down to the same moment
-`challenge-closes-at` names — use whichever reads better, or both.
+`challenge-days-remaining` is a plain number with no words around it. **You don't need it for
+the "available for X more days" sentence** — the `running` state block writes that whole line
+itself (§3c). It's here for building your own wording somewhere else on the page.
 
 And one link — add `data-field="challenge-telegram-link"` to a link element and its href gets
 set to the run's Telegram URL. If no URL is set in the dashboard the link is left alone, so
@@ -412,7 +429,7 @@ hardcoded link keeps pointing at last run's group after the next one starts.
 | `data-promo-page="page"` | one wrapper per page | `membership`, `coaching`, `cohort`, `challenge` |
 | `data-promo="code"` | any promo block, inside a wrapper | must match a dashboard rule |
 | `data-challenge-day="N"` | each day's block | `1` … `21` |
-| `data-challenge-state="s"` | four state blocks | `running`, `not_started`, `finished`, `none` |
+| `data-challenge-state="s"` | four state blocks | `running`, `not_started`, `finished`, `none`. On a plain heading the script writes the sentence for the first two; a block with children is left alone. |
 | `data-field="challenge-name"` | text element | filled by script |
 | `data-field="challenge-current-day"` | text element | filled by script |
 | `data-field="challenge-total-days"` | text element | filled by script |
