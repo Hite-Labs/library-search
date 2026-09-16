@@ -1,6 +1,6 @@
 'use client';
 
-import { MEDIA_BADGES, MediaIcon } from '@/components/MediaBadge';
+import { mediaBadge, MediaIcon } from '@/components/MediaBadge';
 import type { Result } from './types';
 
 interface ResultCardProps {
@@ -26,11 +26,9 @@ interface ResultCardProps {
  * "Link unavailable". Selecting now opens the item in place instead.
  */
 export function ResultCard({ item, selected, onSelect, outline }: ResultCardProps) {
-  // On an outline card the petal-tinted badges are illegible — they are built for a petal
-  // surface, and here the surface is the dark host page showing through.
-  const badge = outline
-    ? { label: MEDIA_BADGES[item.mediaType]?.label ?? item.mediaType, className: 'tint-bg-petal-15 text-petal' }
-    : MEDIA_BADGES[item.mediaType] ?? { label: item.mediaType, className: 'tint-bg-forest-10 text-forest' };
+  // An outline card shows the dark host page through it; a filled one is petal. The badge
+  // has to follow, or the dark-ink palette lands on a dark surface. See mediaBadge.
+  const badge = mediaBadge(item.mediaType, outline);
 
   return (
     <button

@@ -1,6 +1,6 @@
 'use client';
 
-import { MEDIA_BADGES, MediaIcon } from '@/components/MediaBadge';
+import { mediaBadge, MediaIcon } from '@/components/MediaBadge';
 import { Player } from './Player';
 import type { Result } from './types';
 
@@ -25,8 +25,8 @@ interface DetailPanelProps {
 export function DetailPanel({ item, onFirstPlay }: DetailPanelProps) {
   if (!item) return null;
 
-  const badge =
-    MEDIA_BADGES[item.mediaType] ?? { label: item.mediaType, className: 'tint-bg-forest-10 text-forest' };
+  // The panel is a filled petal card, so the light palette is correct here.
+  const badge = mediaBadge(item.mediaType);
 
   // Stored as comma-separated text, not arrays. Split for display and drop the blanks
   // that a trailing comma or an empty column leaves behind.

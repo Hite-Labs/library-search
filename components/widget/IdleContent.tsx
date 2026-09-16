@@ -1,6 +1,6 @@
 'use client';
 
-import { MEDIA_BADGES, MediaIcon } from '@/components/MediaBadge';
+import { mediaBadge, MediaIcon } from '@/components/MediaBadge';
 import { ResultCard } from './ResultCard';
 import { gettingStartedToResult, type GettingStarted, type Result } from './types';
 
@@ -100,10 +100,8 @@ function FeaturedCard({
   onSelect: (item: Result) => void;
 }) {
   const selected = item.id === selectedId;
-  const badge = MEDIA_BADGES[item.mediaType] ?? {
-    label: item.mediaType,
-    className: 'tint-bg-forest-10 text-forest',
-  };
+  // The featured card is a filled petal surface, so the light palette is correct here.
+  const badge = mediaBadge(item.mediaType);
 
   return (
     <button

@@ -14,6 +14,33 @@ export const MEDIA_BADGES: Record<string, { label: string; className: string }> 
 };
 
 /**
+ * The same badges for a DARK surface.
+ *
+ * Every colour above is a dark ink meant for a light card — forest is #143428, which is
+ * nearly black. Put one on the widget's dark host page and it reads as a smudge: the
+ * Video badge in particular was dark green on a 10%-dark-green tint, on dark, which is
+ * effectively invisible.
+ *
+ * So dark surfaces get one treatment for all three types: cream text on a translucent
+ * cream tint. Type is still distinguishable by the icon and the word, which is what the
+ * badge is for — colour was never carrying that meaning on its own.
+ *
+ * This lived inline in ResultCard, handling only its own outline variant. Everything else
+ * that renders a badge on dark — the featured Getting Started card, the detail panel —
+ * missed it, because a fix in one component cannot be found by the next one. Keeping both
+ * maps here is what makes `onDark` a property of the badge rather than of whoever
+ * remembered.
+ */
+const MEDIA_BADGES_DARK = 'tint-bg-petal-15 text-petal';
+
+/** The badge classes for a media type, on a light card or a dark one. */
+export function mediaBadge(type: string, onDark = false): { label: string; className: string } {
+  const label = MEDIA_BADGES[type]?.label ?? type;
+  if (onDark) return { label, className: MEDIA_BADGES_DARK };
+  return MEDIA_BADGES[type] ?? { label, className: 'tint-bg-forest-10 text-forest' };
+}
+
+/**
  * The same three Iconoir glyphs the member portal already uses — mic, video camera,
  * document — copied from MEDIA_ICONS in public/portal.js so a member sees one visual
  * language for media type across the portal and the library.
@@ -72,8 +99,17 @@ export function MediaIcon({ type, className = '' }: { type: string; className?: 
   );
 }
 
-export function MediaBadge({ type, className = '' }: { type: string; className?: string }) {
-  const badge = MEDIA_BADGES[type] ?? { label: type, className: 'tint-bg-forest-10 text-forest' };
+export function MediaBadge({
+  type,
+  className = '',
+  onDark = false,
+}: {
+  type: string;
+  className?: string;
+  /** True when this sits on the widget's dark page rather than a light card. */
+  onDark?: boolean;
+}) {
+  const badge = mediaBadge(type, onDark);
   return (
     <span
       className={`shrink-0 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className} ${className}`}
