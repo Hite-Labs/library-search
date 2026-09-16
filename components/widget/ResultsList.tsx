@@ -62,7 +62,7 @@ interface ResultsListProps {
   /**
    * True once the member has picked something. Demotes this whole list: the summary is
    * hidden (it advises WHICH to pick, so it has done its job), the cards become outlines
-   * rather than filled surfaces, and they sit under an "Other results" heading.
+   * rather than filled surfaces, and they sit under a "You may also like" heading.
    */
   demoted?: boolean;
 }
@@ -81,7 +81,7 @@ export function ResultsList({ response, results, selectedId, onSelect, demoted }
         <p className="text-sm tint-petal-80 leading-relaxed">{renderBold(response)}</p>
       )}
       {/*
-        The open item is dropped from the list below its own player: "Other results" means
+        The open item is dropped from the list below its own player: "You may also like" means
         the alternatives, and repeating the selection there as a card reading "Playing
         above" is both redundant and a contradiction of the heading. Undemoted, the full
         list stays intact with the selection highlighted in place.
@@ -132,7 +132,7 @@ export function ResultsList({ response, results, selectedId, onSelect, demoted }
       {visible.length > 0 && (
         <div className="space-y-3">
           {demoted && (
-            <h2 className="font-serif text-lg tint-petal-80 pt-2">Other results</h2>
+            <h2 className="font-serif text-lg tint-petal-80 pt-2">You may also like</h2>
           )}
           {visible.map((result) => (
             <ResultCard

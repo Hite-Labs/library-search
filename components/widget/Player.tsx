@@ -277,25 +277,13 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
         <audio ref={ref} src={src} preload="metadata" className="hidden" />
       )}
 
+      {/*
+        Skip and speed sit on their own row ABOVE the transport. Play used to lead this row
+        and the scrubber sat alone beneath it, which put the primary control and the thing
+        it drives on separate lines. Play now leads the scrubber row below, so pressing it
+        and watching the progress move are the same glance.
+      */}
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={playing ? 'Pause' : 'Play'}
-          className="w-11 h-11 shrink-0 rounded-full bg-plum text-gold border border-gold flex items-center justify-center hover:bg-gold hover:text-plum transition-colors focus:outline-none focus:ring-2 focus:ring-gold focus:ring-offset-2"
-        >
-          {playing ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <rect x="3" y="2" width="4" height="12" rx="1" />
-              <rect x="9" y="2" width="4" height="12" rx="1" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M4 2.5v11a.5.5 0 0 0 .76.43l9-5.5a.5.5 0 0 0 0-.86l-9-5.5A.5.5 0 0 0 4 2.5Z" />
-            </svg>
-          )}
-        </button>
-
         <button
           type="button"
           onClick={() => seekTo(current - SKIP_SECONDS)}
@@ -330,8 +318,31 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
         )}
       </div>
 
-      <div className="flex items-center gap-3">
-        <span className="text-xs tint-forest-70 tabular-nums w-10 shrink-0">{formatTime(current)}</span>
+      {/*
+        Play, then the elapsed time, the scrubber and the duration — one row. The scrubber
+        takes whatever space the fixed-width items leave (flex-1 against three shrink-0
+        siblings), so the play button keeps its full 44px tap target on a narrow phone and
+        the bar absorbs the difference rather than the controls wrapping.
+      */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={playing ? 'Pause' : 'Play'}
+          className="w-11 h-11 shrink-0 rounded-full bg-plum text-gold border border-gold flex items-center justify-center hover:bg-gold hover:text-plum transition-colors focus:outline-none focus:ring-2 focus:ring-gold focus:ring-offset-2"
+        >
+          {playing ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <rect x="3" y="2" width="4" height="12" rx="1" />
+              <rect x="9" y="2" width="4" height="12" rx="1" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M4 2.5v11a.5.5 0 0 0 .76.43l9-5.5a.5.5 0 0 0 0-.86l-9-5.5A.5.5 0 0 0 4 2.5Z" />
+            </svg>
+          )}
+        </button>
+        <span className="text-xs tint-forest-70 tabular-nums w-9 shrink-0">{formatTime(current)}</span>
         <input
           type="range"
           min={0}
@@ -351,7 +362,7 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
           aria-label="Seek"
           className="flex-1 accent-gold disabled:opacity-30"
         />
-        <span className="text-xs tint-forest-70 tabular-nums w-10 shrink-0 text-right">
+        <span className="text-xs tint-forest-70 tabular-nums w-9 shrink-0 text-right">
           {canScrub ? formatTime(duration) : '--:--'}
         </span>
       </div>

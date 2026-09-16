@@ -302,7 +302,6 @@ export function WidgetRoot() {
       */}
       <DetailPanel
         item={selected}
-        onClose={() => setSelected(null)}
         onFirstPlay={() => selected && handlePlayed(selected)}
       />
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { MEDIA_BADGES } from '@/components/MediaBadge';
+import { MEDIA_BADGES, MediaIcon } from '@/components/MediaBadge';
 import type { Result } from './types';
 
 interface ResultCardProps {
@@ -49,7 +49,10 @@ export function ResultCard({ item, selected, onSelect, outline }: ResultCardProp
         <h3 className={`text-sm font-semibold leading-snug ${outline ? 'text-petal' : 'text-forest'}`}>
           {item.title}
         </h3>
-        <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}>
+        <span
+          className={`shrink-0 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}
+        >
+          <MediaIcon type={item.mediaType} />
           {badge.label}
         </span>
       </div>

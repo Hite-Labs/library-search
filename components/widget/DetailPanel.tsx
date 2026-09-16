@@ -1,13 +1,12 @@
 'use client';
 
-import { MEDIA_BADGES } from '@/components/MediaBadge';
+import { MEDIA_BADGES, MediaIcon } from '@/components/MediaBadge';
 import { Player } from './Player';
 import type { Result } from './types';
 
 interface DetailPanelProps {
   /** null when nothing is selected — the panel renders nothing but keeps its slot. */
   item: Result | null;
-  onClose: () => void;
   /** Passed to Player; fires once when this item starts playing. */
   onFirstPlay?: () => void;
 }
@@ -23,7 +22,7 @@ interface DetailPanelProps {
  * fixed — React reconciles by position, and a panel that appeared and disappeared would
  * shift the list's index and could unmount the playing <audio> element beneath it.
  */
-export function DetailPanel({ item, onClose, onFirstPlay }: DetailPanelProps) {
+export function DetailPanel({ item, onFirstPlay }: DetailPanelProps) {
   if (!item) return null;
 
   const badge =
@@ -38,24 +37,21 @@ export function DetailPanel({ item, onClose, onFirstPlay }: DetailPanelProps) {
 
   return (
     <div className="bg-petal border tint-border-gold-40 rounded-xl p-4 space-y-3 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold text-forest leading-snug">{item.title}</h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}>
-              {badge.label}
-            </span>
-            {item.modality && <span className="text-xs tint-forest-70">{item.modality}</span>}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="shrink-0 tint-forest-70 hover:text-plum text-lg leading-none px-1"
+      {/*
+        No title here, and no close button — both used to be, and both were duplicates.
+        WidgetRoot renders the track title as the page's h1 the moment something is
+        selected, so this card repeated it a few pixels lower; and "‹ Back to results"
+        above it already closes the player, in words that say where it goes rather than a
+        bare × that reads as "dismiss" and makes a poor tap target on a phone.
+      */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}
         >
-          ×
-        </button>
+          <MediaIcon type={item.mediaType} />
+          {badge.label}
+        </span>
+        {item.modality && <span className="text-xs tint-forest-70">{item.modality}</span>}
       </div>
 
       {/*
