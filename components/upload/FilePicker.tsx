@@ -8,16 +8,30 @@ interface FilePickerProps {
   disabled?: boolean;
 }
 
-const ACCEPTED = '.mp4,.mp3,.m4a,.pdf';
-const ACCEPTED_TYPES = ['video/mp4', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'application/pdf'];
+/**
+ * What the library uploader takes. Matches the client and cohort uploaders, which have
+ * accepted .mov and .wav since they were built — this picker was the one path that didn't,
+ * which is how a QuickTime recording (what a Mac screen capture or a phone produces) hit a
+ * dead end here while the same file uploaded fine on a client page.
+ *
+ * Extensions, not MIME types. The old check compared file.type against an allowlist, and
+ * browsers are not consistent about what they report for .mov: 'video/quicktime' on some,
+ * empty string on others (notably Windows, where the type comes from a registry lookup that
+ * may simply be absent). An allowlist of MIME types therefore rejects valid files for
+ * reasons the person uploading cannot see or fix. The extension is what the user chose and
+ * what R2, AssemblyAI and the media element all key off downstream.
+ */
+const ACCEPTED_EXTENSIONS = ['.mp4', '.mov', '.webm', '.mp3', '.wav', '.m4a', '.pdf'] as const;
+const ACCEPTED = ACCEPTED_EXTENSIONS.join(',');
 
 export function FilePicker({ value, onChange, disabled }: FilePickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
-    if (file && !ACCEPTED_TYPES.includes(file.type)) {
-      alert('Unsupported file type. Please upload .mp4, .mp3, .m4a, or .pdf');
+    const name = file?.name.toLowerCase() ?? '';
+    if (file && !ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+      alert(`Unsupported file type. Please upload one of: ${ACCEPTED_EXTENSIONS.join(', ')}`);
       return;
     }
     onChange(file);
@@ -51,7 +65,7 @@ export function FilePicker({ value, onChange, disabled }: FilePickerProps) {
       ) : (
         <div className="text-stone-500">
           <p className="text-sm font-medium">Click to select a file</p>
-          <p className="text-xs mt-1">.mp4, .mp3, .m4a, .pdf</p>
+          <p className="text-xs mt-1">{ACCEPTED_EXTENSIONS.join(', ')}</p>
         </div>
       )}
     </div>
