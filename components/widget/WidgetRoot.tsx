@@ -52,13 +52,18 @@ export function WidgetRoot() {
   // What the idle shelf renders once the member has played something. Held in BOTH a ref
   // and state, on purpose — see handlePlayed for why the ref is the authoritative one.
   //
-  // Seeded by a lazy initialiser rather than an effect: localStorage is synchronous, so the
-  // shelf is correct on the FIRST paint with no second render and no height change. (This
-  // is also why the storage choice was localStorage — a server-backed history could not be
-  // read here.) The anonymous bucket is what's available pre-token; the member-scoped one
-  // is picked up below once their id arrives.
-  const [recent, setRecent] = useState<Result[]>(() => readRecent(bucketKey(null)));
-  const recentRef = useRef<Result[]>(recent);
+  // Starts EMPTY and is filled after mount, never by a lazy initialiser.
+  //
+  // /widget is statically prerendered (`○ /widget` in the build output), so this component
+  // renders once on the server, where `window` does not exist. A lazy initialiser reading
+  // localStorage would return [] there and three items on the client — a hydration
+  // mismatch, which React resolves by throwing away the client render and warning. Reading
+  // after mount costs one extra render and is the only correct option.
+  //
+  // The anonymous bucket is what's available before the token arrives; the member-scoped
+  // one is adopted in the postMessage handler above.
+  const [recent, setRecent] = useState<Result[]>([]);
+  const recentRef = useRef<Result[]>([]);
 
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -111,8 +116,9 @@ export function WidgetRoot() {
         //
         // The ref is updated unconditionally so handlePlayed always appends to the right
         // list. The visible state is only touched when the shelf is actually on screen:
-        // setStateRef below reads the CURRENT state via a ref, so a token arriving mid-track
-        // can never re-render over a playing <audio> element.
+        // canShowShelfRef holds the CURRENT state (this listener is registered once, so it
+        // would otherwise see the state as it was at mount), which is what stops a token
+        // arriving mid-track from re-rendering over a playing <audio> element.
         if (userId) {
           const mine = readRecent(bucketKey(userId));
           recentRef.current = mine;
@@ -136,6 +142,19 @@ export function WidgetRoot() {
   // One grow is a settle; two is a flicker.
   useEffect(() => {
     let cancelled = false;
+
+    // Seed the played history now that `window` exists. Deferred into this async callback
+    // rather than run synchronously in the effect body for two reasons: it cannot run
+    // during the server render (see the `recent` declaration), and a synchronous setState
+    // in an effect body is the cascading-render pattern React warns about.
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      const seeded = readRecent(bucketKey(null));
+      if (seeded.length === 0) return; // nothing stored: leave the empty initial state alone
+      recentRef.current = seeded;
+      setRecent(seeded);
+    });
+
     fetch('/api/getting-started')
       .then((res) => (res.ok ? res.json() : null))
       .then((data: GettingStarted | null) => {
@@ -153,9 +172,10 @@ export function WidgetRoot() {
   // Notify parent of height changes. Observing our own root rather than document.body
   // for the same reason notifyHeight measures it — see that function.
   //
-  // `gettingStarted` is in the deps because the shelf lands asynchronously and grows the
-  // root. The ResizeObserver would catch it regardless, but the immediate call keeps the
-  // host iframe in step without waiting for the observer's first callback.
+  // `gettingStarted` and `recent` are in the deps because both land asynchronously after
+  // mount — one from the fetch, one from the localStorage seed — and each grows the root.
+  // The ResizeObserver would catch them regardless, but the immediate call keeps the host
+  // iframe in step without waiting for the observer's first callback.
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -265,19 +285,29 @@ export function WidgetRoot() {
       )}
 
       {/*
-        The idle shelf. Structured to mirror the `results` block below it, and for the same
-        reason: DetailPanel is rendered unconditionally (it returns null when nothing is
-        selected) so its position among its siblings never changes. React reconciles by
-        position, and a panel that appeared and disappeared would shift the index of the
-        list beneath it — which can unmount a playing <audio> element.
+        The player lives HERE, in one slot outside every state branch, and that placement is
+        load-bearing rather than tidy.
+
+        It used to be rendered inside both the `idle` and `results` blocks. Within either
+        branch that was stable, but the two blocks are different children of this div, so a
+        state change unmounted one subtree and mounted the other — destroying the <audio>
+        element and the track playing through it. Nothing reachable actually triggered that
+        (the search box is hidden while something is selected, so a member cannot start a
+        search mid-track without first closing the player), but the safety was coming from
+        that guard while the comment credited this structure. One stable slot makes the
+        structure genuinely responsible for it.
+
+        DetailPanel returns null when nothing is selected, so this costs an empty render in
+        every other state.
       */}
+      <DetailPanel
+        item={selected}
+        onClose={() => setSelected(null)}
+        onFirstPlay={() => selected && handlePlayed(selected)}
+      />
+
       {state === 'idle' && (
         <div className="space-y-4">
-          <DetailPanel
-            item={selected}
-            onClose={() => setSelected(null)}
-            onFirstPlay={() => selected && handlePlayed(selected)}
-          />
           <div className={selected ? 'pt-6' : undefined}>
             <IdleContent
               gettingStarted={gettingStarted}
@@ -298,17 +328,6 @@ export function WidgetRoot() {
 
       {state === 'results' && (
         <div className="space-y-4">
-          {/*
-            Rendered unconditionally, with the emptiness handled inside, so the panel
-            keeps a fixed position among its siblings. React reconciles by position:
-            toggling this subtree in and out would shift ResultsList's index and could
-            unmount the <audio> element mid-playback.
-          */}
-          <DetailPanel
-            item={selected}
-            onClose={() => setSelected(null)}
-            onFirstPlay={() => selected && handlePlayed(selected)}
-          />
           {/*
             Breathing room between the open player and the alternatives below it. Without
             it "Other results" reads as part of the player card rather than a new section.

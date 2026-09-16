@@ -66,6 +66,11 @@ export function bucketKey(memberId: string | null): string {
  * on someone's phone must not take out the widget.
  */
 function readRaw(key: string): string | null {
+  // The `typeof window` guard is for the server, not the browser: /widget is statically
+  // prerendered, so this module is evaluated during the build where there is no window at
+  // all. The try/catch is the browser half — Safari private mode throws on the property
+  // access itself, before getItem is ever called.
+  if (typeof window === 'undefined') return null;
   try {
     return window.localStorage.getItem(key);
   } catch {
@@ -77,11 +82,18 @@ function readRaw(key: string): string | null {
 function isUsable(item: unknown): item is Result {
   if (!item || typeof item !== 'object') return false;
   const r = item as Partial<Result>;
+  // Checks every field a card or the player reads, not just the ones needed to play. The
+  // display fields would not crash if missing — DetailPanel's tag split already guards on
+  // falsiness — but a half-written entry would render a card with an empty description and
+  // no explanation, and dropping it is both cheaper and more honest than showing it.
   return (
     typeof r.id === 'string' &&
     typeof r.publicUrl === 'string' &&
     typeof r.mediaType === 'string' &&
-    typeof r.title === 'string'
+    typeof r.title === 'string' &&
+    typeof r.description === 'string' &&
+    typeof r.useCases === 'string' &&
+    typeof r.moodTags === 'string'
   );
 }
 
@@ -114,6 +126,7 @@ export function readRecent(key: string): Result[] {
  */
 export function recordPlay(key: string, item: Result): Result[] {
   const next = [item, ...readRecent(key).filter((r) => r.id !== item.id)].slice(0, MAX);
+  if (typeof window === 'undefined') return next;
   try {
     window.localStorage.setItem(key, JSON.stringify(next));
   } catch {
