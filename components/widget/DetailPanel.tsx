@@ -8,6 +8,8 @@ interface DetailPanelProps {
   /** null when nothing is selected — the panel renders nothing but keeps its slot. */
   item: Result | null;
   onClose: () => void;
+  /** Passed to Player; fires once when this item starts playing. */
+  onFirstPlay?: () => void;
 }
 
 /**
@@ -21,7 +23,7 @@ interface DetailPanelProps {
  * fixed — React reconciles by position, and a panel that appeared and disappeared would
  * shift the list's index and could unmount the playing <audio> element beneath it.
  */
-export function DetailPanel({ item, onClose }: DetailPanelProps) {
+export function DetailPanel({ item, onClose, onFirstPlay }: DetailPanelProps) {
   if (!item) return null;
 
   const badge =
@@ -66,6 +68,7 @@ export function DetailPanel({ item, onClose }: DetailPanelProps) {
         mediaType={item.mediaType}
         title={item.title}
         durationSeconds={item.durationSeconds}
+        onFirstPlay={onFirstPlay}
       />
 
       {item.description && (

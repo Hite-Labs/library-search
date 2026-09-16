@@ -57,9 +57,18 @@ export function ResultCard({ item, selected, onSelect, outline }: ResultCardProp
         {item.description}
       </p>
       <div className="flex items-center justify-between pt-1">
-        <span className={`text-xs ${outline ? 'tint-petal-70' : 'tint-forest-70'}`}>
-          {Math.round(item.similarity * 100)}% match
-        </span>
+        {/*
+          Only search results have a match score. A curated shelf item has no query to
+          have matched, so the line is omitted rather than shown as "0% match" — the row
+          is justify-between, so "Open →" simply sits flush right without it.
+        */}
+        {item.similarity !== null ? (
+          <span className={`text-xs ${outline ? 'tint-petal-70' : 'tint-forest-70'}`}>
+            {Math.round(item.similarity * 100)}% match
+          </span>
+        ) : (
+          <span />
+        )}
         <span className={`text-xs font-medium ${outline ? 'text-petal' : 'text-plum'}`}>
           {selected ? 'Playing above' : 'Open →'}
         </span>
