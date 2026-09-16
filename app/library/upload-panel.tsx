@@ -48,14 +48,41 @@ async function readJson(res: Response, step: string) {
   }
 }
 
+/**
+ * The Content-Type R2 stores the object under, and serves it back with.
+ *
+ * Both special cases exist because the browser's own file.type is unreliable for them:
+ * .m4a often arrives as 'audio/mp4' or empty, and .mov as empty on Windows, where the type
+ * comes from a registry lookup that may simply not be there. Storing an object as
+ * application/octet-stream is not a silent problem — R2 serves that Content-Type back, and
+ * a <video> element given octet-stream refuses to play it.
+ */
 function getContentType(file: File): string {
-  if (file.name.endsWith('.m4a')) return 'audio/x-m4a';
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.m4a')) return 'audio/x-m4a';
+  if (name.endsWith('.mov')) return 'video/quicktime';
+  if (name.endsWith('.wav')) return 'audio/wav';
   return file.type || 'application/octet-stream';
 }
 
+/**
+ * Which of the three media_type values the CHECK constraint allows this file is.
+ *
+ * Extension first, file.type second, for the reason above: a .mov with no reported type
+ * would otherwise fall through to 'audio' and be stored as an audio row — playable only
+ * through an <audio> element, which renders a video file as a black nothing.
+ */
 function mediaTypeForFile(file: File): MediaType {
-  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) return 'pdf';
-  if (file.type.startsWith('video/') || file.name.toLowerCase().endsWith('.mp4')) return 'video';
+  const name = file.name.toLowerCase();
+  if (file.type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  if (
+    file.type.startsWith('video/') ||
+    name.endsWith('.mp4') ||
+    name.endsWith('.mov') ||
+    name.endsWith('.webm')
+  ) {
+    return 'video';
+  }
   return 'audio';
 }
 

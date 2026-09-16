@@ -31,6 +31,12 @@ interface PlayerProps {
   title: string;
   /** A hint only — null for almost every row. The file is the source of truth. */
   durationSeconds: number | null;
+  /**
+   * Fired once, the first time this item starts playing. Used to record it as recently
+   * played. Never fires twice for the same mounted Player, and a new item mounts a fresh
+   * one (DetailPanel keys on item id), so "once per item the member actually started".
+   */
+  onFirstPlay?: () => void;
 }
 
 /**
@@ -61,7 +67,7 @@ function formatTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) {
+export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: PlayerProps) {
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -74,6 +80,21 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
   // True while the user drags the scrubber, so timeupdate doesn't fight their thumb.
   const scrubbing = useRef(false);
 
+  // Has onFirstPlay already fired for this mounted Player? Reset comes for free: a
+  // different item mounts a fresh Player (DetailPanel keys on item id), and so a fresh ref.
+  const fired = useRef(false);
+
+  // The callback lives in a ref, and this is load-bearing rather than stylistic.
+  //
+  // The transport effect below has an EMPTY dependency array, deliberately — rule 1 in the
+  // header comment. Putting onFirstPlay in that array would tear down and re-attach every
+  // media listener each time the parent re-rendered with a new closure, mid-playback. A ref
+  // lets the handler always call the current callback while the effect stays mounted once.
+  const onFirstPlayRef = useRef(onFirstPlay);
+  useEffect(() => {
+    onFirstPlayRef.current = onFirstPlay;
+  });
+
   const isVideo = mediaType === 'video';
 
   // ---- transport, driven by the element ------------------------------------------
@@ -82,7 +103,15 @@ export function Player({ src, mediaType, title, durationSeconds }: PlayerProps) 
     const el = ref.current;
     if (!el) return;
 
-    const onPlay = () => setPlaying(true);
+    const onPlay = () => {
+      setPlaying(true);
+      // "Played" is any press of play — no duration threshold. A mis-tap self-corrects:
+      // the list holds three, so the next real play pushes it out.
+      if (!fired.current) {
+        fired.current = true;
+        onFirstPlayRef.current?.();
+      }
+    };
     const onPause = () => setPlaying(false);
     const onTime = () => {
       if (!scrubbing.current) setCurrent(el.currentTime);
