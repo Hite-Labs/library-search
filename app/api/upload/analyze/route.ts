@@ -3,11 +3,10 @@ import { transcribe } from '@/lib/transcribe';
 import { chat } from '@/lib/anthropic';
 import { ANALYZE_SYSTEM_PROMPT } from '@/lib/prompts';
 import { AnalyzeSchema } from '@/lib/schemas';
+import { isModality } from '@/lib/modalities';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // transcription polling can take minutes
-
-const MODALITIES = ['Hypnosis', 'EFT', 'Tapping', 'Meditation', 'Other'] as const;
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -58,9 +57,7 @@ export async function POST(req: NextRequest) {
       moodTags = result.moodTags ?? [];
       useCases = result.useCases ?? [];
       // Constrain modality to the allowed set; fall back to "Other".
-      modality = MODALITIES.includes(result.modality as (typeof MODALITIES)[number])
-        ? (result.modality as string)
-        : 'Other';
+      modality = result.modality && isModality(result.modality) ? result.modality : 'Other';
     } catch (err) {
       // Metadata is a convenience, not the substance: the file is already in R2 and the
       // transcript and duration are in hand, so failing the whole upload here threw away

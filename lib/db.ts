@@ -88,19 +88,15 @@ export async function insertContentItem(data: {
   return rows[0].id as string;
 }
 
-export async function updateWebflowItemId(neonId: string, webflowItemId: string): Promise<void> {
-  const sql = getSql();
-  await sql`
-    UPDATE content_items SET webflow_item_id = ${webflowItemId} WHERE id = ${neonId}
-  `;
-}
-
-export async function updateContentPageUrl(neonId: string, contentPageUrl: string): Promise<void> {
-  const sql = getSql();
-  await sql`
-    UPDATE content_items SET content_page_url = ${contentPageUrl} WHERE id = ${neonId}
-  `;
-}
+// updateWebflowItemId and updateContentPageUrl lived here. Both wrote columns that
+// belonged to the Webflow CMS mirror: the first was called once by upload/finalize to
+// store the created CMS item id, the second was never called at all, which is why
+// content_page_url was null for every row. The mirror is gone, so both are too.
+//
+// The `webflow_item_id` and `content_page_url` COLUMNS remain in the table, holding
+// whatever the old uploads wrote. Dropping them is a separate migration, deliberately
+// not bundled with a code change — the data is harmless and a column drop is the one
+// step that can't be undone by a redeploy.
 
 export async function matchContentItems(
   embedding: number[],
@@ -191,6 +187,11 @@ export interface LibraryListItem {
   content_page_url: string | null;
   created_at: string;
   transcript_length: number;
+  // Getting Started curation. null = not part of it, which is most of the library.
+  getting_started: 'primary' | 'secondary' | null;
+  getting_started_order: number;
+  // Deliberately unlisted from member search. Independent of getting_started.
+  hidden_from_search: boolean;
 }
 
 /** getLibraryItem/updateLibraryItem return the list shape plus the full transcript. */
@@ -213,6 +214,7 @@ export async function listLibraryItems(): Promise<LibraryListItem[]> {
     SELECT id, webflow_item_id, title, description, media_type,
            use_cases, modality, mood_tags, duration_seconds,
            r2_key, public_url, content_page_url, created_at,
+           getting_started, getting_started_order, hidden_from_search,
            COALESCE(length(transcript), 0) AS transcript_length
     FROM content_items
     WHERE client_id IS NULL AND cohort_id IS NULL
@@ -233,6 +235,7 @@ export async function getLibraryItem(id: string): Promise<LibraryItemDetail | nu
     SELECT id, webflow_item_id, title, description, media_type,
            use_cases, modality, mood_tags, duration_seconds,
            r2_key, public_url, content_page_url, created_at,
+           getting_started, getting_started_order, hidden_from_search,
            transcript,
            COALESCE(length(transcript), 0) AS transcript_length
     FROM content_items
@@ -244,10 +247,16 @@ export async function getLibraryItem(id: string): Promise<LibraryItemDetail | nu
 /**
  * Update a public-library item's metadata and rewrite its embedding in one statement.
  *
- * The embedding is a required argument rather than an optional one on purpose: the
- * editable fields ARE the embedding's source text (see buildEmbeddingText), so a
- * metadata write without a fresh vector would leave search matching on text the
- * dashboard no longer shows — a silent, invisible drift.
+ * The embedding is passed in rather than computed here because the editable fields ARE
+ * its source text (see buildEmbeddingText): a metadata write without a fresh vector
+ * would leave search matching on text the dashboard no longer shows — a silent,
+ * invisible drift.
+ *
+ * It is optional for exactly one case: `duration_seconds` is editable but is NOT an
+ * embedding input, so a duration-only edit has nothing to recompute. Passing undefined
+ * keeps the stored vector untouched, which is correct precisely because the text it was
+ * built from hasn't moved. The caller decides (app/api/library/[id]/route.ts) — and for
+ * every field that does feed the text, it passes one.
  *
  * COALESCE keeps existing values for omitted fields (same idiom as updateEnrollment
  * / updateCohort). modality and duration_seconds are handled with the sql-fragment
@@ -264,10 +273,10 @@ export async function updateLibraryItem(
     moodTags?: string;
     durationSeconds?: number | null;
   },
-  embedding: number[],
+  embedding?: number[],
 ): Promise<LibraryItemDetail | null> {
   const sql = getSql();
-  const embeddingStr = `[${embedding.join(',')}]`;
+  const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
   const rows = await sql`
     UPDATE content_items SET
       title = COALESCE(${data.title ?? null}, title),
@@ -276,15 +285,167 @@ export async function updateLibraryItem(
       mood_tags = COALESCE(${data.moodTags ?? null}, mood_tags),
       modality = ${data.modality === undefined ? sql`modality` : data.modality},
       duration_seconds = ${data.durationSeconds === undefined ? sql`duration_seconds` : data.durationSeconds},
-      embedding = ${embeddingStr}::vector
+      embedding = ${embeddingStr === null ? sql`embedding` : sql`${embeddingStr}::vector`}
     WHERE id = ${id} AND client_id IS NULL AND cohort_id IS NULL
     RETURNING id, webflow_item_id, title, description, media_type,
               use_cases, modality, mood_tags, duration_seconds,
               r2_key, public_url, content_page_url, created_at,
+              getting_started, getting_started_order, hidden_from_search,
               transcript,
               COALESCE(length(transcript), 0) AS transcript_length
   `;
   return (rows[0] as LibraryItemDetail) ?? null;
+}
+
+// ── Getting Started curation ─────────────────────────────────────────────────
+
+/**
+ * Flag a library item as the Getting Started Primary, a Secondary, or neither.
+ *
+ * Promoting to 'primary' demotes the current Primary in the SAME transaction. That
+ * ordering matters: a unique index enforces one Primary table-wide, so setting the new
+ * one first would hit a constraint violation rather than a swap. Doing it in two
+ * separate statements would work but leaves a window with no Primary at all, which the
+ * portal could observe — a member loading the page mid-swap would see the Getting
+ * Started block empty.
+ *
+ * The demotion sets the old Primary to 'secondary' rather than NULL. Lindsay chose that
+ * item for the on-ramp; replacing which one leads shouldn't silently drop it out of the
+ * section entirely. She can remove it explicitly if that's what she wants.
+ *
+ * The client_id/cohort_id guard in the WHERE is the same one every library function
+ * carries: it makes flagging a private client recording into a public section return
+ * "not found" rather than succeed. The DB constraint would also reject it — this just
+ * fails earlier and more clearly.
+ *
+ * CONCURRENCY: under READ COMMITTED two simultaneous promotions of different items can
+ * both demote, then collide on content_items_one_primary_idx and the second fails with a
+ * unique violation. That is the intended failure mode — the index is the backstop, and a
+ * loud error beats two rows silently claiming Primary. It needs two operators clicking
+ * within milliseconds of each other, which this single-operator dashboard doesn't have.
+ */
+export async function setGettingStarted(
+  id: string,
+  value: 'primary' | 'secondary' | null,
+): Promise<LibraryItemDetail | null> {
+  const sql = getSql();
+
+  if (value === 'primary') {
+    await sql.transaction([
+      // The EXISTS guard makes the demotion conditional on the promotion being able to
+      // land. Without it, promoting an id that doesn't exist (or is private) demotes the
+      // current Primary and then matches zero rows — leaving Getting Started with no
+      // Primary at all, and the route returning 404 after the damage was already
+      // committed. The route's own pre-check makes that unreachable today; this makes it
+      // unreachable even if a row is deleted between the two.
+      sql`
+        UPDATE content_items SET getting_started = 'secondary'
+        WHERE getting_started = 'primary' AND id <> ${id}
+          AND EXISTS (
+            SELECT 1 FROM content_items
+            WHERE id = ${id} AND client_id IS NULL AND cohort_id IS NULL
+          )
+      `,
+      sql`
+        UPDATE content_items SET getting_started = 'primary'
+        WHERE id = ${id} AND client_id IS NULL AND cohort_id IS NULL
+      `,
+    ]);
+  } else {
+    await sql`
+      UPDATE content_items SET getting_started = ${value}
+      WHERE id = ${id} AND client_id IS NULL AND cohort_id IS NULL
+    `;
+  }
+
+  return getLibraryItem(id);
+}
+
+/**
+ * Set the display position of a Secondary item. Primary has no order (there is only
+ * one), so this is only meaningful for 'secondary' rows — but it is stored on any row
+ * rather than validated, so an item keeps its position if it is demoted and re-promoted.
+ */
+export async function setGettingStartedOrder(
+  id: string,
+  order: number,
+): Promise<LibraryItemDetail | null> {
+  const sql = getSql();
+  await sql`
+    UPDATE content_items SET getting_started_order = ${order}
+    WHERE id = ${id} AND client_id IS NULL AND cohort_id IS NULL
+  `;
+  return getLibraryItem(id);
+}
+
+/** Show or hide a library item from member search. Independent of Getting Started. */
+export async function setHiddenFromSearch(
+  id: string,
+  hidden: boolean,
+): Promise<LibraryItemDetail | null> {
+  const sql = getSql();
+  await sql`
+    UPDATE content_items SET hidden_from_search = ${hidden}
+    WHERE id = ${id} AND client_id IS NULL AND cohort_id IS NULL
+  `;
+  return getLibraryItem(id);
+}
+
+/** One Getting Started entry as the portal sends it. */
+export interface GettingStartedItem {
+  id: string;
+  title: string;
+  description: string;
+  media_type: 'audio' | 'video' | 'pdf';
+  public_url: string;
+  duration_seconds: number | null;
+  use_cases: string;
+  mood_tags: string;
+  modality: string | null;
+}
+
+/**
+ * The Getting Started set for the member portal: the Primary item (or null) and the
+ * Secondary items in Lindsay's chosen order.
+ *
+ * One query, split in JS, rather than two round trips — the set is small and always
+ * fetched together.
+ *
+ * public_url is the stable R2 url, not a presigned one, for the same reason
+ * /api/search sends it unsigned: members play these for sleep, and a 1-hour signature
+ * would 403 on a seek at 3am with no recovery path in the audio element. The rows are
+ * public-library content by construction (the DB constraint forbids flagging private
+ * content), so this hands out nothing that search wouldn't already.
+ */
+export async function getGettingStarted(): Promise<{
+  primary: GettingStartedItem | null;
+  secondary: GettingStartedItem[];
+}> {
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT id, title, description, media_type, public_url, duration_seconds,
+           use_cases, mood_tags, modality, getting_started
+    FROM content_items
+    WHERE getting_started IS NOT NULL
+      AND client_id IS NULL AND cohort_id IS NULL
+    ORDER BY getting_started_order ASC, created_at DESC
+  `) as Array<GettingStartedItem & { getting_started: 'primary' | 'secondary' }>;
+
+  const primary = rows.find((r) => r.getting_started === 'primary') ?? null;
+  const secondary = rows.filter((r) => r.getting_started === 'secondary');
+
+  // getting_started is an internal discriminator, not part of the portal contract —
+  // the payload already says which is which by shape.
+  const strip = (row: (typeof rows)[number]): GettingStartedItem => {
+    const { getting_started, ...rest } = row;
+    void getting_started;
+    return rest;
+  };
+
+  return {
+    primary: primary ? strip(primary) : null,
+    secondary: secondary.map(strip),
+  };
 }
 
 // ── Client management (coaching) ─────────────────────────────────────────────

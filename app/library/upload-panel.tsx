@@ -4,11 +4,10 @@ import { useState, FormEvent } from 'react';
 import { FilePicker } from '@/components/upload/FilePicker';
 import { TagInput } from '@/components/upload/TagInput';
 import { SuggestButton } from '@/components/upload/SuggestButton';
+import { MODALITIES } from '@/lib/modalities';
 
 const MEDIA_TYPES = ['audio', 'video', 'pdf'] as const;
 type MediaType = typeof MEDIA_TYPES[number];
-
-const MODALITIES = ['Hypnosis', 'EFT', 'Tapping', 'Meditation', 'Other'] as const;
 
 interface StepError {
   step: string;
@@ -202,7 +201,7 @@ export function UploadPanel({ onUploaded }: UploadPanelProps) {
     }
   }
 
-  // Save the reviewed fields: embed + Webflow + Neon.
+  // Save the reviewed fields: embed + Neon.
   async function handleSave(e: FormEvent) {
     e.preventDefault();
     if (!r2Key || !publicUrl) return;

@@ -21,6 +21,9 @@ export interface LibraryItem {
   content_page_url: string | null;
   created_at: string;
   transcript_length: number;
+  getting_started: 'primary' | 'secondary' | null;
+  getting_started_order: number;
+  hidden_from_search: boolean;
 }
 
 export type LibraryItemDetail = LibraryItem & { transcript: string | null };

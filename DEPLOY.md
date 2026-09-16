@@ -34,8 +34,6 @@ R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 R2_BUCKET_NAME=
 R2_PUBLIC_URL_BASE=
-WEBFLOW_API_KEY=
-WEBFLOW_COLLECTION_ID=
 NEON_DATABASE_URL=
 ANTHROPIC_API_KEY=
 VOYAGE_API_KEY=
@@ -44,6 +42,10 @@ UPLOAD_TOOL_PASSWORD=
 SESSION_SECRET=
 NEXT_PUBLIC_APP_URL=https://<your-domain>
 ```
+
+> `WEBFLOW_API_KEY` and `WEBFLOW_COLLECTION_ID` used to be required here. The Webflow
+> CMS mirror they powered has been removed (nothing ever read those items back), so both
+> are now unused. Leaving them in an existing `.env` is harmless — the app ignores them.
 
 ### 3. Build and start under PM2
 ```bash

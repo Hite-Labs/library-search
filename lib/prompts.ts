@@ -1,3 +1,5 @@
+import { MODALITY_LIST } from './modalities';
+
 /**
  * Shown when nothing clears the similarity threshold. Returned directly by
  * app/api/search/route.ts without calling Claude — the copy is fixed, so paying an LLM to
@@ -53,12 +55,16 @@ Return ONLY valid JSON in this exact format:
   "description": "2-3 sentence description of what this recording is and what it helps with",
   "moodTags": ["tag1", "tag2", "tag3"],
   "useCases": ["use case 1", "use case 2", "use case 3"],
-  "modality": "one of: Hypnosis, EFT, Tapping, Meditation, Other"
+  "modality": "one of: ${MODALITY_LIST}"
 }
 
 - description: warm, member-facing, 2-3 sentences. Describe the experience and who it's for.
 - moodTags: emotional/physical states the listener may be in (e.g. "anxious", "grieving", "restless", "calm"). 3-5, short, lowercase.
 - useCases: situations or goals (e.g. "sleep", "grief", "stress relief", "focus"). 3-5, short, lowercase.
-- modality: infer the technique from the transcript. MUST be exactly one of: Hypnosis, EFT, Tapping, Meditation, Other. If unsure, use "Other".
+- modality: infer the technique from the transcript. MUST be exactly one of: ${MODALITY_LIST}. If unsure, use "Other".
+  Distinguishing the ones that overlap:
+  - Subliminal: affirmations layered under music or beneath the audible threshold, often repetitive and not addressed to a listener who is expected to follow along consciously.
+  - Somatic: body-led work — attention to physical sensation, breath, grounding, shaking, or movement, rather than tapping points or trance induction.
+  - EFT vs Tapping: use EFT when the transcript names meridian/acupressure points or setup statements; use Tapping for simpler tapping rhythms without the EFT framing.
 
 Base everything on the actual transcript content. Do not invent details not supported by the transcript.`;
