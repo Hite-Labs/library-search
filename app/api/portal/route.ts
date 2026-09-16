@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getClientByMemberstackId,
+  getGettingStarted,
   getClientWithEnrollments,
   getSessionLogs,
   getClientContentByKind,
@@ -401,7 +402,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: cors });
   }
 
-  // 2. Resolve the client linked to this member.
+  // 2. Getting Started — fetched here, ABOVE the client lookup, deliberately.
+  //
+  // It is the one part of this payload that isn't keyed to a client: the same curated
+  // on-ramp for everyone, assembled by Lindsay out of public library content. Fetching
+  // it before the lookup is what makes it reach the people it is actually for — a new
+  // member has a Memberstack account but no `clients` row, so anything resolved after
+  // that lookup lands only on the established-customer path.
+  //
+  // A valid token is still required. Getting Started is member-facing content, not a
+  // public listing, so it stays behind the same 401 as everything else here.
+  const gettingStarted = await getGettingStarted();
+
+  // 3. Resolve the client linked to this member.
   //
   // No client record is NOT an error any more: a signed-up member who hasn't bought
   // anything has no row here, and they are exactly who the upsell exists for. Returning
@@ -436,6 +449,7 @@ export async function GET(req: NextRequest) {
         ...emptyIndividual(),
         cohort: null,
         challenge: challengeOnly,
+        getting_started: gettingStarted,
         promo_codes: codesOnly,
         plans: planFlagsForClient(codesPlanState),
         challenge_joining_open: joiningOpen(runOnly),
@@ -515,6 +529,7 @@ export async function GET(req: NextRequest) {
         ...emptyIndividual(),
         cohort,
         challenge,
+        getting_started: gettingStarted,
         promo_codes: promoCodes,
         plans: planFlagsForClient(planState),
         challenge_joining_open: joiningOpen(challengeRun),
@@ -583,6 +598,7 @@ export async function GET(req: NextRequest) {
       files,
       cohort,
       challenge,
+      getting_started: gettingStarted,
       promo_codes: promoCodes,
       plans: planFlagsForClient(planState),
       challenge_joining_open: joiningOpen(challengeRun),

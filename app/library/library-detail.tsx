@@ -4,14 +4,11 @@ import { useState, FormEvent } from 'react';
 import { MediaBadge } from '@/components/MediaBadge';
 import { MediaPlayer } from '@/components/MediaPlayer';
 import { TagInput } from '@/components/upload/TagInput';
+import { MODALITIES, isModality } from '@/lib/modalities';
 import type { LibraryItemDetail } from './library-view';
 
 // Manrope input-label style (reserve Oswald/font-label for headers & subheaders).
 const INPUT_LABEL = 'block text-xs font-medium tracking-wide text-slate/70 mb-1';
-
-// Mirrors the upload form's list. The edit form also injects whatever the row
-// currently holds, so legacy values outside this set survive a save untouched.
-const MODALITIES = ['Hypnosis', 'EFT', 'Tapping', 'Meditation', 'Other'] as const;
 
 function fmtDate(d: string | null): string {
   if (!d) return '—';
@@ -84,7 +81,161 @@ export function LibraryDetail({ item, loading, onSaved }: LibraryDetailProps) {
           }}
         />
       ) : (
-        <ReadView item={item} />
+        <>
+          <ReadView item={item} />
+          {/* Read mode only: the edit form is a draft the user can cancel, whereas these
+              toggles save immediately, and mixing the two would make Cancel ambiguous. */}
+          <CurationPanel item={item} onSaved={onSaved} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Getting Started + search visibility, edited in place rather than behind the Edit
+ * button.
+ *
+ * These are toggles, not text fields: there is nothing to draft and nothing to cancel,
+ * so putting them through the edit form's Edit → change → Save cycle would add two
+ * clicks to every one. They also don't touch the embedding, so the PATCH returns
+ * immediately (see the route) instead of waiting on Voyage.
+ */
+function CurationPanel({
+  item,
+  onSaved,
+}: {
+  item: LibraryItemDetail;
+  onSaved: (item: LibraryItemDetail) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function patch(body: Record<string, unknown>) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/library/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error ?? `Save failed (${res.status})`);
+      }
+      onSaved(data.item);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * Marking something Primary also pre-ticks "hide from search", in the same request.
+   *
+   * This is a DEFAULT, not a rule. The case it serves is the one that prompted the
+   * feature — a "how to use this tool" video that belongs on the on-ramp but would
+   * clutter search, and won't stay relevant once a different Primary replaces it. The
+   * two fields stay independent everywhere else: Lindsay can untick the box straight
+   * afterwards and it stays unticked, because nothing re-applies this except choosing
+   * Primary again.
+   *
+   * Only applied when the item isn't already hidden, so re-selecting Primary on an
+   * item she deliberately unhid doesn't silently re-hide it.
+   */
+  function selectRole(role: 'primary' | 'secondary' | null) {
+    if (role === item.getting_started) return;
+    const body: Record<string, unknown> = { gettingStarted: role };
+    if (role === 'primary' && !item.hidden_from_search) {
+      body.hiddenFromSearch = true;
+    }
+    void patch(body);
+  }
+
+  const ROLES = [
+    { value: null, label: 'Not featured' },
+    { value: 'primary' as const, label: 'Primary' },
+    { value: 'secondary' as const, label: 'Secondary' },
+  ];
+
+  return (
+    <div className="border-t border-gold/10 pt-5 space-y-3">
+      <h3 className="font-label text-xs text-plum">Getting Started</h3>
+
+      <div className="flex flex-wrap gap-2">
+        {ROLES.map((r) => {
+          const active = item.getting_started === r.value;
+          return (
+            <button
+              key={r.label}
+              type="button"
+              disabled={saving}
+              onClick={() => selectRole(r.value)}
+              className={`text-xs rounded-full px-3 py-1 border transition-colors disabled:opacity-50 ${
+                active
+                  ? 'bg-forest text-petal-cream border-forest'
+                  : 'border-gold/30 text-slate/70 hover:border-gold'
+              }`}
+            >
+              {r.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-slate/50">
+        {item.getting_started === 'primary'
+          ? 'This is the one item new members see first. Choosing a new Primary moves this one to Secondary.'
+          : item.getting_started === 'secondary'
+            ? 'Shown in the Getting Started list, in the order set below.'
+            : 'Not shown in the Getting Started section.'}
+      </p>
+
+      {item.getting_started === 'secondary' && (
+        <div className="flex items-center gap-2">
+          <label className={INPUT_LABEL} htmlFor={`order-${item.id}`}>
+            Position
+          </label>
+          <input
+            id={`order-${item.id}`}
+            type="number"
+            min={0}
+            defaultValue={item.getting_started_order}
+            disabled={saving}
+            onBlur={(e) => {
+              const next = parseInt(e.target.value, 10);
+              if (!Number.isNaN(next) && next !== item.getting_started_order) {
+                void patch({ gettingStartedOrder: next });
+              }
+            }}
+            className="w-20 rounded-lg border border-gold/30 px-2 py-1 text-sm"
+          />
+          <span className="text-xs text-slate/50">Lower numbers appear first.</span>
+        </div>
+      )}
+
+      <label className="flex items-start gap-2 pt-1">
+        <input
+          type="checkbox"
+          checked={item.hidden_from_search}
+          disabled={saving}
+          onChange={(e) => void patch({ hiddenFromSearch: e.target.checked })}
+          className="mt-0.5"
+        />
+        <span className="text-sm text-slate/80">
+          Hide from search
+          <span className="block text-xs text-slate/50">
+            Members won&apos;t find this in the library search. Getting Started is unaffected.
+          </span>
+        </span>
+      </label>
+
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </p>
       )}
     </div>
   );
@@ -159,23 +310,6 @@ function ReadView({ item }: { item: LibraryItemDetail }) {
           >
             Media URL
           </a>
-          {item.content_page_url ? (
-            <a
-              href={item.content_page_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-slate/60 hover:text-slate underline underline-offset-2"
-            >
-              Webflow page
-            </a>
-          ) : (
-            <span className="text-slate/40">No content page URL</span>
-          )}
-          {!item.webflow_item_id && (
-            <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
-              Not in Webflow CMS
-            </span>
-          )}
         </div>
       </div>
     </>
@@ -201,23 +335,19 @@ function EditForm({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
 
   // A legacy row can hold a modality outside MODALITIES. Without this the select
   // would render the first option as selected and silently rewrite the value on save.
   const modalityOptions =
-    modality && !MODALITIES.includes(modality as (typeof MODALITIES)[number])
-      ? [modality, ...MODALITIES]
-      : [...MODALITIES];
+    modality && !isModality(modality) ? [modality, ...MODALITIES] : [...MODALITIES];
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    setWarning(null);
 
-    // Send only what actually changed, so the PATCH stays genuinely partial and
-    // Webflow isn't asked to re-resolve an option that didn't move.
+    // Send only what actually changed, so the PATCH stays genuinely partial and the
+    // embedding is only rebuilt from fields that actually moved.
     const patch: Record<string, unknown> = {};
     if (title !== item.title) patch.title = title;
     if (description !== item.description) patch.description = description;
@@ -244,9 +374,6 @@ function EditForm({
       if (!res.ok || data.ok === false) {
         throw new Error(data.error ?? `Save failed (${data.step ?? res.status})`);
       }
-      // The save itself succeeded; a Webflow hiccup is a warning, not a failure.
-      const warn = data.webflowWarning ?? data.publishWarning;
-      if (warn) setWarning(warn);
       onSaved(data.item);
     } catch (err) {
       setError(String(err));
@@ -302,12 +429,6 @@ function EditForm({
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       )}
-      {warning && (
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          {warning} Press Edit → Save again to retry the Webflow sync.
-        </p>
-      )}
-
       <p className="text-xs text-slate/50">
         Saving re-runs the search embedding so search keeps matching what&apos;s shown here.
       </p>

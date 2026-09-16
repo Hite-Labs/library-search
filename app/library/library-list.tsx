@@ -78,6 +78,27 @@ export function LibraryList({ items, selectedId, onSelect, loading, filtered }: 
                 </>
               )}
             </p>
+            {/* Curation state, visible without opening the item — otherwise finding
+                which one is Primary means clicking through the whole library. */}
+            {(item.getting_started || item.hidden_from_search) && (
+              <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {item.getting_started === 'primary' && (
+                  <span className="text-[11px] rounded-full bg-forest text-petal-cream px-2 py-0.5">
+                    Primary
+                  </span>
+                )}
+                {item.getting_started === 'secondary' && (
+                  <span className="text-[11px] rounded-full tint-bg-forest-10 text-forest px-2 py-0.5">
+                    Getting Started
+                  </span>
+                )}
+                {item.hidden_from_search && (
+                  <span className="text-[11px] rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5">
+                    Hidden from search
+                  </span>
+                )}
+              </p>
+            )}
           </button>
         );
       })}

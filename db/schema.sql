@@ -177,10 +177,49 @@ LANGUAGE sql STABLE AS $$
     1 - (ci.embedding <=> query_embedding) AS similarity
   FROM content_items ci
   WHERE ci.client_id IS NULL AND ci.cohort_id IS NULL  -- exclude private client + cohort content
+    AND NOT ci.hidden_from_search                      -- exclude deliberately unlisted items
     AND 1 - (ci.embedding <=> query_embedding) > match_threshold
   ORDER BY ci.embedding <=> query_embedding ASC
   LIMIT match_count;
 $$;
+
+-- ── Getting Started + search visibility ──────────────────────────────────────
+-- (Applied to an existing database by db/getting-started.sql, which carries the full
+-- reasoning for each of these. Restated here so this file stays the whole picture.)
+--
+-- A curated on-ramp for new members, built entirely out of content already in the
+-- library: one Primary item, any number of Secondary. A flag on content_items, not a
+-- new table — Lindsay uploads nothing new, she points at what exists.
+ALTER TABLE content_items ADD COLUMN getting_started text
+  CHECK (getting_started IN ('primary', 'secondary'));
+
+-- At most one Primary, table-wide. A partial unique index because the rule spans rows,
+-- which a row-level CHECK can't express. It exists so /api/portal always has exactly
+-- one answer to "which item is Primary?" rather than picking a winner by created_at.
+CREATE UNIQUE INDEX content_items_one_primary_idx
+  ON content_items (getting_started)
+  WHERE getting_started = 'primary';
+
+ALTER TABLE content_items ADD COLUMN getting_started_order integer NOT NULL DEFAULT 0;
+
+-- Getting Started is shown to every new member, so private client/cohort content can
+-- never be flagged into it. The dashboard only offers public rows; this makes the leak
+-- impossible rather than merely unlikely.
+ALTER TABLE content_items ADD CONSTRAINT content_items_getting_started_public_only
+  CHECK (
+    getting_started IS NULL
+    OR (client_id IS NULL AND cohort_id IS NULL)
+  );
+
+CREATE INDEX content_items_getting_started_idx
+  ON content_items (getting_started, getting_started_order)
+  WHERE getting_started IS NOT NULL;
+
+-- Lets an item live in the library without appearing in search — e.g. a "how to use
+-- this tool" video that belongs in Getting Started but shouldn't clutter results.
+-- Independent of getting_started: either flag can be set without the other. The
+-- dashboard pre-ticks this when marking something Primary, as a default, not a rule.
+ALTER TABLE content_items ADD COLUMN hidden_from_search boolean NOT NULL DEFAULT false;
 
 -- ── Promo blocks ─────────────────────────────────────────────────────────────
 -- Upsell pieces shown in the portal. A member with no plan is the primary funnel, not an

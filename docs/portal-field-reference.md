@@ -287,6 +287,7 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
       "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
   ],
   "cohort": { /* object below, or null */ },
+  "getting_started": { /* object below — ALWAYS present, never null */ },
   "promos": [                       // already filtered for this member
     { "id": "uuid", "title": "string", "body": "string",
       "cta_label": "string", "cta_url": "https://…",
@@ -294,6 +295,44 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
   ]
 }
 ```
+
+**`getting_started` — the curated on-ramp for new members:**
+
+The object is always present on **all three** response paths — the member with no
+`clients` row at all, the member who has one but no individual enrollment (cohort-only,
+challenge-only, or revoked), and the full-enrollment member. That is deliberate: a
+brand-new member who has bought nothing has no client record, and they are exactly who
+this section is for. Resolved before the client lookup in the route, so no branch can
+skip it.
+
+`primary` is `null` when Lindsay hasn't picked one — an empty state, not an error. Decide
+the fallback rendering in Webflow (most likely: hide the whole block).
+
+`secondary` is an array in her chosen display order (`getting_started_order` ascending,
+then newest first for ties). It may be empty.
+
+```jsonc
+{
+  "primary": {                      // or null when none is set
+    "id": "uuid",
+    "title": "string",
+    "description": "string",
+    "media_type": "audio|video|pdf",
+    "public_url": "https://…",      // stable R2 url, NOT signed — see note below
+    "duration_seconds": 1560,       // or null
+    "use_cases": "comma,separated",
+    "mood_tags": "comma,separated",
+    "modality": "Hypnosis"          // or null
+  },
+  "secondary": [ /* same shape, in display order; may be empty */ ]
+}
+```
+
+> **Why `public_url` is unsigned here** (unlike `recordings`/`files` above): these are
+> public-library items, the same ones `/api/search` already returns unsigned. Members play
+> them for sleep, and a 1-hour signature would 403 on a seek at 3am with no recovery path
+> in the audio element. A database constraint forbids flagging private client or cohort
+> content into Getting Started, so this can never hand out something search wouldn't.
 
 **`cohort` object (or `null` if the member has no cohort enrollment):**
 ```jsonc

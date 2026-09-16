@@ -205,6 +205,12 @@ export const UpdateLibraryItemSchema = z.object({
   modality: z.string().nullable().optional(),
   moodTags: z.string().optional(),
   durationSeconds: z.number().int().nonnegative().nullable().optional(),
+  // Getting Started curation. null clears the flag; the route handles the
+  // one-Primary-at-a-time swap. Separate from the fields above because none of these
+  // three feed the search embedding — see the route for why that matters.
+  gettingStarted: z.enum(['primary', 'secondary']).nullable().optional(),
+  gettingStartedOrder: z.number().int().nonnegative().optional(),
+  hiddenFromSearch: z.boolean().optional(),
 });
 
 export type LoginInput = z.infer<typeof LoginSchema>;

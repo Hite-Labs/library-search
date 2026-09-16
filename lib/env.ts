@@ -7,9 +7,6 @@ const envSchema = z.object({
   R2_BUCKET_NAME: z.string().min(1),
   R2_PUBLIC_URL_BASE: z.string().url(),
 
-  WEBFLOW_API_KEY: z.string().min(1),
-  WEBFLOW_COLLECTION_ID: z.string().min(1),
-
   NEON_DATABASE_URL: z.string().min(1),
 
   ANTHROPIC_API_KEY: z.string().min(1),
