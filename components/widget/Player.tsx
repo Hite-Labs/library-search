@@ -278,30 +278,16 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
       )}
 
       {/*
-        Skip and speed sit on their own row ABOVE the transport. Play used to lead this row
-        and the scrubber sat alone beneath it, which put the primary control and the thing
-        it drives on separate lines. Play now leads the scrubber row below, so pressing it
-        and watching the progress move are the same glance.
-      */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => seekTo(current - SKIP_SECONDS)}
-          className="text-xs tint-forest-70 hover:text-plum tabular-nums"
-          aria-label={`Back ${SKIP_SECONDS} seconds`}
-        >
-          −{SKIP_SECONDS}s
-        </button>
-        <button
-          type="button"
-          onClick={() => seekTo(current + SKIP_SECONDS)}
-          className="text-xs tint-forest-70 hover:text-plum tabular-nums"
-          aria-label={`Forward ${SKIP_SECONDS} seconds`}
-        >
-          +{SKIP_SECONDS}s
-        </button>
+        Speed only, and only for audio — the −15s/+15s buttons that used to lead this row
+        are gone. The scrubber does the same job with more control, and the lock screen
+        still offers seek-back and seek-forward through the media session handlers below,
+        which is where someone actually reaches for them: mid-track, phone in pocket.
 
-        {!isVideo && (
+        Video has no speed control, so for video this row renders nothing at all rather
+        than an empty flex container taking up the gap.
+      */}
+      {!isVideo && (
+        <div className="flex items-center justify-end">
           <button
             type="button"
             onClick={() => {
@@ -310,13 +296,13 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
               const next = SPEEDS[(SPEEDS.indexOf(speed as (typeof SPEEDS)[number]) + 1) % SPEEDS.length];
               el.playbackRate = next;
             }}
-            className="ml-auto text-xs font-medium text-plum hover:text-forest tabular-nums"
+            className="text-xs font-medium text-plum hover:text-forest tabular-nums"
             aria-label="Playback speed"
           >
             {speed}×
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/*
         Play, then the elapsed time, the scrubber and the duration — one row. The scrubber
