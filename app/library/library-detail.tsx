@@ -175,7 +175,7 @@ function CurationPanel({
               onClick={() => selectRole(r.value)}
               className={`text-xs rounded-full px-3 py-1 border transition-colors disabled:opacity-50 ${
                 active
-                  ? 'bg-forest text-petal-cream border-forest'
+                  ? 'bg-forest text-petal border-forest'
                   : 'border-gold/30 text-slate/70 hover:border-gold'
               }`}
             >

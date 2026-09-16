@@ -83,7 +83,7 @@ export function LibraryList({ items, selectedId, onSelect, loading, filtered }: 
             {(item.getting_started || item.hidden_from_search) && (
               <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {item.getting_started === 'primary' && (
-                  <span className="text-[11px] rounded-full bg-forest text-petal-cream px-2 py-0.5">
+                  <span className="text-[11px] rounded-full bg-forest text-petal px-2 py-0.5">
                     Primary
                   </span>
                 )}
