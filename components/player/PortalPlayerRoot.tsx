@@ -11,31 +11,32 @@ import { isTrustedParent } from '@/lib/widget/trusted-origins';
  * media session calls only reach the OS notification when they come from the SAME frame as
  * the media element. Background playback — screen locked, phone in a pocket, a member
  * asleep — is the entire point of these recordings, and it is a frame-ownership problem
- * rather than a styling one. That is what makes this worth a frame rather than a port of
- * Player.tsx into portal.js's ES5.
+ * rather than a styling one.
  *
  * It also means the hard part is already written. components/widget/Player.tsx is reused
- * UNMODIFIED: the three rules in its header comment are the whole design and reimplementing
- * them in a file with no build step, no tests and no way to verify in a browser (staging
- * 401s — see Q-05) would be the riskiest code in the repo written in its least verifiable
- * place, twice, once per portal twin.
+ * UNMODIFIED, including its colours: this renders on a petal sheet, which is the surface its
+ * plum button and forest timestamps were designed for. (They were briefly put on a dark
+ * forest bar, where the timestamps were forest-on-forest and effectively invisible. The
+ * sheet fixes that by being the right background rather than by restyling the player.)
  *
- * This component is deliberately thin. It owns exactly one thing: the conversation with the
- * host page.
+ * ONE SURFACE. There is no minimised state and no second chrome to switch between. An
+ * earlier version opened in the host's dialog and "closed" into a bottom bar, which meant a
+ * button marked close did not close — it moved. Now the sheet is the only thing, and its X
+ * closes and stops, which is what the word means.
  *
- *   in   { type: 'play-item', id, src, title, mediaType }   load this, paused
- *   in   { type: 'minimise' }                               your dialog closed; be the bar
- *   in   { type: 'expand' }                                 your dialog reopened
- *   in   { type: 'stop' }                                   the member asked to stop
- *   out  { type: 'player-ready' }                           I am listening; flush your queue
- *   out  { type: 'resize', height }                         size my frame to fit
- *   out  { type: 'request-expand' }                         member tapped the bar; open up
- *   out  { type: 'player-stopped' }                         member stopped me; park the frame
- *   out  { type: 'player-state', playing, id, title }       what is playing, for the host
+ * The conversation with the host page:
  *
- * Nothing here pauses or unloads on its own. portal.js closing its modal is a CSS change on
- * our container, never a teardown — which is what lets a member close the dialog, lock the
- * phone, and keep listening.
+ *   in   { type: 'play-item', id, src, title, mediaType, downloadUrl }   load this, paused
+ *   in   { type: 'stop' }                                    the host asked us to stop
+ *   out  { type: 'player-ready' }                            I am listening; flush your queue
+ *   out  { type: 'resize', height }                          size my frame to fit
+ *   out  { type: 'close' }                                   member pressed X; take me away
+ *   out  { type: 'player-state', playing, id, title }        what is playing, for the host
+ *
+ * Nothing here pauses or unloads except on an explicit stop or close. The host dimming or
+ * revealing its backdrop is a CSS change on a SIBLING of our frame, never an ancestor —
+ * anything that toggled display on a parent would unload the media element and stop the
+ * audio, which is the failure this whole design exists to avoid.
  */
 
 interface PlayItem {
@@ -43,6 +44,7 @@ interface PlayItem {
   src: string;
   title: string;
   mediaType: string;
+  downloadUrl: string | null;
 }
 
 function post(message: Record<string, unknown>) {
@@ -55,9 +57,6 @@ function post(message: Record<string, unknown>) {
 
 export function PortalPlayerRoot() {
   const [item, setItem] = useState<PlayItem | null>(null);
-  // Minimised = the host closed its dialog and we are the bar at the bottom of the page.
-  // Only our chrome changes; the media element is untouched, which is the entire point.
-  const [minimised, setMinimised] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Inbound messages. Registered once, empty deps — the same discipline Player's transport
@@ -70,21 +69,20 @@ export function PortalPlayerRoot() {
       if (!data || typeof data !== 'object') return;
 
       if (data.type === 'play-item') {
-        const { id, src, title, mediaType } = data as Partial<PlayItem>;
+        const { id, src, title, mediaType, downloadUrl } = data as Partial<PlayItem>;
         // A message missing any of these would mount a Player pointed at nothing, so it is
         // dropped rather than rendered as a broken transport.
         if (!id || !src || !mediaType) return;
-        setItem({ id, src, title: title ?? '', mediaType });
-        setMinimised(false);
-      } else if (data.type === 'minimise') {
-        // The host closed its dialog. Same element, same playback — only our own chrome
-        // changes, because this frame is never unmounted or re-parented.
-        setMinimised(true);
-      } else if (data.type === 'expand') {
-        setMinimised(false);
+        setItem({
+          id,
+          src,
+          title: title ?? '',
+          mediaType,
+          downloadUrl: downloadUrl ?? null,
+        });
       } else if (data.type === 'stop') {
-        // The ONE path that deliberately ends playback. Unmounting the Player detaches the
-        // element, which stops it — the member asked, so this is the one time that is right.
+        // Unmounting the Player detaches the element, which stops it. The member asked, so
+        // this is the one time that is right.
         setItem(null);
       }
     }
@@ -96,89 +94,103 @@ export function PortalPlayerRoot() {
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
-  // Report our height so the host can size the frame. Same approach as WidgetRoot: measure
-  // our own box rather than the document, which has a min-height that would stop the frame
-  // ever shrinking back.
+  // Report our height so the host can size the frame. Measures our own box rather than the
+  // document, which carries a min-height that would stop the frame ever shrinking back.
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-    const notify = () => post({ type: 'resize', height: Math.ceil(el.getBoundingClientRect().height) });
+    const notify = () =>
+      post({ type: 'resize', height: Math.ceil(el.getBoundingClientRect().height) });
     notify();
     const observer = new ResizeObserver(notify);
     observer.observe(el);
     return () => observer.disconnect();
   }, [item]);
 
+  function close() {
+    setItem(null);
+    post({ type: 'close' });
+  }
+
   return (
-    <div ref={rootRef} className={`font-sans ${minimised ? 'px-4 py-2' : 'p-4'}`}>
-      {/*
-        When minimised THIS frame is the whole bar — there is no Webflow-authored strip
-        beside it. That was the first shape and it was wrong: this frame pins itself to the
-        bottom of the page with its own background, so a second fixed element wanting the
-        same space would have collided with it. One element cannot fight itself.
-
-        So the bar's title and its close control are rendered here, next to the transport
-        they belong to. The host page builds nothing.
-      */}
-      {item && minimised && (
-        <div className="flex items-center gap-3 pb-1">
-          <button
-            type="button"
-            onClick={() => {
-              setMinimised(false);
-              // Ask the host to re-open its dialog around us. It owns that chrome; we only
-              // own what is inside the frame.
-              post({ type: 'request-expand' });
-            }}
-            className="flex-1 min-w-0 text-left"
-            aria-label={`Open ${item.title}`}
-          >
-            <span className="block text-xs font-medium text-petal truncate">{item.title}</span>
-            <span className="block text-[11px] tint-petal-70">Tap to open</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              // The one deliberate stop. Unmounting the Player detaches the element, which
-              // ends playback — right here, because the member asked for it.
-              setItem(null);
-              setMinimised(false);
-              post({ type: 'player-stopped' });
-            }}
-            aria-label="Stop playback"
-            className="shrink-0 w-9 h-9 rounded-full border tint-border-petal-40 text-petal flex items-center justify-center hover:border-gold hover:text-gold transition-colors"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <rect x="5" y="5" width="14" height="14" rx="2" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/*
-        One slot, always rendered, exactly as DetailPanel is in the widget. The Player is
-        keyed on the item id so a different recording mounts a fresh transport, and NOT on
-        src — a signed R2 url is re-minted on every portal fetch, and keying on it would
-        remount the player, and kill the audio, the next time the host refreshed its data.
-
-        It renders in BOTH states, unchanged and unmoved: minimising swaps the chrome above
-        it, never this element, so the audio does not notice.
-
-        durationSeconds is null because /api/portal does not return a duration for
-        recordings. Player treats that as the normal case and fills it in from the file's
-        own loadedmetadata, so the scrubber is briefly inert and then correct.
-      */}
+    <div ref={rootRef} className="px-4 pt-3 pb-4 font-sans">
       {item && (
-        <Player
-          key={item.id}
-          src={item.src}
-          mediaType={item.mediaType}
-          title={item.title}
-          durationSeconds={null}
-          onPlayingChange={(playing) =>
-            post({ type: 'player-state', playing, id: item.id, title: item.title })
-          }
-        />
+        <>
+          {/*
+            Title, download and close in one row above the transport. The download link used
+            to live in the host's dialog; with the dialog gone it belongs here, next to the
+            thing it downloads, rather than needing a block built in Webflow.
+          */}
+          <div className="flex items-start gap-3 pb-2">
+            <h2 className="flex-1 min-w-0 text-sm font-semibold text-forest leading-snug">
+              {item.title}
+            </h2>
+            {item.downloadUrl && (
+              <a
+                href={item.downloadUrl}
+                download
+                aria-label="Download"
+                title="Download"
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-plum hover:text-forest transition-colors"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.75}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3v12" />
+                  <path d="m7 10 5 5 5-5" />
+                  <path d="M5 21h14" />
+                </svg>
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={close}
+              aria-label="Close player"
+              className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-plum hover:text-forest transition-colors focus:outline-none focus:ring-2 focus:ring-gold"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.75}
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M5 5l14 14M19 5L5 19" />
+              </svg>
+            </button>
+          </div>
+
+          {/*
+            Keyed on the item id so a different recording mounts a fresh transport, and NOT
+            on src — a signed R2 url is re-minted on every portal fetch, and keying on it
+            would remount the player, and kill the audio, the next time the host refreshed.
+
+            durationSeconds is null because /api/portal returns no duration for recordings.
+            Player treats that as the normal case and fills it from the file's own
+            loadedmetadata, so the scrubber is briefly inert and then correct.
+          */}
+          <Player
+            key={item.id}
+            src={item.src}
+            mediaType={item.mediaType}
+            title={item.title}
+            durationSeconds={null}
+            onPlayingChange={(playing) =>
+              post({ type: 'player-state', playing, id: item.id, title: item.title })
+            }
+          />
+        </>
       )}
     </div>
   );

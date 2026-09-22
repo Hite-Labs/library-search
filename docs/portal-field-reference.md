@@ -210,51 +210,51 @@ primary funnel: they get an empty-but-valid payload carrying the offers.
 
 ---
 
-## E. Media player fields
+## E. Media player — nothing to build
 
-Opened by any recording / file / cohort session card. PDFs bypass it entirely (new tab).
+**The player needs no Webflow blocks at all.** The script draws the whole thing.
 
-**Playback now lives in an iframe**, not in Webflow-authored media elements. The frame is
-`dashboard.showyourspark.com/player`; the script creates it once, appends it to a host it
-adds to `<body>` itself, and never moves it again. Moving an iframe in the DOM reloads it,
-which would destroy the media element and stop playback — so it changes place by CSS class
-only. That is also why the host is script-created rather than authored: a Webflow ancestor
-picking up `display:none` would kill the audio just as dead.
+Tapping a recording, file or cohort-session card opens a **bottom sheet**: a petal-cream
+panel that rises from the bottom edge of the screen with the page dimmed behind it. Inside
+is an iframe pointing at `dashboard.showyourspark.com/player`, which renders the title, a
+download control, a close X and the transport. PDFs still bypass it entirely (new tab).
 
-**Closing the dialog MINIMISES; it does not stop.** This is the point of the whole design.
-Members fall asleep to these recordings, so closing the modal leaves audio running and drops
-the frame into a bottom bar. Only `player-bar-stop` actually stops anything.
+**Close means close.** The X stops the audio and takes the sheet away, as does clicking the
+dimmed area or pressing Escape. An earlier version opened in a dialog and "closed" into a
+persistent bottom bar — useful behaviour attached to the wrong word, because a button marked
+close that merely moves the player is a broken promise. One surface, one X.
+
+Locking the phone with the sheet open keeps playing. That is the whole reason the player
+lives in a frame: media-session calls only reach the OS lock screen when they come from the
+same frame as the media element.
+
+### Script-created — do NOT author these in Webflow
 
 | data-field | Role |
 |---|---|
-| `media-modal` | modal container; `display:flex` when open, locks body scroll |
-| `modal-title` | text — the item title |
-| `modal-download` | download link; `href` set to the item url |
-| `modal-close` | close button (also on backdrop click / Escape) — **minimises, does not stop** |
-| _(`player-frame-host`)_ | **not authored in Webflow** — the script creates it. Listed so it is not mistaken for a missing block |
+| `player-frame-host` | the sheet; holds the iframe. Created on `<body>` and **never re-parented** — moving an iframe reloads it and kills playback |
+| `player-dim` | the backdrop. A **sibling** of the host, never a parent: an ancestor toggling display would unload the media element |
 
-**There is no "now playing" strip to build.** When minimised the frame IS the bar: it pins
-itself to the bottom of the page and renders its own title, transport and stop button. An
-earlier draft of this had Webflow author a strip beside it, which was wrong — both are fixed
-elements wanting the same bottom edge, so they would have collided. Tapping the title asks
-the script to re-open the dialog; the frame's own stop button ends playback.
+Positioning is written in JavaScript against the real viewport rather than left to
+`position: fixed`. On the live page a transform on some Webflow ancestor traps fixed
+children, and an element styled `left:0;right:0;bottom:0` measured back as 560px wide at
+333px from the top — mid-page, behind the dialog, invisible. Set
+`window.SYS_PLAYER_DEBUG = true` in the console to log the sheet's real geometry and name
+the trapping ancestor.
 
-This applies on every breakpoint, not just mobile. On a phone the bar is what survives a
-screen lock; on a desktop it is what lets a member close the dialog, keep reading their
-sessions, and still see and control what is playing.
+### Deprecated — no longer read by the script
 
-### Deprecated — no longer driven by the script
-
-Left in place deliberately rather than deleted: a page still built against the old contract
-should not show a stray empty `<audio>` mid-deploy, so the script keeps hiding them. They can
-be removed from the Webflow page once this has shipped and settled.
+The script no longer touches any of these. A page that still has them is not broken, just
+carrying a hidden block; they can be deleted from Webflow whenever convenient.
 
 | data-field | Was |
 |---|---|
-| `modal-video` | wrapper shown for video items |
-| `modal-audio` | wrapper shown for audio items |
-| `modal-video-player` | the `<video>`; script set `.src` (cleared on close) |
-| `modal-audio-player` | the `<audio>`; script set `.src` (cleared on close) |
+| `media-modal` | the dialog container |
+| `modal-title` | the item title (the frame renders its own now) |
+| `modal-download` | download link (moved inside the frame, beside the X) |
+| `modal-close` | close button (the frame renders its own) |
+| `modal-video` / `modal-audio` | wrappers shown per media type |
+| `modal-video-player` / `modal-audio-player` | the `<video>` / `<audio>` elements |
 
 ---
 

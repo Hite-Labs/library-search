@@ -323,25 +323,26 @@
 
   // ===== Media player =====
   //
-  // The player is an IFRAME pointed at dashboard.showyourspark.com/player, not the pair of
-  // Webflow <audio>/<video> elements this used to drive.
+  // A bottom sheet containing an IFRAME pointed at dashboard.showyourspark.com/player.
   //
-  // Why: members fall asleep to these recordings. Keeping audio alive through a screen lock
-  // needs a media session, and a media session only reaches the OS notification when it
-  // comes from the same frame as the media element. The old code could not do it from here,
-  // and worse, closeModal ran `pause(); src = ''` on three separate paths (close button,
-  // backdrop, Escape) — so a member could not even close the dialog and keep listening.
+  // Why a frame: members fall asleep to these recordings, so playback has to survive a
+  // screen lock, which needs a media session, which only reaches the OS notification when it
+  // comes from the same frame as the media element. That could never work from this script.
   //
-  // The frame owns the transport. This file owns where it sits and what it is told to play.
+  // Why a sheet and not the dialog this replaced: the dialog's close button did not close.
+  // It minimised the player into a bar, which is useful behaviour attached to the wrong
+  // word. There is now ONE surface with ONE X, and the X stops the audio and takes the
+  // sheet away. Locking the phone with the sheet open keeps playing, which is the case that
+  // actually matters.
+  //
+  // The frame owns the transport and its own chrome. This file owns where the sheet sits.
 
   var APP_URL = 'https://dashboard.showyourspark.com';
 
-  // The one frame, created once and NEVER moved. Moving an iframe in the DOM — appendChild
-  // to another parent — reloads it, which destroys the media element and stops playback:
-  // exactly the failure this whole change exists to prevent. So it is appended to a host
-  // that is a direct child of <body>, created here rather than authored in Webflow (an
-  // ancestor picking up display:none would kill the audio just as dead), and moves between
-  // "in the modal" and "mini bar" by CSS class alone.
+  // The one frame, created once and NEVER re-parented. Moving an iframe in the DOM reloads
+  // it, which destroys the media element and stops playback — exactly the failure this
+  // whole design exists to prevent. The dim backdrop below is therefore a SIBLING of the
+  // host, never a parent: an ancestor toggling display would be just as fatal.
   var playerFrame = null;
   var playerReady = false;
   var queuedPlay = null;
@@ -350,17 +351,24 @@
   function ensurePlayerFrame() {
     if (playerFrame) return playerFrame;
 
+    // The dim goes in first so it sits BEHIND the sheet in paint order without either of
+    // them needing a z-index war. Clicking it closes, same as the X.
+    var dim = document.createElement('div');
+    dim.setAttribute('data-field', 'player-dim');
+    dim.className = 'sys-player-dim';
+    dim.addEventListener('click', closeSheet);
+    document.body.appendChild(dim);
+
     var host = document.createElement('div');
     host.setAttribute('data-field', 'player-frame-host');
-    host.className = 'sys-player-host is-parked';
+    host.className = 'sys-player-host is-closed';
     document.body.appendChild(host);
 
     var frame = document.createElement('iframe');
     frame.src = APP_URL + '/player';
     frame.title = 'Player';
-    // fullscreen for video; autoplay so playback a member started survives the frame being
-    // told to load a different track. No microphone — unlike the search widget, nothing in
-    // here listens.
+    // fullscreen for video; autoplay so playback survives the frame being handed a
+    // different track. No microphone — unlike the search widget, nothing in here listens.
     frame.allow = 'fullscreen; autoplay';
     frame.setAttribute('scrolling', 'no');
     frame.style.cssText = 'width:100%;border:0;display:block;min-height:120px;';
@@ -370,16 +378,19 @@
     return frame;
   }
 
-  // Tell the frame what to play. The first card click will normally beat the frame's own
-  // load, so a message sent before it is listening is kept and flushed on player-ready.
-  function playInFrame(id, title, url, fileType) {
+  // Tell the frame what to play. The first card click normally beats the frame's own load,
+  // so a message sent before it is listening is kept and flushed on player-ready. (The
+  // previous design had a second, unqueued channel for its minimise/expand messages, and
+  // the very first one was silently dropped every time. One queued channel now.)
+  function playInFrame(id, title, url, fileType, downloadUrl) {
     var frame = ensurePlayerFrame();
     var message = {
       type: 'play-item',
       id: id,
       src: url,
       title: title || '',
-      mediaType: fileType === 'video' ? 'video' : 'audio'
+      mediaType: fileType === 'video' ? 'video' : 'audio',
+      downloadUrl: downloadUrl || null
     };
     nowPlaying = { id: id, title: title || '' };
     if (!playerReady) {
@@ -389,26 +400,26 @@
     frame.contentWindow.postMessage(message, APP_URL);
   }
 
-  // Stop and park. Not wired to any control on this page — the frame renders its own stop
-  // button, because the frame IS the bar and a second element fighting it for the bottom of
-  // the screen was the first version's mistake. Kept for the host to call if it ever needs
-  // to end playback itself.
-  function stopPlayback() {
+  function openSheet(id, title, url, fileType) {
+    ensurePlayerFrame();
+    // The url is both what plays and what downloads: a presigned R2 link the member is
+    // already entitled to. The frame renders the download control next to the title.
+    playInFrame(id, title, url, fileType, url);
+    setPlayerPlacement('open');
+  }
+
+  // Close means close: the sheet goes and the audio stops. Reached from the frame's X, from
+  // a click on the dim, and from Escape.
+  function closeSheet() {
     nowPlaying = null;
     queuedPlay = null;
     if (playerFrame && playerReady) {
       playerFrame.contentWindow.postMessage({ type: 'stop' }, APP_URL);
     }
-    setPlayerPlacement('parked');
+    setPlayerPlacement('closed');
   }
 
-  // Where the frame sits. CSS only — see the comment on playerFrame above. 'modal' fills the
-  // dialog's media slot, 'bar' is the strip pinned at the bottom, 'parked' is off-screen but
-  // still in the document, which is what lets nothing-is-playing cost no space while leaving
-  // the element alive.
-  // Set window.SYS_PLAYER_DEBUG = true in the console to trace placement changes. The portal
-  // page is member-gated, so this is the only way to see what the player is doing on a real
-  // member's screen without being that member.
+  // Where the sheet sits. Class for appearance, geometry in JS — see below.
   function setPlayerPlacement(mode) {
     var host = byField('player-frame-host');
     if (!host) return;
@@ -417,95 +428,91 @@
       console.log('[player] placement=' + mode,
         'host=' + Math.round(r.width) + 'x' + Math.round(r.height),
         'top=' + Math.round(r.top),
-        'frameH=' + (playerFrame ? playerFrame.style.height || '(unset)' : '(no frame)'));
+        'frameH=' + (playerFrame ? playerFrame.style.height || '(unset)' : '(no frame)'),
+        'viewport=' + window.innerWidth + 'x' + window.innerHeight);
+      // Which ancestor is trapping position:fixed? A transform, filter, perspective or
+      // contain on ANY ancestor makes fixed resolve against that element instead of the
+      // viewport, which is how a sheet meant for the bottom of the screen ends up mid-page.
+      var node = host.parentNode, trap = null;
+      while (node && node.nodeType === 1 && !trap) {
+        var cs = window.getComputedStyle(node);
+        if ((cs.transform && cs.transform !== 'none') ||
+            (cs.filter && cs.filter !== 'none') ||
+            (cs.perspective && cs.perspective !== 'none') ||
+            (cs.contain && cs.contain !== 'none') ||
+            cs.willChange === 'transform') {
+          trap = (node.tagName || '?') + (node.className ? '.' + String(node.className).split(' ')[0] : '') +
+            ' {transform:' + cs.transform + '; filter:' + cs.filter + '; contain:' + cs.contain + '}';
+        }
+        node = node.parentNode;
+      }
+      console.log('[player] fixed-trap:', trap || 'none found');
     }
-    host.className =
-      'sys-player-host ' +
-      (mode === 'modal' ? 'is-in-modal' : mode === 'bar' ? 'is-in-bar' : 'is-parked');
+    host.className = 'sys-player-host ' + (mode === 'open' ? 'is-open' : 'is-closed');
+    var dim = byField('player-dim');
+    if (dim) dim.className = 'sys-player-dim ' + (mode === 'open' ? 'is-open' : '');
+    // The page behind must not scroll under an open sheet. Restored to '' rather than to a
+    // saved value, matching what the old modal did — nothing else on this page sets it.
+    document.body.style.overflow = mode === 'open' ? 'hidden' : '';
+    applyPlacementGeometry(host, mode);
   }
 
-  function openModal(id, title, url, fileType) {
-    var modal = byField('media-modal');
-    var modalTitle = byField('modal-title');
-    var downloadEl = byField('modal-download');
-
-    if (modalTitle) modalTitle.textContent = title || '';
-    if (downloadEl) downloadEl.setAttribute('href', url);
-
-    // The old modal-video / modal-audio wrappers and their players are no longer driven.
-    // Still hidden defensively so a page built against the previous contract does not show
-    // a stray empty <audio> next to the frame mid-deploy. See docs/portal-field-reference.md.
-    hide(byField('modal-video'));
-    hide(byField('modal-audio'));
-
-    playInFrame(id, title, url, fileType);
-    setPlayerPlacement('modal');
-    tellFrame({ type: 'expand' });
-
-    if (modal) {
-      modal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
-    }
-  }
-
-  // Closing MINIMISES. It does not stop.
+  // Position the sheet in JS against the real viewport, rather than trusting position:fixed
+  // to mean "relative to the screen".
   //
-  // The three lines that used to live here — pause(), src = '', and the same for video — are
-  // precisely what this feature exists to delete. A member closing the dialog is saying "I
-  // am done looking at this", not "stop the audio". Stopping is stopPlayback, reached only
-  // from the bar's own stop control.
-  function closeModal() {
-    var modal = byField('media-modal');
-    if (modal) modal.style.display = 'none';
-    document.body.style.overflow = '';
+  // It does not always. A transform, filter, perspective or contain on ANY ancestor makes a
+  // fixed child resolve against THAT element instead of the viewport, and Webflow applies
+  // transforms freely for page transitions and sticky navs. The measured proof, from the
+  // live page: an element styled left:0;right:0;bottom:0 reported back as 560px wide at
+  // 333px from the top — a box mid-page, not the screen's bottom edge. So it was being
+  // drawn behind the dialog, which is why it looked like nothing had happened.
+  //
+  // Writing the numbers directly cannot be overridden by an ancestor's stacking context.
+  // It costs a repositioning on resize, which watchViewport handles.
+  function applyPlacementGeometry(host, mode) {
+    var st = host.style;
+    st.left = '0px';
+    st.right = 'auto';
+    st.top = 'auto';
+    st.bottom = '0px';
+    st.width = window.innerWidth + 'px';
+    st.maxWidth = 'none';
+    // Closed is hidden but still LAID OUT at full width, so the frame keeps measuring itself
+    // at the width it will be shown at. Parking it at 1px once made the frame measure a tall
+    // thin column and report a nonsense height. visibility, not display:none, which would
+    // stop the frame rendering at all.
+    if (mode !== 'open') return;
 
-    if (nowPlaying) {
-      // The frame becomes the bar: it renders the title and its own stop control, so there
-      // is nothing for this page to show or style alongside it.
-      setPlayerPlacement('bar');
-      tellFrame({ type: 'minimise' });
-    } else {
-      setPlayerPlacement('parked');
+    var dim = byField('player-dim');
+    if (dim) {
+      dim.style.left = '0px';
+      dim.style.top = '0px';
+      dim.style.width = window.innerWidth + 'px';
+      dim.style.height = window.innerHeight + 'px';
     }
   }
 
-  // Re-open the dialog for whatever is playing. Without this a member who closed the player
-  // could only reach it from the lock screen, which is worse than before rather than better.
-  // Re-open the dialog around whatever is playing. Called when the member taps the title in
-  // the minimised bar, which the FRAME reports — this page has no bar of its own to click.
-  function reopenModal() {
-    if (!nowPlaying) return;
-    var modal = byField('media-modal');
-    var modalTitle = byField('modal-title');
-    if (modalTitle) modalTitle.textContent = nowPlaying.title;
-    setPlayerPlacement('modal');
-    if (modal) {
-      modal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
-    }
-  }
-
-  function tellFrame(message) {
-    if (playerFrame && playerReady) playerFrame.contentWindow.postMessage(message, APP_URL);
+  // Keep the geometry honest through rotation and browser-chrome changes. Cheap: it only
+  // rewrites a few style properties, and only while the player exists.
+  function watchViewport() {
+    window.addEventListener('resize', function () {
+      var host = byField('player-frame-host');
+      if (!host) return;
+      applyPlacementGeometry(host, host.className.indexOf('is-open') !== -1 ? 'open' : 'closed');
+    });
   }
 
   function initModal() {
-    var closeBtn = byField('modal-close');
-    var modal = byField('media-modal');
-
-    if (closeBtn) closeBtn.addEventListener('click', closeModal);
-
-    if (modal) {
-      modal.addEventListener('click', function (e) {
-        if (e.target === modal) closeModal();
-      });
-    }
-
+    // Escape closes, but only when something is open. The old handler ran unconditionally
+    // and cleared body.style.overflow on any Escape press anywhere on the page.
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeModal();
+      if (e.key !== 'Escape') return;
+      var host = byField('player-frame-host');
+      if (host && host.className.indexOf('is-open') !== -1) closeSheet();
     });
 
-    // The frame talking back: it is listening, it changed size, or playback started/stopped.
+    // The frame talking back: it is listening, it changed size, it was closed, or playback
+    // started or stopped.
     window.addEventListener('message', function (e) {
       if (!playerFrame || e.source !== playerFrame.contentWindow) return;
       var data = e.data;
@@ -519,48 +526,38 @@
         }
       } else if (data.type === 'resize' && typeof data.height === 'number') {
         playerFrame.style.height = data.height + 'px';
-      } else if (data.type === 'request-expand') {
-        // Member tapped the title in the minimised bar.
-        reopenModal();
-      } else if (data.type === 'player-stopped') {
-        // Member used the frame's own stop button. Park it and forget what was playing.
+      } else if (data.type === 'close') {
+        // Member pressed the X inside the frame. It has already stopped itself; this side
+        // just takes the sheet away.
         nowPlaying = null;
-        setPlayerPlacement('parked');
+        setPlayerPlacement('closed');
       } else if (data.type === 'player-state') {
         // Stay in step with what the frame believes it is playing, which can change without
-        // this script asking — a lock-screen tap, say. The frame renders its own title, so
-        // there is nothing to update on this page; this only keeps nowPlaying honest, which
-        // is what closeModal reads to decide between minimising and parking.
+        // this script asking — a lock-screen tap, say.
         if (data.title) nowPlaying = { id: data.id, title: data.title };
       }
     });
   }
 
-  // The frame is positioned by this stylesheet rather than by Webflow, because the rule that
-  // it must never be re-parented is a code invariant and should not depend on a class
-  // someone could rename in the designer. Lindsay styles the BAR; this styles the box the
-  // frame sits in.
+  // The sheet is positioned by this stylesheet plus applyPlacementGeometry, not by Webflow,
+  // because "never re-parent the frame" is a code invariant and must not depend on a class
+  // someone could rename in the designer. Nothing here needs building in Webflow.
   function injectPlayerStyles() {
     if (document.getElementById('sys-player-styles')) return;
     var css =
-      '.sys-player-host{position:fixed;z-index:2147483000;}' +
-      // Parked off-screen at FULL width, not squeezed to 1px. The frame is width:100% of
-      // this host and measures itself to report a height; at 1px wide it measured a tall
-      // thin column and handed back a nonsense height for the bar to use.
-      '.sys-player-host.is-parked{left:0;right:0;bottom:0;width:100%;' +
-      'visibility:hidden;pointer-events:none;transform:translateY(120%);}' +
-      // ONE rule per state. An earlier pass had two .is-in-modal blocks and the second
-      // silently dropped the first's left/top, leaving the player anchored top-left.
-      '.sys-player-host.is-in-modal{visibility:visible;pointer-events:auto;' +
-      'left:50%;top:50%;transform:translate(-50%,-50%);' +
-      'width:min(560px,90vw);bottom:auto;right:auto;}' +
-      '.sys-player-host.is-in-bar{visibility:visible;pointer-events:auto;transform:none;' +
-      'left:0;right:0;bottom:0;top:auto;width:100%;' +
-      'background:#143428;box-shadow:0 -2px 12px rgba(0,0,0,0.25);}' +
-      // A floor so the bar is a bar even before the frame's first height message lands.
-      // Without it a slow or failed resize leaves a zero-height strip that reads as "nothing
-      // happened" — which is exactly how this first failed.
-      '.sys-player-host.is-in-bar iframe{min-height:96px;}';
+      '.sys-player-host{position:fixed;z-index:2147483000;' +
+      'background:#fff2df;border-radius:16px 16px 0 0;' +
+      'box-shadow:0 -4px 24px rgba(0,0,0,0.28);' +
+      'transition:transform .22s ease, visibility .22s;}' +
+      // Laid out at full width but hidden and pushed off the bottom edge, so the frame keeps
+      // measuring itself honestly while out of sight.
+      '.sys-player-host.is-closed{visibility:hidden;pointer-events:none;transform:translateY(100%);}' +
+      '.sys-player-host.is-open{visibility:visible;pointer-events:auto;transform:none;}' +
+      '.sys-player-host.is-open iframe{min-height:120px;}' +
+      // The dim sits below the sheet's z-index and above the page.
+      '.sys-player-dim{position:fixed;z-index:2147482999;background:rgba(14,14,13,0.55);' +
+      'visibility:hidden;opacity:0;transition:opacity .22s ease, visibility .22s;}' +
+      '.sys-player-dim.is-open{visibility:visible;opacity:1;}';
     var style = document.createElement('style');
     style.id = 'sys-player-styles';
     style.appendChild(document.createTextNode(css));
@@ -764,7 +761,7 @@
       if (fileType === 'pdf') {
         window.open(url, '_blank', 'noopener,noreferrer');
       } else {
-        openModal('rec-' + index, title, url, fileType);
+        openSheet('rec-' + index, title, url, fileType);
       }
     });
   }
@@ -786,7 +783,7 @@
       if (fileType === 'pdf') {
         window.open(url, '_blank', 'noopener,noreferrer');
       } else {
-        openModal('file-' + index, title, url, fileType);
+        openSheet('file-' + index, title, url, fileType);
       }
     });
   }
@@ -846,7 +843,7 @@
           if (fileType === 'pdf') {
             window.open(url, '_blank', 'noopener,noreferrer');
           } else {
-            openModal('cohort-s' + session.session_number, title, url, fileType);
+            openSheet('cohort-s' + session.session_number, title, url, fileType);
           }
         });
       }
@@ -870,7 +867,7 @@
       if (fileType === 'pdf') {
         window.open(url, '_blank', 'noopener,noreferrer');
       } else {
-        openModal('cohort-file-' + index, title, url, fileType);
+        openSheet('cohort-file-' + index, title, url, fileType);
       }
     });
   }
@@ -892,7 +889,7 @@
       if (fileType === 'pdf') {
         window.open(url, '_blank', 'noopener,noreferrer');
       } else {
-        openModal('cohort-my-' + index, title, url, fileType);
+        openSheet('cohort-my-' + index, title, url, fileType);
       }
     });
   }
@@ -1380,6 +1377,7 @@
   function init() {
     hideAll();
     injectPlayerStyles();
+    watchViewport();
     initModal();
     initTabs();
     initBuyButtons();

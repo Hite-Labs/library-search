@@ -28,6 +28,31 @@ sits in a frame rather than blocks you style — so there, you build the page *a
 
 ---
 
+## 0. The coaching player — NOTHING TO BUILD
+
+Same idea as search below, and worth reading first because it removes work rather than
+adding it.
+
+When a member taps a recording, a **bottom sheet** rises from the bottom of the screen with
+the page dimmed behind it. The sheet, its title, its download button, its close X and the
+play controls are all drawn by the app — like search, it is a self-contained thing inside a
+frame, and everything in it is a code change on my side.
+
+**You build nothing for it.** There is no block to add, no class to name, no breakpoint to
+worry about. It behaves the same on phone and desktop.
+
+If the page still has the old media pop-up — a block with `media-modal`, `modal-title`,
+`modal-download`, `modal-close`, or the `modal-video`/`modal-audio` players — the script no
+longer touches any of it. Nothing breaks while it sits there, so delete it whenever it suits
+you rather than as a rush job.
+
+One behaviour worth knowing, because it is deliberate: the X **stops** the audio. Closing and
+carrying on listening is not a thing any more. It used to be, and a close button that did not
+close turned out to be more confusing than useful. Locking the phone with the sheet open is
+what keeps a recording playing, and that still works.
+
+---
+
 ## 1. The membership page & search — BUILT, ONE DIV TO ADD
 
 Search works differently from everything else here, and it's worth knowing why before you
