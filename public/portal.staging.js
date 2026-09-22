@@ -321,33 +321,113 @@
     }
   }
 
-  // ===== Media modal (unchanged) =====
+  // ===== Media player =====
+  //
+  // The player is an IFRAME pointed at dashboard.showyourspark.com/player, not the pair of
+  // Webflow <audio>/<video> elements this used to drive.
+  //
+  // Why: members fall asleep to these recordings. Keeping audio alive through a screen lock
+  // needs a media session, and a media session only reaches the OS notification when it
+  // comes from the same frame as the media element. The old code could not do it from here,
+  // and worse, closeModal ran `pause(); src = ''` on three separate paths (close button,
+  // backdrop, Escape) — so a member could not even close the dialog and keep listening.
+  //
+  // The frame owns the transport. This file owns where it sits and what it is told to play.
 
-  function openModal(title, url, fileType) {
+  var APP_URL = 'https://dashboard.showyourspark.com';
+
+  // The one frame, created once and NEVER moved. Moving an iframe in the DOM — appendChild
+  // to another parent — reloads it, which destroys the media element and stops playback:
+  // exactly the failure this whole change exists to prevent. So it is appended to a host
+  // that is a direct child of <body>, created here rather than authored in Webflow (an
+  // ancestor picking up display:none would kill the audio just as dead), and moves between
+  // "in the modal" and "mini bar" by CSS class alone.
+  var playerFrame = null;
+  var playerReady = false;
+  var queuedPlay = null;
+  var nowPlaying = null;
+
+  function ensurePlayerFrame() {
+    if (playerFrame) return playerFrame;
+
+    var host = document.createElement('div');
+    host.setAttribute('data-field', 'player-frame-host');
+    host.className = 'sys-player-host is-parked';
+    document.body.appendChild(host);
+
+    var frame = document.createElement('iframe');
+    frame.src = APP_URL + '/player';
+    frame.title = 'Player';
+    // fullscreen for video; autoplay so playback a member started survives the frame being
+    // told to load a different track. No microphone — unlike the search widget, nothing in
+    // here listens.
+    frame.allow = 'fullscreen; autoplay';
+    frame.setAttribute('scrolling', 'no');
+    frame.style.cssText = 'width:100%;border:0;display:block;min-height:120px;';
+    host.appendChild(frame);
+
+    playerFrame = frame;
+    return frame;
+  }
+
+  // Tell the frame what to play. The first card click will normally beat the frame's own
+  // load, so a message sent before it is listening is kept and flushed on player-ready.
+  function playInFrame(id, title, url, fileType) {
+    var frame = ensurePlayerFrame();
+    var message = {
+      type: 'play-item',
+      id: id,
+      src: url,
+      title: title || '',
+      mediaType: fileType === 'video' ? 'video' : 'audio'
+    };
+    nowPlaying = { id: id, title: title || '' };
+    if (!playerReady) {
+      queuedPlay = message;
+      return;
+    }
+    frame.contentWindow.postMessage(message, APP_URL);
+  }
+
+  function stopPlayback() {
+    nowPlaying = null;
+    queuedPlay = null;
+    if (playerFrame && playerReady) {
+      playerFrame.contentWindow.postMessage({ type: 'stop' }, APP_URL);
+    }
+    setPlayerPlacement('parked');
+    hide(byField('player-bar'));
+  }
+
+  // Where the frame sits. CSS only — see the comment on playerFrame above. 'modal' fills the
+  // dialog's media slot, 'bar' is the strip pinned at the bottom, 'parked' is off-screen but
+  // still in the document, which is what lets nothing-is-playing cost no space while leaving
+  // the element alive.
+  function setPlayerPlacement(mode) {
+    var host = byField('player-frame-host');
+    if (!host) return;
+    host.className =
+      'sys-player-host ' +
+      (mode === 'modal' ? 'is-in-modal' : mode === 'bar' ? 'is-in-bar' : 'is-parked');
+  }
+
+  function openModal(id, title, url, fileType) {
     var modal = byField('media-modal');
     var modalTitle = byField('modal-title');
-    var videoWrap = byField('modal-video');
-    var audioWrap = byField('modal-audio');
-    var videoEl = document.querySelector('[data-field="modal-video-player"]');
-    var audioEl = document.querySelector('[data-field="modal-audio-player"]');
     var downloadEl = byField('modal-download');
 
     if (modalTitle) modalTitle.textContent = title || '';
+    if (downloadEl) downloadEl.setAttribute('href', url);
 
-    hide(videoWrap);
-    hide(audioWrap);
+    // The old modal-video / modal-audio wrappers and their players are no longer driven.
+    // Still hidden defensively so a page built against the previous contract does not show
+    // a stray empty <audio> next to the frame mid-deploy. See docs/portal-field-reference.md.
+    hide(byField('modal-video'));
+    hide(byField('modal-audio'));
 
-    if (fileType === 'video' && videoEl) {
-      videoEl.src = url;
-      if (videoWrap) videoWrap.style.display = 'block';
-    } else if (fileType === 'audio' && audioEl) {
-      audioEl.src = url;
-      if (audioWrap) audioWrap.style.display = 'block';
-    }
-
-    if (downloadEl) {
-      downloadEl.setAttribute('href', url);
-    }
+    playInFrame(id, title, url, fileType);
+    setPlayerPlacement('modal');
+    hide(byField('player-bar'));
 
     if (modal) {
       modal.style.display = 'flex';
@@ -355,25 +435,50 @@
     }
   }
 
+  // Closing MINIMISES. It does not stop.
+  //
+  // The three lines that used to live here — pause(), src = '', and the same for video — are
+  // precisely what this feature exists to delete. A member closing the dialog is saying "I
+  // am done looking at this", not "stop the audio". Stopping is stopPlayback, reached only
+  // from the bar's own stop control.
   function closeModal() {
     var modal = byField('media-modal');
-    var videoEl = document.querySelector('[data-field="modal-video-player"]');
-    var audioEl = document.querySelector('[data-field="modal-audio-player"]');
-
-    if (videoEl) { videoEl.pause(); videoEl.src = ''; }
-    if (audioEl) { audioEl.pause(); audioEl.src = ''; }
-
     if (modal) modal.style.display = 'none';
     document.body.style.overflow = '';
+
+    if (nowPlaying) {
+      setPlayerPlacement('bar');
+      var bar = byField('player-bar');
+      if (bar) {
+        setField(bar, 'player-bar-title', nowPlaying.title);
+        show(bar);
+      }
+    } else {
+      setPlayerPlacement('parked');
+      hide(byField('player-bar'));
+    }
+  }
+
+  // Re-open the dialog for whatever is playing. Without this a member who closed the player
+  // could only reach it from the lock screen, which is worse than before rather than better.
+  function reopenModal() {
+    if (!nowPlaying) return;
+    var modal = byField('media-modal');
+    var modalTitle = byField('modal-title');
+    if (modalTitle) modalTitle.textContent = nowPlaying.title;
+    setPlayerPlacement('modal');
+    hide(byField('player-bar'));
+    if (modal) {
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
   }
 
   function initModal() {
     var closeBtn = byField('modal-close');
     var modal = byField('media-modal');
 
-    if (closeBtn) {
-      closeBtn.addEventListener('click', closeModal);
-    }
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
 
     if (modal) {
       modal.addEventListener('click', function (e) {
@@ -384,8 +489,65 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closeModal();
     });
+
+    // The mini bar. Tapping it re-opens the dialog; only the stop control stops anything,
+    // and it stopPropagation's so a stop tap is not also a re-open.
+    var bar = byField('player-bar');
+    if (bar) {
+      bar.addEventListener('click', reopenModal);
+      var stopBtn = bar.querySelector('[data-field="player-bar-stop"]');
+      if (stopBtn) {
+        stopBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          stopPlayback();
+        });
+      }
+    }
+
+    // The frame talking back: it is listening, it changed size, or playback started/stopped.
+    window.addEventListener('message', function (e) {
+      if (!playerFrame || e.source !== playerFrame.contentWindow) return;
+      var data = e.data;
+      if (!data || typeof data !== 'object') return;
+
+      if (data.type === 'player-ready') {
+        playerReady = true;
+        if (queuedPlay) {
+          playerFrame.contentWindow.postMessage(queuedPlay, APP_URL);
+          queuedPlay = null;
+        }
+      } else if (data.type === 'resize' && typeof data.height === 'number') {
+        playerFrame.style.height = data.height + 'px';
+      } else if (data.type === 'player-state') {
+        // Keep the bar's label honest if the frame is playing something this script did not
+        // start — a lock-screen tap, say.
+        if (data.title) {
+          nowPlaying = { id: data.id, title: data.title };
+          var barEl = byField('player-bar');
+          if (barEl) setField(barEl, 'player-bar-title', data.title);
+        }
+      }
+    });
   }
 
+  // The frame is positioned by this stylesheet rather than by Webflow, because the rule that
+  // it must never be re-parented is a code invariant and should not depend on a class
+  // someone could rename in the designer. Lindsay styles the BAR; this styles the box the
+  // frame sits in.
+  function injectPlayerStyles() {
+    if (document.getElementById('sys-player-styles')) return;
+    var css =
+      '.sys-player-host{position:fixed;z-index:2147483000;}' +
+      '.sys-player-host.is-parked{left:-9999px;top:0;width:1px;height:1px;overflow:hidden;}' +
+      '.sys-player-host.is-in-modal{left:50%;transform:translateX(-50%);top:50%;' +
+      'margin-top:-40px;width:min(560px,90vw);}' +
+      '.sys-player-host.is-in-bar{left:0;right:0;bottom:0;width:100%;' +
+      'background:#143428;box-shadow:0 -2px 12px rgba(0,0,0,0.25);}';
+    var style = document.createElement('style');
+    style.id = 'sys-player-styles';
+    style.appendChild(document.createTextNode(css));
+    document.head.appendChild(style);
+  }
   // ===== Tab header (new) =====
 
   function initTabs() {
@@ -539,14 +701,18 @@
     }
 
     var fragment = document.createDocumentFragment();
-    items.forEach(function (item) {
+    items.forEach(function (item, index) {
       var card = template.cloneNode(true);
       card.removeAttribute('id');
       // show(), not a bare style reset: the clone inherits every class from the template,
       // so a template carrying is-hidden would produce a list of invisible cards. This is
       // the one place a hidden class propagates by copying rather than by being set.
       show(card);
-      fill(card, item);
+      // The index reaches the fillers so a playable card can identify itself to the player
+      // frame. The payload carries no id of its own, and the signed url is NOT usable as one
+      // — it is re-minted on every fetch, so keying on it would remount the player and kill
+      // the audio the next time this list re-rendered.
+      fill(card, item, index);
       fragment.appendChild(card);
     });
     listEl.appendChild(fragment);
@@ -561,7 +727,7 @@
     setField(card, 'ind-session-notes', session.next_actions);
   }
 
-  function fillRecordingCard(card, recording) {
+  function fillRecordingCard(card, recording, index) {
     setField(card, 'ind-recording-title', recording.title);
     setField(card, 'ind-recording-label', recording.session_label || '');
     setField(card, 'ind-recording-date', formatDateShort(recording.recorded_at));
@@ -580,12 +746,12 @@
       if (fileType === 'pdf') {
         window.open(url, '_blank', 'noopener,noreferrer');
       } else {
-        openModal(title, url, fileType);
+        openModal('rec-' + index, title, url, fileType);
       }
     });
   }
 
-  function fillFileCard(card, file) {
+  function fillFileCard(card, file, index) {
     setField(card, 'ind-file-title', file.title);
     setField(card, 'ind-file-description', file.description || '');
     setField(card, 'ind-file-date', formatDateShort(file.uploaded_at));
@@ -602,7 +768,7 @@
       if (fileType === 'pdf') {
         window.open(url, '_blank', 'noopener,noreferrer');
       } else {
-        openModal(title, url, fileType);
+        openModal('file-' + index, title, url, fileType);
       }
     });
   }
@@ -662,14 +828,14 @@
           if (fileType === 'pdf') {
             window.open(url, '_blank', 'noopener,noreferrer');
           } else {
-            openModal(title, url, fileType);
+            openModal('cohort-s' + session.session_number, title, url, fileType);
           }
         });
       }
     }
   }
 
-  function fillCohortFileCard(card, file) {
+  function fillCohortFileCard(card, file, index) {
     setField(card, 'cohort-file-title', file.title);
     setField(card, 'cohort-file-description', file.description || '');
     setField(card, 'cohort-file-date', formatDateShort(file.uploaded_at));
@@ -686,12 +852,12 @@
       if (fileType === 'pdf') {
         window.open(url, '_blank', 'noopener,noreferrer');
       } else {
-        openModal(title, url, fileType);
+        openModal('cohort-file-' + index, title, url, fileType);
       }
     });
   }
 
-  function fillCohortMyFileCard(card, file) {
+  function fillCohortMyFileCard(card, file, index) {
     setField(card, 'cohort-my-file-title', file.title);
     setField(card, 'cohort-my-file-description', file.description || '');
     setField(card, 'cohort-my-file-date', formatDateShort(file.uploaded_at));
@@ -708,7 +874,7 @@
       if (fileType === 'pdf') {
         window.open(url, '_blank', 'noopener,noreferrer');
       } else {
-        openModal(title, url, fileType);
+        openModal('cohort-my-' + index, title, url, fileType);
       }
     });
   }
@@ -1209,6 +1375,7 @@
 
   function init() {
     hideAll();
+    injectPlayerStyles();
     initModal();
     initTabs();
     initBuyButtons();

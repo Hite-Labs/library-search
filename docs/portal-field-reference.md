@@ -210,21 +210,44 @@ primary funnel: they get an empty-but-valid payload carrying the offers.
 
 ---
 
-## E. Media modal fields (shared, single DOM instance)
+## E. Media player fields
 
-Opened by any recording / file / (future) cohort card. One modal serves all. PDFs bypass the
-modal entirely (open in a new tab).
+Opened by any recording / file / cohort session card. PDFs bypass it entirely (new tab).
+
+**Playback now lives in an iframe**, not in Webflow-authored media elements. The frame is
+`dashboard.showyourspark.com/player`; the script creates it once, appends it to a host it
+adds to `<body>` itself, and never moves it again. Moving an iframe in the DOM reloads it,
+which would destroy the media element and stop playback — so it changes place by CSS class
+only. That is also why the host is script-created rather than authored: a Webflow ancestor
+picking up `display:none` would kill the audio just as dead.
+
+**Closing the dialog MINIMISES; it does not stop.** This is the point of the whole design.
+Members fall asleep to these recordings, so closing the modal leaves audio running and drops
+the frame into a bottom bar. Only `player-bar-stop` actually stops anything.
 
 | data-field | Role |
 |---|---|
 | `media-modal` | modal container; `display:flex` when open, locks body scroll |
 | `modal-title` | text — the item title |
-| `modal-video` | wrapper shown for video items (`display:block`) |
-| `modal-audio` | wrapper shown for audio items |
-| `modal-video-player` | the `<video>`; script sets `.src` (cleared on close) |
-| `modal-audio-player` | the `<audio>`; script sets `.src` (cleared on close) |
 | `modal-download` | download link; `href` set to the item url |
-| `modal-close` | close button (also closes on backdrop click / Escape) |
+| `modal-close` | close button (also on backdrop click / Escape) — **minimises, does not stop** |
+| `player-bar` | the "now playing" strip, revealed when the modal closes with audio running; clicking it re-opens the modal |
+| `player-bar-title` | text — what is playing; the script fills it |
+| `player-bar-stop` | the only control that stops playback and hides the bar |
+| _(`player-frame-host`)_ | **not authored in Webflow** — the script creates it. Listed so it is not mistaken for a missing block |
+
+### Deprecated — no longer driven by the script
+
+Left in place deliberately rather than deleted: a page still built against the old contract
+should not show a stray empty `<audio>` mid-deploy, so the script keeps hiding them. They can
+be removed from the Webflow page once this has shipped and settled.
+
+| data-field | Was |
+|---|---|
+| `modal-video` | wrapper shown for video items |
+| `modal-audio` | wrapper shown for audio items |
+| `modal-video-player` | the `<video>`; script set `.src` (cleared on close) |
+| `modal-audio-player` | the `<audio>`; script set `.src` (cleared on close) |
 
 ---
 

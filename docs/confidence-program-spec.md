@@ -126,8 +126,16 @@ from Vercel to the **existing DigitalOcean droplet** (deferred — build/test fe
 
 ### Deferred to Phase 2 (out of scope here)
 S-01 GHL webhook · Calendly sync · Memberstack auto-provisioning · the Webflow portal page
-itself · streaming-player UI for S-04 (we enforce the `downloadable` distinction at the data/
-API layer now; the player UI is a Webflow concern) · DigitalOcean deployment.
+itself · ~~streaming-player UI for S-04 (we enforce the `downloadable` distinction at the
+data/API layer now; the player UI is a Webflow concern)~~ · DigitalOcean deployment.
+
+> **S-04's player is no longer deferred (2026-09-22).** The reasoning above — "the player UI
+> is a Webflow concern" — is the one assumption in this spec that did not survive contact
+> with the content. These are long recordings members fall asleep to, so playback has to
+> survive a screen lock, and that needs a media session, which only reaches the OS from the
+> same frame as the media element. It is a frame-ownership problem, not a styling one, and
+> Webflow's authoring model cannot express it. The player now lives at `/player` and the
+> portal embeds it. See §E of `portal-field-reference.md`.
 
 ## Data model — `db/schema.sql`
 
