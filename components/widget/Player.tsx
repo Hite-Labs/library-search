@@ -36,6 +36,23 @@ interface PlayerProps {
    * one (DetailPanel keys on item id), so "once per item the member actually started".
    */
   onFirstPlay?: () => void;
+  /**
+   * Mirrors the local `playing` state outward, so the parent can know whether audio is
+   * actually running without owning the transport.
+   *
+   * WidgetRoot needs this to decide whether tapping another card should ask first: a tap
+   * unmounts this Player and destroys the element, which is silent theft if audio was
+   * playing and merely a navigation if it was not.
+   *
+   * Two rules for whoever consumes it. It must land in a REF, never state — this fires on
+   * every play and pause, and a setState in the parent re-renders the tree over live audio,
+   * which is the hazard the header comment is about. And it fires `false` on unmount, so a
+   * closed player cannot leave the parent believing something is still playing.
+   *
+   * Player keeps its own `playing` useState regardless: the play/pause icon genuinely has
+   * to re-render, and that is local and cheap.
+   */
+  onPlayingChange?: (playing: boolean) => void;
 }
 
 /**
@@ -66,7 +83,14 @@ function formatTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: PlayerProps) {
+export function Player({
+  src,
+  mediaType,
+  title,
+  durationSeconds,
+  onFirstPlay,
+  onPlayingChange,
+}: PlayerProps) {
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -88,9 +112,15 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
   // header comment. Putting onFirstPlay in that array would tear down and re-attach every
   // media listener each time the parent re-rendered with a new closure, mid-playback. A ref
   // lets the handler always call the current callback while the effect stays mounted once.
+  // Same reasoning for onPlayingChange, and the same non-negotiable consequence: NEITHER
+  // of these callbacks may be named in the transport effect's dependency array. That array
+  // stays empty. A prop in it re-attaches every media listener each time the parent renders
+  // with a new closure, mid-track, which is how background playback breaks.
   const onFirstPlayRef = useRef(onFirstPlay);
+  const onPlayingChangeRef = useRef(onPlayingChange);
   useEffect(() => {
     onFirstPlayRef.current = onFirstPlay;
+    onPlayingChangeRef.current = onPlayingChange;
   });
 
   const isVideo = mediaType === 'video';
@@ -103,6 +133,7 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
 
     const onPlay = () => {
       setPlaying(true);
+      onPlayingChangeRef.current?.(true);
       // "Played" is any press of play — no duration threshold. A mis-tap self-corrects:
       // the list holds three, so the next real play pushes it out.
       if (!fired.current) {
@@ -110,7 +141,10 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
         onFirstPlayRef.current?.();
       }
     };
-    const onPause = () => setPlaying(false);
+    const onPause = () => {
+      setPlaying(false);
+      onPlayingChangeRef.current?.(false);
+    };
     const onTime = () => {
       if (!scrubbing.current) setCurrent(el.currentTime);
     };
@@ -118,7 +152,10 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
       // Streams report Infinity; a failed load reports NaN. Either means "no scrubber".
       setDuration(Number.isFinite(el.duration) ? el.duration : null);
     };
-    const onEnded = () => setPlaying(false);
+    const onEnded = () => {
+      setPlaying(false);
+      onPlayingChangeRef.current?.(false);
+    };
 
     el.addEventListener('play', onPlay);
     el.addEventListener('pause', onPause);
@@ -131,6 +168,13 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
       el.removeEventListener('timeupdate', onTime);
       el.removeEventListener('loadedmetadata', onMeta);
       el.removeEventListener('ended', onEnded);
+      // No Player alive means nothing is playing, as far as the parent is concerned.
+      // This is bookkeeping, not teardown — rule 2 forbids touching the ELEMENT (no
+      // pause, no src clear, no load), and none of that happens here. Without it the
+      // flag would stay true after the member closes the player, since closing unmounts
+      // us with the element still un-paused, and every later tap would prompt for
+      // nothing.
+      onPlayingChangeRef.current?.(false);
       // Note: no pause(), no removeAttribute('src'), no load(). See the header comment.
     };
   }, []);

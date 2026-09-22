@@ -5,6 +5,7 @@ import { SearchBox } from './SearchBox';
 import { ResultsList } from './ResultsList';
 import { DetailPanel } from './DetailPanel';
 import { IdleContent } from './IdleContent';
+import { SwitchConfirm } from './SwitchConfirm';
 import { bucketKey, readRecent, recordPlay } from '@/lib/widget/recently-played';
 import type { GettingStarted, Result } from './types';
 
@@ -66,6 +67,26 @@ export function WidgetRoot() {
   const recentRef = useRef<Result[]>([]);
 
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // Is audio actually playing right now? Fed by Player through onPlayingChange.
+  //
+  // A REF, not state, and that is the whole design. This is written on every play and
+  // pause, and as state each one would re-render the tree over a live <audio> element —
+  // the hazard handlePlayed below already avoids for the same reason. Nothing renders from
+  // this value: it is read once, synchronously, when a card is tapped, which is already
+  // causing a render of its own. If something ever does need to render from it, this has to
+  // become state and the re-render question has to be reopened honestly.
+  const playingRef = useRef(false);
+
+  // The card a member tapped while something was playing, awaiting their answer. State,
+  // because it renders the prompt.
+  //
+  // It changes on a deliberate tap, and in one other place: the onPlayingChange handler
+  // clears it when playback stops underneath an open prompt. That is a setState reached
+  // from a media event, which this file is otherwise careful about — it is acceptable
+  // there precisely because a prompt is open, meaning the member is reading a question
+  // rather than listening, so there is no live playback for the render to endanger.
+  const [pendingSelect, setPendingSelect] = useState<Result | null>(null);
 
   // Is the idle shelf on screen right now? Read by the postMessage handler, which is
   // registered once with an empty dep array and would otherwise close over the state as it
@@ -183,7 +204,10 @@ export function WidgetRoot() {
     const observer = new ResizeObserver(() => notifyHeight(el));
     observer.observe(el);
     return () => observer.disconnect();
-  }, [state, results, selected, gettingStarted, recent]);
+    // `pendingSelect` is here on the same argument: the switch prompt grows the root the
+    // instant a member taps a card mid-playback, and the observer would otherwise report it
+    // a frame late — a visible jump on the host page at the worst moment.
+  }, [state, results, selected, gettingStarted, recent, pendingSelect]);
 
   async function handleSearch() {
     if (!query.trim()) return;
@@ -255,7 +279,46 @@ export function WidgetRoot() {
    */
   function closePlayer() {
     setSelected(null);
+    // The Player's unmount reports this too; setting it here as well costs nothing and
+    // saves reasoning about whether React's cleanup runs before the member's next tap.
+    playingRef.current = false;
+    // Any unanswered switch prompt dies with the player. It asks "stop X and play Y?" —
+    // once X is gone the question is nonsense, and leaving it up would offer to stop a
+    // track that already stopped.
+    setPendingSelect(null);
     setRecent(recentRef.current);
+  }
+
+  /**
+   * Every card tap goes through here rather than straight to setSelected.
+   *
+   * Selecting a different item changes DetailPanel's key, which unmounts the Player and
+   * destroys the <audio> element — playback stops by destruction, not by a pause() call.
+   * That is correct when the member meant it. It is theft when they brushed a card, and the
+   * list makes brushing easy: once something is playing the playing item is filtered out of
+   * the list below, so every card down there is a track-switcher and none of them is inert.
+   *
+   * So: ask, but only when there is something to lose. Paused or stopped goes straight
+   * through, because a prompt before the member has committed to listening is just a step.
+   */
+  function handleSelect(item: Result) {
+    // Re-tapping the open item. Can't happen from a demoted list (it filters the selection
+    // out) but can from an undemoted one, and it would otherwise hand DetailPanel a fresh
+    // object for the same id — a pointless render over live audio.
+    if (selected && item.id === selected.id) return;
+    if (!selected || !playingRef.current) {
+      setSelected(item);
+      return;
+    }
+    setPendingSelect(item);
+  }
+
+  function confirmSwitch() {
+    if (!pendingSelect) return;
+    setSelected(pendingSelect);
+    setPendingSelect(null);
+    // The new Player mounts paused, which is deliberate: two taps to start audio is fine,
+    // and it keeps us clear of the browser gesture rules that govern programmatic play().
   }
 
   function handleReset() {
@@ -324,6 +387,37 @@ export function WidgetRoot() {
       <DetailPanel
         item={selected}
         onFirstPlay={() => selected && handlePlayed(selected)}
+        onPlayingChange={(p) => {
+          playingRef.current = p;
+          // If the thing we were protecting stops on its own — the track ends, or the
+          // member pauses from the lock screen — the open prompt is asking whether to stop
+          // something that already stopped. Drop it: there is nothing left to protect, and
+          // a question about a finished track is just confusing.
+          //
+          // It is dropped rather than auto-answered. Switching for them would move the page
+          // under someone who never said yes, and the card they tapped is still sitting
+          // there to tap again. Safe to setState from a media event here because it only
+          // runs while a prompt is open, which means the member is reading a question
+          // rather than listening to anything.
+          if (!p) setPendingSelect(null);
+        }}
+      />
+
+      {/*
+        The switch prompt sits immediately AFTER the player and must stay here. Nothing may
+        ever be inserted ABOVE DetailPanel: React reconciles by position, so a new sibling
+        before it shifts its index and remounts the <audio> mid-track. Appearing after it is
+        safe — a sibling only moves the ones that follow it.
+
+        Rendered unconditionally, returning null when there is nothing pending, for the same
+        reason DetailPanel is: a constant child count makes that safety structural rather
+        than a property of where someone happened to put the JSX.
+      */}
+      <SwitchConfirm
+        pending={pendingSelect}
+        current={selected}
+        onConfirm={confirmSwitch}
+        onCancel={() => setPendingSelect(null)}
       />
 
       {state === 'idle' && (
@@ -333,7 +427,7 @@ export function WidgetRoot() {
               gettingStarted={gettingStarted}
               recent={recent}
               selectedId={selected?.id ?? null}
-              onSelect={setSelected}
+              onSelect={handleSelect}
             />
           </div>
         </div>
@@ -357,7 +451,7 @@ export function WidgetRoot() {
               response={response}
               results={results}
               selectedId={selected?.id ?? null}
-              onSelect={setSelected}
+              onSelect={handleSelect}
               demoted={!!selected}
             />
           </div>

@@ -9,6 +9,8 @@ interface DetailPanelProps {
   item: Result | null;
   /** Passed to Player; fires once when this item starts playing. */
   onFirstPlay?: () => void;
+  /** Passed straight through to Player. See its prop docs — the parent must ref this. */
+  onPlayingChange?: (playing: boolean) => void;
 }
 
 /**
@@ -22,7 +24,7 @@ interface DetailPanelProps {
  * fixed — React reconciles by position, and a panel that appeared and disappeared would
  * shift the list's index and could unmount the playing <audio> element beneath it.
  */
-export function DetailPanel({ item, onFirstPlay }: DetailPanelProps) {
+export function DetailPanel({ item, onFirstPlay, onPlayingChange }: DetailPanelProps) {
   if (!item) return null;
 
   return (
@@ -54,6 +56,7 @@ export function DetailPanel({ item, onFirstPlay }: DetailPanelProps) {
         title={item.title}
         durationSeconds={item.durationSeconds}
         onFirstPlay={onFirstPlay}
+        onPlayingChange={onPlayingChange}
       />
 
       {item.description && (
