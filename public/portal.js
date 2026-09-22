@@ -423,6 +423,17 @@
   function setPlayerPlacement(mode) {
     var host = byField('player-frame-host');
     if (!host) return;
+    host.className = 'sys-player-host ' + (mode === 'open' ? 'is-open' : 'is-closed');
+    var dim = byField('player-dim');
+    if (dim) dim.className = 'sys-player-dim ' + (mode === 'open' ? 'is-open' : '');
+    // The page behind must not scroll under an open sheet. Restored to '' rather than to a
+    // saved value, matching what the old modal did — nothing else on this page sets it.
+    document.body.style.overflow = mode === 'open' ? 'hidden' : '';
+    applyPlacementGeometry(host, mode);
+    // Logged AFTER the geometry is applied, not before. Measuring first reported the
+    // PREVIOUS state — a 300x150 box at top:1012 on a 1241x794 viewport, which read as a
+    // broken sheet when the sheet was in fact correct. A diagnostic that lies is worse than
+    // none, because it sends the next person hunting a bug that is not there.
     if (window.SYS_PLAYER_DEBUG) {
       var r = host.getBoundingClientRect();
       console.log('[player] placement=' + mode,
@@ -448,13 +459,6 @@
       }
       console.log('[player] fixed-trap:', trap || 'none found');
     }
-    host.className = 'sys-player-host ' + (mode === 'open' ? 'is-open' : 'is-closed');
-    var dim = byField('player-dim');
-    if (dim) dim.className = 'sys-player-dim ' + (mode === 'open' ? 'is-open' : '');
-    // The page behind must not scroll under an open sheet. Restored to '' rather than to a
-    // saved value, matching what the old modal did — nothing else on this page sets it.
-    document.body.style.overflow = mode === 'open' ? 'hidden' : '';
-    applyPlacementGeometry(host, mode);
   }
 
   // Position the sheet in JS against the real viewport, rather than trusting position:fixed
