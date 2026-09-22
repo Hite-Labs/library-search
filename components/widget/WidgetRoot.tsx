@@ -279,8 +279,11 @@ export function WidgetRoot() {
    */
   function closePlayer() {
     setSelected(null);
-    // The Player's unmount reports this too; setting it here as well costs nothing and
-    // saves reasoning about whether React's cleanup runs before the member's next tap.
+    // Set at every teardown site rather than left to the Player's unmount alone. The
+    // unmount does report it, and the ordering is sound — React commits deletions before
+    // placements, and a fresh Player never auto-plays, so the old cleanup's `false` cannot
+    // land after a new `true`. But the two are not interchangeable: each teardown path owes
+    // this write, and leaving it implicit invites the next one to forget.
     playingRef.current = false;
     // Any unanswered switch prompt dies with the player. It asks "stop X and play Y?" —
     // once X is gone the question is nonsense, and leaving it up would offer to stop a
@@ -302,9 +305,11 @@ export function WidgetRoot() {
    * through, because a prompt before the member has committed to listening is just a step.
    */
   function handleSelect(item: Result) {
-    // Re-tapping the open item. Can't happen from a demoted list (it filters the selection
-    // out) but can from an undemoted one, and it would otherwise hand DetailPanel a fresh
-    // object for the same id — a pointless render over live audio.
+    // Re-tapping the item already open. ResultsList filters the selection out once demoted,
+    // but the idle shelf has no such notion and keeps rendering every card — including the
+    // one labelled "Playing above" — so this is an ordinary tap there, not an edge case.
+    // Without the guard it hands DetailPanel a fresh object for the same id: a pointless
+    // render over live audio.
     if (selected && item.id === selected.id) return;
     if (!selected || !playingRef.current) {
       setSelected(item);
@@ -317,6 +322,13 @@ export function WidgetRoot() {
     if (!pendingSelect) return;
     setSelected(pendingSelect);
     setPendingSelect(null);
+    // Switching tears down a Player just as closing one does, so it owes the same two
+    // debts. The shelf flush especially: handlePlayed only ever writes to a ref, and a
+    // teardown path that forgets to reconcile it is exactly the bug the previous commit
+    // fixed for closePlayer. Not routed THROUGH closePlayer because that nulls `selected`,
+    // which would unmount and remount the panel rather than swapping the item in place.
+    playingRef.current = false;
+    setRecent(recentRef.current);
     // The new Player mounts paused, which is deliberate: two taps to start audio is fine,
     // and it keeps us clear of the browser gesture rules that govern programmatic play().
   }
@@ -328,6 +340,10 @@ export function WidgetRoot() {
     setResults([]);
     setErrorMsg('');
     setSelected(null);
+    playingRef.current = false;
+    // An unanswered switch prompt cannot outlive the player it was guarding — its Switch
+    // button would still act, opening an item from a result set that is now gone.
+    setPendingSelect(null);
     // The one moment the shelf becomes visible again, so the one moment it needs to catch
     // up with whatever handlePlayed recorded while the player was open.
     setRecent(recentRef.current);
@@ -404,14 +420,20 @@ export function WidgetRoot() {
       />
 
       {/*
-        The switch prompt sits immediately AFTER the player and must stay here. Nothing may
-        ever be inserted ABOVE DetailPanel: React reconciles by position, so a new sibling
-        before it shifts its index and remounts the <audio> mid-track. Appearing after it is
-        safe — a sibling only moves the ones that follow it.
+        The switch prompt sits immediately AFTER the player, and that is the whole reason it
+        is safe: React reconciles by position, so a sibling appearing or vanishing only
+        shifts the ones that FOLLOW it. Anything new belongs below DetailPanel, never above.
 
-        Rendered unconditionally, returning null when there is nothing pending, for the same
-        reason DetailPanel is: a constant child count makes that safety structural rather
-        than a property of where someone happened to put the JSX.
+        Rendered unconditionally and returning null when idle, for the same reason
+        DetailPanel does — this slot never appears or disappears, so it cannot move anything.
+
+        To be exact about the rule, since a reader will notice two siblings ABOVE the player
+        that do toggle: the back button and the search box. Both are gated on truthiness of
+        `selected`, so through a SWITCH — one item to another, both truthy — neither changes
+        and nothing above the player moves. They flip only when the player opens or closes,
+        which is a commit that is mounting or unmounting it regardless. What must never be
+        added above it is a sibling that toggles INDEPENDENTLY of `selected`: that one could
+        move the player while a track is running.
       */}
       <SwitchConfirm
         pending={pendingSelect}

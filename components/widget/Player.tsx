@@ -197,8 +197,17 @@ export function Player({
     if (!el) return;
     // play() rejects if the browser blocks it (no gesture, or another app holds audio
     // focus). Swallow it: the pause event keeps our UI honest either way.
-    if (el.paused) void el.play().catch(() => {});
-    else el.pause();
+    if (el.paused) {
+      // Tell the parent immediately rather than waiting for the `play` event. On a cold
+      // mobile connection that event can be a noticeable moment away — it waits on the
+      // element actually starting — and in that gap the parent would believe nothing was
+      // playing and let a stray tap take the track away without asking, which is the exact
+      // thing it asks about. Claiming intent here is safe because it is only ever a claim:
+      // if the browser refuses, `pause` fires and corrects it, and the local `playing`
+      // state driving the button still comes from the element's own events (rule 3).
+      onPlayingChangeRef.current?.(true);
+      void el.play().catch(() => {});
+    } else el.pause();
   }, []);
 
   // ---- lock screen ----------------------------------------------------------------
