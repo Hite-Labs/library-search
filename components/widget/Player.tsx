@@ -173,7 +173,15 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
         title,
         artist: 'Show Your Spark',
         // Without artwork the lock screen shows a blank tile.
-        artwork: [{ src: '/sys-mark.png', sizes: '512x512', type: 'image/png' }],
+        //
+        // 256x256 is the file's REAL size — checked, not assumed. This said 512x512 for a
+        // 256x256 image, which is a size the OS trusts when it picks and scales the tile:
+        // Android would select it expecting sharpness and then upscale. That mismatch is a
+        // suspected cause of the lock-screen notification redrawing, so the declaration now
+        // tells the truth. Declaring several sizes against this one file would just be the
+        // same lie three times. A genuine 512x512 mark would be the better fix; none exists
+        // in the SYS asset folder today (webclip.png, the source of this file, is 256).
+        artwork: [{ src: '/sys-mark.png', sizes: '256x256', type: 'image/png' }],
       });
     }
 
@@ -218,12 +226,35 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
     if (ms) ms.playbackState = playing ? 'playing' : 'paused';
   }, [playing]);
 
+  // The last position handed to the lock screen, and the duration it was reported with.
+  // Refs, not state, and that matters: this is read and written ~4x/sec from the effect
+  // below, and as state it would re-render the whole component at that rate over live
+  // audio — the exact hazard the header comment exists to prevent. Do not "tidy" these.
+  const lastReportedRef = useRef(-Infinity);
+  const lastDurationRef = useRef<number | null>(null);
+
   // Position, so the lock screen's scrubber tracks. Guarded on a finite duration:
   // setPositionState throws a TypeError on NaN/Infinity, which is the default state
   // for our null-duration rows and would otherwise take out the whole effect.
   useEffect(() => {
     const ms = mediaSession();
     if (!ms?.setPositionState || duration === null || !Number.isFinite(duration)) return;
+
+    // `current` ticks ~4x/sec, and this used to report every single one on the assumption
+    // that the browser throttles the notification itself. That assumption holds up poorly
+    // on Android, where a media notification updated that often is a suspected cause of the
+    // lock-screen tile flashing and vanishing. (The notification SHADE was always fine —
+    // it is the lock screen specifically.) So report about once a second instead.
+    //
+    // The gate is DRIFT, not a timer: a seek moves `current` by more than a second in one
+    // tick and reports immediately, where a timer would leave the lock screen showing a
+    // stale position until the next window. A scrub shorter than a second is swallowed and
+    // resyncs on the following tick, which is a fair trade for ~4x fewer notification
+    // updates. A duration change always reports: the first loadedmetadata is what makes the
+    // lock-screen scrubber valid at all, and waiting a second for it would show a dead bar.
+    const durationChanged = duration !== lastDurationRef.current;
+    if (!durationChanged && Math.abs(current - lastReportedRef.current) < 1) return;
+
     try {
       ms.setPositionState({
         duration,
@@ -231,11 +262,12 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
         playbackRate: 1,
         position: Math.min(current, duration),
       });
+      lastReportedRef.current = current;
+      lastDurationRef.current = duration;
     } catch {
-      // Some browsers are stricter than the spec about position <= duration.
+      // Some browsers are stricter than the spec about position <= duration. Leave the
+      // refs alone on a throw so the next tick retries rather than believing it reported.
     }
-    // `current` ticks ~4x/sec; this effect is cheap and the browser throttles the
-    // notification itself, so we don't add another layer of throttling here.
   }, [current, duration]);
 
   // ---- render ---------------------------------------------------------------------
