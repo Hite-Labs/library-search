@@ -1,6 +1,6 @@
 'use client';
 
-import { mediaBadge, MediaIcon } from '@/components/MediaBadge';
+import { ItemTags } from '@/components/MediaBadge';
 import { ResultCard } from './ResultCard';
 import { gettingStartedToResult, type GettingStarted, type Result } from './types';
 
@@ -100,8 +100,6 @@ function FeaturedCard({
   onSelect: (item: Result) => void;
 }) {
   const selected = item.id === selectedId;
-  // The featured card is a filled petal surface, so the light palette is correct here.
-  const badge = mediaBadge(item.mediaType);
 
   return (
     <button
@@ -114,12 +112,8 @@ function FeaturedCard({
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-base font-semibold leading-snug text-forest">{item.title}</h3>
-        <span
-          className={`shrink-0 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}
-        >
-          <MediaIcon type={item.mediaType} />
-          {badge.label}
-        </span>
+        {/* The featured card is a filled petal surface, so the light palette is correct here. */}
+        <ItemTags mediaType={item.mediaType} modality={item.modality} />
       </div>
       {item.description && (
         <p className="text-xs leading-relaxed tint-forest-70">{item.description}</p>

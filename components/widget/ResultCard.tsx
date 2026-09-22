@@ -1,6 +1,6 @@
 'use client';
 
-import { mediaBadge, MediaIcon } from '@/components/MediaBadge';
+import { ItemTags } from '@/components/MediaBadge';
 import type { Result } from './types';
 
 interface ResultCardProps {
@@ -26,10 +26,6 @@ interface ResultCardProps {
  * "Link unavailable". Selecting now opens the item in place instead.
  */
 export function ResultCard({ item, selected, onSelect, outline }: ResultCardProps) {
-  // An outline card shows the dark host page through it; a filled one is petal. The badge
-  // has to follow, or the dark-ink palette lands on a dark surface. See mediaBadge.
-  const badge = mediaBadge(item.mediaType, outline);
-
   return (
     <button
       type="button"
@@ -47,12 +43,11 @@ export function ResultCard({ item, selected, onSelect, outline }: ResultCardProp
         <h3 className={`text-sm font-semibold leading-snug ${outline ? 'text-petal' : 'text-forest'}`}>
           {item.title}
         </h3>
-        <span
-          className={`shrink-0 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}
-        >
-          <MediaIcon type={item.mediaType} />
-          {badge.label}
-        </span>
+        {/*
+          An outline card shows the dark host page through it; a filled one is petal. The
+          badge has to follow, or the dark-ink palette lands on a dark surface.
+        */}
+        <ItemTags mediaType={item.mediaType} modality={item.modality} onDark={outline} />
       </div>
       <p className={`text-xs leading-relaxed ${outline ? 'tint-petal-70' : 'tint-forest-70'}`}>
         {item.description}

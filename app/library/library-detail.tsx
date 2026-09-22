@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
-import { MediaBadge } from '@/components/MediaBadge';
+import { ItemTags } from '@/components/MediaBadge';
 import { MediaPlayer } from '@/components/MediaPlayer';
 import { TagInput } from '@/components/upload/TagInput';
 import { MODALITIES, isModality } from '@/lib/modalities';
@@ -60,7 +60,7 @@ export function LibraryDetail({ item, loading, onSaved }: LibraryDetailProps) {
           <p className="text-xs text-slate/60 mt-0.5">Added {fmtDate(item.created_at)}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <MediaBadge type={item.media_type} />
+          <ItemTags mediaType={item.media_type} modality={item.modality} />
           {!editing && (
             <button type="button" onClick={() => setEditing(true)} className="btn-spark-outline text-xs">
               Edit

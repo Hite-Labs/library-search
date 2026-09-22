@@ -1,6 +1,6 @@
 'use client';
 
-import { MediaBadge } from '@/components/MediaBadge';
+import { ItemTags } from '@/components/MediaBadge';
 import type { LibraryItem } from './library-view';
 
 function fmtDate(d: string | null): string {
@@ -61,7 +61,7 @@ export function LibraryList({ items, selectedId, onSelect, loading, filtered }: 
           >
             <div className="flex items-start justify-between gap-2">
               <span className="font-serif text-slate truncate">{item.title}</span>
-              <MediaBadge type={item.media_type} />
+              <ItemTags mediaType={item.media_type} modality={item.modality} />
             </div>
             <p className="text-xs text-slate/60 mt-1 flex flex-wrap items-center gap-x-2">
               <span>{fmtDate(item.created_at)}</span>

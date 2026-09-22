@@ -1,6 +1,6 @@
 'use client';
 
-import { mediaBadge, MediaIcon } from '@/components/MediaBadge';
+import { ItemTags } from '@/components/MediaBadge';
 import { Player } from './Player';
 import type { Result } from './types';
 
@@ -25,9 +25,6 @@ interface DetailPanelProps {
 export function DetailPanel({ item, onFirstPlay }: DetailPanelProps) {
   if (!item) return null;
 
-  // The panel is a filled petal card, so the light palette is correct here.
-  const badge = mediaBadge(item.mediaType);
-
   return (
     <div className="bg-petal border tint-border-gold-40 rounded-xl p-4 space-y-3 shadow-sm">
       {/*
@@ -37,14 +34,13 @@ export function DetailPanel({ item, onFirstPlay }: DetailPanelProps) {
         above it already closes the player, in words that say where it goes rather than a
         bare × that reads as "dismiss" and makes a poor tap target on a phone.
       */}
+      {/*
+        The panel is a filled petal card, so the light palette is correct here. Modality
+        used to sit beside the format badge as loose grey text; now it IS the badge, and
+        the pair collapses into one element rather than saying the type twice.
+      */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span
-          className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}
-        >
-          <MediaIcon type={item.mediaType} />
-          {badge.label}
-        </span>
-        {item.modality && <span className="text-xs tint-forest-70">{item.modality}</span>}
+        <ItemTags mediaType={item.mediaType} modality={item.modality} />
       </div>
 
       {/*
