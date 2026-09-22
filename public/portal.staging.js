@@ -406,9 +406,19 @@
   // dialog's media slot, 'bar' is the strip pinned at the bottom, 'parked' is off-screen but
   // still in the document, which is what lets nothing-is-playing cost no space while leaving
   // the element alive.
+  // Set window.SYS_PLAYER_DEBUG = true in the console to trace placement changes. The portal
+  // page is member-gated, so this is the only way to see what the player is doing on a real
+  // member's screen without being that member.
   function setPlayerPlacement(mode) {
     var host = byField('player-frame-host');
     if (!host) return;
+    if (window.SYS_PLAYER_DEBUG) {
+      var r = host.getBoundingClientRect();
+      console.log('[player] placement=' + mode,
+        'host=' + Math.round(r.width) + 'x' + Math.round(r.height),
+        'top=' + Math.round(r.top),
+        'frameH=' + (playerFrame ? playerFrame.style.height || '(unset)' : '(no frame)'));
+    }
     host.className =
       'sys-player-host ' +
       (mode === 'modal' ? 'is-in-modal' : mode === 'bar' ? 'is-in-bar' : 'is-parked');
@@ -534,11 +544,23 @@
     if (document.getElementById('sys-player-styles')) return;
     var css =
       '.sys-player-host{position:fixed;z-index:2147483000;}' +
-      '.sys-player-host.is-parked{left:-9999px;top:0;width:1px;height:1px;overflow:hidden;}' +
-      '.sys-player-host.is-in-modal{left:50%;transform:translateX(-50%);top:50%;' +
-      'margin-top:-40px;width:min(560px,90vw);}' +
-      '.sys-player-host.is-in-bar{left:0;right:0;bottom:0;width:100%;' +
-      'background:#143428;box-shadow:0 -2px 12px rgba(0,0,0,0.25);}';
+      // Parked off-screen at FULL width, not squeezed to 1px. The frame is width:100% of
+      // this host and measures itself to report a height; at 1px wide it measured a tall
+      // thin column and handed back a nonsense height for the bar to use.
+      '.sys-player-host.is-parked{left:0;right:0;bottom:0;width:100%;' +
+      'visibility:hidden;pointer-events:none;transform:translateY(120%);}' +
+      // ONE rule per state. An earlier pass had two .is-in-modal blocks and the second
+      // silently dropped the first's left/top, leaving the player anchored top-left.
+      '.sys-player-host.is-in-modal{visibility:visible;pointer-events:auto;' +
+      'left:50%;top:50%;transform:translate(-50%,-50%);' +
+      'width:min(560px,90vw);bottom:auto;right:auto;}' +
+      '.sys-player-host.is-in-bar{visibility:visible;pointer-events:auto;transform:none;' +
+      'left:0;right:0;bottom:0;top:auto;width:100%;' +
+      'background:#143428;box-shadow:0 -2px 12px rgba(0,0,0,0.25);}' +
+      // A floor so the bar is a bar even before the frame's first height message lands.
+      // Without it a slow or failed resize leaves a zero-height strip that reads as "nothing
+      // happened" — which is exactly how this first failed.
+      '.sys-player-host.is-in-bar iframe{min-height:96px;}';
     var style = document.createElement('style');
     style.id = 'sys-player-styles';
     style.appendChild(document.createTextNode(css));
