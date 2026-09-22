@@ -190,8 +190,10 @@ export function WidgetRoot() {
     setState('searching');
     setErrorMsg('');
     // Drop the open player: it belongs to the previous set of results, and leaving it
-    // above a fresh list would show an item that may not be in it.
-    setSelected(null);
+    // above a fresh list would show an item that may not be in it. Through closePlayer
+    // rather than a bare setSelected(null), so a play that happened before this search
+    // reaches the shelf too — this path had the same gap handleReset did.
+    closePlayer();
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -237,6 +239,25 @@ export function WidgetRoot() {
     recentRef.current = recordPlay(bucketKey(memberstackUserId), item);
   }
 
+  /**
+   * Close the open player, and flush the recently-played ref into state on the way out.
+   *
+   * handlePlayed above defers that flush deliberately, and named handleReset as the place
+   * it would land. That was wrong: BOTH handleReset call sites live inside the results and
+   * error branches, so a member who plays something straight off the idle shelf never
+   * reaches one. The ref held the new order and the visible shelf kept showing the old one
+   * for the rest of the session.
+   *
+   * Closing the player is the right moment instead, and the only one that is both reachable
+   * from every state and safe. Safe because the Player is unmounting regardless — there is
+   * no live <audio> left for this re-render to disturb, which is the whole reason
+   * handlePlayed could not do it at the time of play.
+   */
+  function closePlayer() {
+    setSelected(null);
+    setRecent(recentRef.current);
+  }
+
   function handleReset() {
     setState('idle');
     setQuery('');
@@ -260,7 +281,7 @@ export function WidgetRoot() {
       {selected && (
         <button
           type="button"
-          onClick={() => setSelected(null)}
+          onClick={closePlayer}
           className="text-xs tint-petal-70 hover:text-gold transition-colors"
         >
           &lsaquo; Back to results

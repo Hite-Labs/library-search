@@ -36,7 +36,14 @@ export function IdleContent({ gettingStarted, recent, selectedId, onSelect }: Id
   if (recent.length > 0) {
     return (
       <section className="space-y-3">
-        <h2 className="font-label text-xs tint-petal-70">Pick up where you left off</h2>
+        {/*
+          "Recently played", not "Pick up where you left off". The old heading promised
+          resumption that nothing delivers: recently-played.ts persists the Result only,
+          with no currentTime, so tapping one of these always restarts it at 0:00.
+          If resume is ever built, position does not belong on Result — it is per-member,
+          per-item, and transient, so it wants its own key in that module.
+        */}
+        <h2 className="font-label text-xs tint-petal-70">Recently played</h2>
         <div className="space-y-2">
           {recent.map((item) => (
             <ResultCard
