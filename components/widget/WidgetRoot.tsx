@@ -7,6 +7,7 @@ import { DetailPanel } from './DetailPanel';
 import { IdleContent } from './IdleContent';
 import { SwitchConfirm, type PendingAction } from './SwitchConfirm';
 import { bucketKey, readRecent, recordPlay } from '@/lib/widget/recently-played';
+import { isTrustedParent } from '@/lib/widget/trusted-origins';
 import type { GettingStarted, Result } from './types';
 
 type State = 'idle' | 'searching' | 'results' | 'error';
@@ -102,28 +103,15 @@ export function WidgetRoot() {
   // embed.js). The token is what the backend actually verifies; the id is kept for
   // backward-compat/logging only.
   //
-  // The origin check mirrors the frame-ancestors CSP in next.config.ts: only a page allowed
-  // to frame us may hand us a token. Without it any page that embeds this widget could post
-  // an arbitrary token in. The backend verifies the token regardless, so this is defence in
-  // depth rather than the only control — but accepting credentials from an unchecked origin
-  // is not a habit worth keeping.
+  // Only a page allowed to frame us may hand us a token. Without it any page that embeds
+  // this widget could post an arbitrary one in. The backend verifies the token regardless,
+  // so this is defence in depth rather than the only control — but accepting credentials
+  // from an unchecked origin is not a habit worth keeping.
+  //
+  // isTrustedParent and the frame-ancestors CSP now come from the same list
+  // (lib/widget/trusted-origins.ts). They were two hand-kept copies, and they had already
+  // drifted once in the direction that fails silently.
   useEffect(() => {
-    function isTrustedParent(origin: string): boolean {
-      if (origin === window.location.origin) return true;
-      try {
-        const host = new URL(origin).hostname;
-        return (
-          host === 'showyourspark.com' ||
-          host.endsWith('.showyourspark.com') ||
-          host.endsWith('.webflow.io') ||
-          host.endsWith('.webflow.com') ||
-          host.endsWith('.webflow-ext.com')
-        );
-      } catch {
-        return false;
-      }
-    }
-
     function onMessage(e: MessageEvent) {
       if (!isTrustedParent(e.origin)) return;
       if (e.data?.type === 'ms-user') {

@@ -1,5 +1,26 @@
 import type { NextConfig } from 'next';
 import path from 'path';
+import { FRAME_ANCESTORS } from './lib/widget/trusted-origins';
+
+/**
+ * Headers for a route that is embedded in Webflow via an iframe.
+ *
+ * Both embedded routes get byte-identical treatment from one source. They used to be one
+ * hand-written string, and when the coaching player needed the same one it would have become
+ * a second copy — which is how the apex showyourspark.com went missing from the CSP once
+ * already while the JS origin check already trusted it, so the browser refused the frame and
+ * the widget never appeared on the live page.
+ *
+ * X-Frame-Options is set to ALLOWALL explicitly so CSP frame-ancestors takes full control;
+ * a stray default would otherwise override it in some browsers.
+ */
+const embeddedRouteHeaders = (source: string) => ({
+  source,
+  headers: [
+    { key: 'Content-Security-Policy', value: FRAME_ANCESTORS },
+    { key: 'X-Frame-Options', value: 'ALLOWALL' },
+  ],
+});
 
 const nextConfig: NextConfig = {
   turbopack: {
@@ -7,27 +28,12 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      {
-        // Allow /widget to be embedded in Webflow iframes
-        source: '/widget',
-        headers: [
-          {
-            key: 'Content-Security-Policy',
-            // showyourspark.com is the live custom domain the Webflow site is published
-            // to (www.showyourspark.com, 200, Webflow-hosted). It was missing here while
-            // WidgetRoot's postMessage check already trusted it — so on the real member
-            // page the browser refused the frame outright and search never appeared. The
-            // *.webflow.* entries stay for Webflow's preview/staging domains.
-            value:
-              "frame-ancestors 'self' https://showyourspark.com https://*.showyourspark.com https://*.webflow.io https://*.webflow.com https://*.webflow-ext.com",
-          },
-          // Explicitly unset X-Frame-Options so CSP frame-ancestors takes full control
-          {
-            key: 'X-Frame-Options',
-            value: 'ALLOWALL',
-          },
-        ],
-      },
+      // The search widget, embedded by public/embed.js.
+      embeddedRouteHeaders('/widget'),
+      // The coaching portal's player, embedded by public/portal.js. Needs its own entry:
+      // `source` is an exact match, so /widget's headers do nothing for this route, and
+      // without them the browser refuses the frame and a member sees an empty box.
+      embeddedRouteHeaders('/player'),
       {
         // CORS for search API (widget calls from same origin via iframe, but allow explicit cross-origin too)
         source: '/api/search',

@@ -28,6 +28,40 @@ import { env } from '@/lib/env';
 export const runtime = 'nodejs';
 
 /**
+ * How long a member's media URL stays playable.
+ *
+ * Twelve hours, not the one hour `getPresignedGetUrl` defaults to, and the reason is the
+ * same one the whole coaching player exists for: these are long recordings people fall
+ * asleep to. A one-hour signature 403s on a seek in the middle of the night with no recovery
+ * path inside an <audio> element — the library already learned this, which is why public
+ * library items are served unsigned (see the note in docs/portal-field-reference.md). These
+ * are private, so unsigned is not available and a longer window is the answer.
+ *
+ * WHAT THIS COSTS, stated plainly: a URL copied out of devtools, or lifted from the download
+ * link that already exists on every recording, stays playable for twelve hours instead of
+ * one. That is a change in degree, not in kind. A presigned URL was always shareable the
+ * moment it was issued, and an hour is already long enough to download the file in full.
+ * What presigning actually defends against is enumeration — guessing at other members'
+ * recordings — and URLs living forever in logs and referrers. Both are unchanged.
+ *
+ * What does the real gating here is unchanged too: a URL is only ever minted for a verified
+ * Memberstack token holder, for their own content, and locked cohort sessions are never
+ * presigned at all (see isSessionLocked below — that reasoning is now MORE load-bearing, not
+ * less, since a leaked locked URL would live twelve times longer).
+ *
+ * The alternative was a streaming route that re-checks the token per range request, so the
+ * link could not be shared at all. Considered and declined on cost: it puts all media
+ * traffic through a 1GB droplet that already OOMs on a build. Recorded here so the next
+ * person knows it was weighed rather than missed.
+ *
+ * NOTE: the window is counted from when the portal payload is BUILT, not from when playback
+ * starts. Open the portal in the morning and press play at 10pm and twelve hours is not
+ * enough. The fix if that ever bites is for portal.js to re-fetch and hand the frame a fresh
+ * src — but only while stopped, since changing src mid-playback restarts the track.
+ */
+const PLAYBACK_URL_TTL_SECONDS = 12 * 60 * 60;
+
+/**
  * The individual payload as sent when the member isn't entitled to (or has no) coaching.
  * Built per-request rather than as a frozen constant so calendar_url can carry the global
  * booking link: someone with no pack still sees a working "book a session" CTA, which is
@@ -285,7 +319,7 @@ async function buildCohortObject(memberstackId: string) {
     title: f.title,
     description: f.description || null,
     uploaded_at: f.created_at,
-    public_url: await getPresignedGetUrl(f.r2_key),
+    public_url: await getPresignedGetUrl(f.r2_key, PLAYBACK_URL_TTL_SECONDS),
     file_type: f.media_type,
   });
 
@@ -302,8 +336,10 @@ async function buildCohortObject(memberstackId: string) {
         const recording = sessionFiles.find((f) => f.media_type !== 'pdf') ?? null;
 
         // Locked sessions ship NO media — no signed recording URL, no file list. Presigning
-        // a locked recording is what leaked it: the URL is live for an hour and playable by
-        // anyone who reads the response, whatever the UI shows.
+        // a locked recording is what leaked it: the URL is playable by anyone who reads the
+        // response, whatever the UI shows. That is now a twelve-hour window rather than an
+        // hour (see PLAYBACK_URL_TTL_SECONDS), so this guard carries more weight than when
+        // it was written, not less — do not relax it.
         //
         // title and prompt_text are deliberately still sent. The portal already displays
         // them on locked cards ("Session 5 — Boundaries"), which reads as intended design
@@ -318,7 +354,7 @@ async function buildCohortObject(memberstackId: string) {
           prompt_text: s.prompt_text,
           locked,
           recording_url:
-            locked || !recording ? null : await getPresignedGetUrl(recording.r2_key),
+            locked || !recording ? null : await getPresignedGetUrl(recording.r2_key, PLAYBACK_URL_TTL_SECONDS),
           file_type: locked || !recording ? null : recording.media_type,
           files: locked ? [] : await Promise.all(sessionFiles.map(toPortalFile)),
         };
@@ -563,7 +599,7 @@ export async function GET(req: NextRequest) {
       title: r.title,
       session_label: r.session_label,
       recorded_at: r.created_at,
-      public_url: await getPresignedGetUrl(r.r2_key),
+      public_url: await getPresignedGetUrl(r.r2_key, PLAYBACK_URL_TTL_SECONDS),
       file_type: r.media_type,
     })),
   );
@@ -574,7 +610,7 @@ export async function GET(req: NextRequest) {
       title: f.title,
       description: f.description || null,
       uploaded_at: f.created_at,
-      public_url: await getPresignedGetUrl(f.r2_key),
+      public_url: await getPresignedGetUrl(f.r2_key, PLAYBACK_URL_TTL_SECONDS),
       file_type: f.media_type,
     })),
   );
