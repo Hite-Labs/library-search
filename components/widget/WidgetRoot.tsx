@@ -5,7 +5,7 @@ import { SearchBox } from './SearchBox';
 import { ResultsList } from './ResultsList';
 import { DetailPanel } from './DetailPanel';
 import { IdleContent } from './IdleContent';
-import { SwitchConfirm } from './SwitchConfirm';
+import { SwitchConfirm, type PendingAction } from './SwitchConfirm';
 import { bucketKey, readRecent, recordPlay } from '@/lib/widget/recently-played';
 import type { GettingStarted, Result } from './types';
 
@@ -78,15 +78,15 @@ export function WidgetRoot() {
   // become state and the re-render question has to be reopened honestly.
   const playingRef = useRef(false);
 
-  // The card a member tapped while something was playing, awaiting their answer. State,
-  // because it renders the prompt.
+  // What a member asked for while something was playing, awaiting their answer — tapping
+  // another card, or going back. State, because it renders the prompt.
   //
   // It changes on a deliberate tap, and in one other place: the onPlayingChange handler
   // clears it when playback stops underneath an open prompt. That is a setState reached
   // from a media event, which this file is otherwise careful about — it is acceptable
   // there precisely because a prompt is open, meaning the member is reading a question
   // rather than listening, so there is no live playback for the render to endanger.
-  const [pendingSelect, setPendingSelect] = useState<Result | null>(null);
+  const [pendingSelect, setPendingSelect] = useState<PendingAction | null>(null);
 
   // Is the idle shelf on screen right now? Read by the postMessage handler, which is
   // registered once with an empty dep array and would otherwise close over the state as it
@@ -304,6 +304,25 @@ export function WidgetRoot() {
    * So: ask, but only when there is something to lose. Paused or stopped goes straight
    * through, because a prompt before the member has committed to listening is just a step.
    */
+  /**
+   * The back link, guarded the same way the cards are.
+   *
+   * closePlayer itself stays unguarded and is the real teardown — handleSearch and the
+   * confirmed answer below both need a way to close without being asked again. This is the
+   * wrapper the BUTTON gets, and the distinction matters: a guard on closePlayer would
+   * either loop or have to be bypassed by its own callers.
+   *
+   * Worth guarding because the link sits directly above the player, a thumb's width from
+   * the transport, and it is the easiest thing on the screen to hit by accident.
+   */
+  function requestClose() {
+    if (!playingRef.current) {
+      closePlayer();
+      return;
+    }
+    setPendingSelect({ kind: 'close' });
+  }
+
   function handleSelect(item: Result) {
     // Re-tapping the item already open. ResultsList filters the selection out once demoted,
     // but the idle shelf has no such notion and keeps rendering every card — including the
@@ -315,12 +334,18 @@ export function WidgetRoot() {
       setSelected(item);
       return;
     }
-    setPendingSelect(item);
+    setPendingSelect({ kind: 'switch', item });
   }
 
   function confirmSwitch() {
     if (!pendingSelect) return;
-    setSelected(pendingSelect);
+    // Closing routes to the real teardown, which already clears the prompt and pays the
+    // rest of what a teardown owes.
+    if (pendingSelect.kind === 'close') {
+      closePlayer();
+      return;
+    }
+    setSelected(pendingSelect.item);
     setPendingSelect(null);
     // Switching tears down a Player just as closing one does, so it owes the same two
     // debts. The shelf flush especially: handlePlayed only ever writes to a ref, and a
@@ -360,7 +385,7 @@ export function WidgetRoot() {
       {selected && (
         <button
           type="button"
-          onClick={closePlayer}
+          onClick={requestClose}
           className="text-xs tint-petal-70 hover:text-gold transition-colors"
         >
           &lsaquo; Back to results

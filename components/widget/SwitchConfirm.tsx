@@ -3,9 +3,19 @@
 import { useEffect, useRef } from 'react';
 import type { Result } from './types';
 
+/**
+ * What the member asked for, and what it would cost them.
+ *
+ * `kind` is what the prompt is about, not merely which words to print: 'switch' names the
+ * track that would open instead, 'close' has nothing to open and says so.
+ */
+export type PendingAction =
+  | { kind: 'switch'; item: Result }
+  | { kind: 'close' };
+
 interface SwitchConfirmProps {
-  /** The item the member just tapped, or null when there is nothing to confirm. */
-  pending: Result | null;
+  /** What the member just asked for, or null when there is nothing to confirm. */
+  pending: PendingAction | null;
   /** The item currently playing, named in the prompt so it is clear what would stop. */
   current: Result | null;
   onConfirm: () => void;
@@ -13,15 +23,18 @@ interface SwitchConfirmProps {
 }
 
 /**
- * "You are playing something — switch?"
+ * "That would stop what you are listening to — sure?"
  *
- * Tapping a result card unmounts the open Player, which destroys the <audio> element and
- * stops playback. That is right when the member meant it and theft when they did not, and
- * the list makes the second case easy: once something is playing, ResultsList filters the
- * playing item OUT, so every card visible below the player switches tracks. There is no
- * inert place to tap in that whole region. This is the guard.
+ * Several things unmount the open Player, which destroys the <audio> element and stops
+ * playback: tapping a different result card, and "Back to results". Each is right when the
+ * member meant it and theft when they did not, and the layout makes the second easy. Once
+ * something is playing, ResultsList filters the playing item OUT, so every card visible
+ * below the player is a track-switcher and none of them is inert; and the back link sits
+ * directly above the player, a thumb's width from the transport. This is the guard for
+ * both — one prompt, so a new way to stop playback has somewhere to plug in rather than
+ * growing its own.
  *
- * It only appears when audio is ACTUALLY playing. Tapping while paused switches straight
+ * It only appears when audio is ACTUALLY playing. Acting while paused goes straight
  * through — the member has not committed to listening yet, and a prompt there is a nag.
  *
  * INLINE, deliberately not a fixed overlay. The widget lives in an iframe whose height is
@@ -53,10 +66,10 @@ export function SwitchConfirm({ pending, current, onConfirm, onCancel }: SwitchC
     onCancelRef.current = onCancel;
   });
 
-  // Focus the safe option when the prompt OPENS. Keyed on the item id rather than on
-  // `pending`, so a parent re-render while the prompt is up cannot yank focus back here
-  // from wherever the member has tabbed to.
-  const pendingId = pending?.id ?? null;
+  // Focus the safe option when the prompt OPENS. Keyed on a stable identity for what is
+  // being asked, rather than on `pending` itself, so a parent re-render while the prompt is
+  // up cannot yank focus back here from wherever the member has tabbed to.
+  const pendingId = pending ? (pending.kind === 'switch' ? pending.item.id : 'close') : null;
   useEffect(() => {
     if (pendingId) cancelRef.current?.focus();
   }, [pendingId]);
@@ -95,8 +108,20 @@ export function SwitchConfirm({ pending, current, onConfirm, onCancel }: SwitchC
       <p id="switch-confirm-q" className="text-sm text-petal leading-snug">
         Stop {current ? <span className="font-semibold">{current.title}</span> : 'the current track'}?
       </p>
+      {/*
+        The second line says what happens NEXT, which is the part that differs. Closing
+        leaves nothing playing, and saying so plainly is the whole point — the member who
+        brushed the back link needs to know it costs them the track, not just the screen.
+      */}
       <p className="text-xs tint-petal-70 leading-relaxed">
-        <span className="font-medium">{pending.title}</span> will open instead, ready to play.
+        {pending.kind === 'switch' ? (
+          <>
+            <span className="font-medium">{pending.item.title}</span> will open instead, ready to
+            play.
+          </>
+        ) : (
+          'Going back closes the player, so nothing will be playing.'
+        )}
       </p>
       {/*
         "Keep playing" is the filled, primary pill and comes first. The premise of this
@@ -110,7 +135,7 @@ export function SwitchConfirm({ pending, current, onConfirm, onCancel }: SwitchC
           Keep playing
         </button>
         <button type="button" onClick={onConfirm} className="btn-spark-outline-light text-xs">
-          Switch
+          {pending.kind === 'switch' ? 'Switch' : 'Go back'}
         </button>
       </div>
     </div>
