@@ -28,13 +28,6 @@ export function DetailPanel({ item, onFirstPlay }: DetailPanelProps) {
   // The panel is a filled petal card, so the light palette is correct here.
   const badge = mediaBadge(item.mediaType);
 
-  // Stored as comma-separated text, not arrays. Split for display and drop the blanks
-  // that a trailing comma or an empty column leaves behind.
-  const tags = [item.useCases, item.moodTags]
-    .flatMap((field) => (field ? field.split(',') : []))
-    .map((t) => t.trim())
-    .filter(Boolean);
-
   return (
     <div className="bg-petal border tint-border-gold-40 rounded-xl p-4 space-y-3 shadow-sm">
       {/*
@@ -71,15 +64,11 @@ export function DetailPanel({ item, onFirstPlay }: DetailPanelProps) {
         <p className="text-xs tint-forest-70 leading-relaxed">{item.description}</p>
       )}
 
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          {tags.map((tag) => (
-            <span key={tag} className="text-[11px] tint-forest-70 tint-bg-forest-10 rounded-full px-2 py-0.5">
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
+      {/*
+        useCases and moodTags are not rendered. They stay in the payload and keep doing
+        their real job — feeding search and the embeddings — but they are shelving
+        vocabulary written for us, not for the member reading the card.
+      */}
     </div>
   );
 }

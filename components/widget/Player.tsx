@@ -23,7 +23,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  */
 
 const SKIP_SECONDS = 15;
-const SPEEDS = [0.75, 1, 1.25, 1.5] as const;
 
 interface PlayerProps {
   src: string;
@@ -71,7 +70,6 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
-  const [speed, setSpeed] = useState(1);
   // Seeded from the column, then replaced by the file's real duration. The column is
   // null for 14 of 15 rows, so treat a finite value here as the exception.
   const [duration, setDuration] = useState<number | null>(
@@ -120,21 +118,18 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
       // Streams report Infinity; a failed load reports NaN. Either means "no scrubber".
       setDuration(Number.isFinite(el.duration) ? el.duration : null);
     };
-    const onRate = () => setSpeed(el.playbackRate);
     const onEnded = () => setPlaying(false);
 
     el.addEventListener('play', onPlay);
     el.addEventListener('pause', onPause);
     el.addEventListener('timeupdate', onTime);
     el.addEventListener('loadedmetadata', onMeta);
-    el.addEventListener('ratechange', onRate);
     el.addEventListener('ended', onEnded);
     return () => {
       el.removeEventListener('play', onPlay);
       el.removeEventListener('pause', onPause);
       el.removeEventListener('timeupdate', onTime);
       el.removeEventListener('loadedmetadata', onMeta);
-      el.removeEventListener('ratechange', onRate);
       el.removeEventListener('ended', onEnded);
       // Note: no pause(), no removeAttribute('src'), no load(). See the header comment.
     };
@@ -232,7 +227,8 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
     try {
       ms.setPositionState({
         duration,
-        playbackRate: speed,
+        // Playback always runs at 1×; the speed control is gone deliberately.
+        playbackRate: 1,
         position: Math.min(current, duration),
       });
     } catch {
@@ -240,7 +236,7 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
     }
     // `current` ticks ~4x/sec; this effect is cheap and the browser throttles the
     // notification itself, so we don't add another layer of throttling here.
-  }, [current, duration, speed]);
+  }, [current, duration]);
 
   // ---- render ---------------------------------------------------------------------
 
@@ -278,31 +274,11 @@ export function Player({ src, mediaType, title, durationSeconds, onFirstPlay }: 
       )}
 
       {/*
-        Speed only, and only for audio — the −15s/+15s buttons that used to lead this row
-        are gone. The scrubber does the same job with more control, and the lock screen
-        still offers seek-back and seek-forward through the media session handlers below,
-        which is where someone actually reaches for them: mid-track, phone in pocket.
-
-        Video has no speed control, so for video this row renders nothing at all rather
-        than an empty flex container taking up the gap.
+        No speed control, and that is deliberate rather than an omission: changing the
+        rate distorts the pacing the session was recorded at, which is the work itself.
+        The −15s/+15s buttons are gone too — the scrubber does that job with more control,
+        and the lock screen still offers seek through the media session handlers below.
       */}
-      {!isVideo && (
-        <div className="flex items-center justify-end">
-          <button
-            type="button"
-            onClick={() => {
-              const el = ref.current;
-              if (!el) return;
-              const next = SPEEDS[(SPEEDS.indexOf(speed as (typeof SPEEDS)[number]) + 1) % SPEEDS.length];
-              el.playbackRate = next;
-            }}
-            className="text-xs font-medium text-plum hover:text-forest tabular-nums"
-            aria-label="Playback speed"
-          >
-            {speed}×
-          </button>
-        </div>
-      )}
 
       {/*
         Play, then the elapsed time, the scrubber and the duration — one row. The scrubber
