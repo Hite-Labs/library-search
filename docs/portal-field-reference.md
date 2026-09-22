@@ -231,10 +231,17 @@ the frame into a bottom bar. Only `player-bar-stop` actually stops anything.
 | `modal-title` | text — the item title |
 | `modal-download` | download link; `href` set to the item url |
 | `modal-close` | close button (also on backdrop click / Escape) — **minimises, does not stop** |
-| `player-bar` | the "now playing" strip, revealed when the modal closes with audio running; clicking it re-opens the modal |
-| `player-bar-title` | text — what is playing; the script fills it |
-| `player-bar-stop` | the only control that stops playback and hides the bar |
 | _(`player-frame-host`)_ | **not authored in Webflow** — the script creates it. Listed so it is not mistaken for a missing block |
+
+**There is no "now playing" strip to build.** When minimised the frame IS the bar: it pins
+itself to the bottom of the page and renders its own title, transport and stop button. An
+earlier draft of this had Webflow author a strip beside it, which was wrong — both are fixed
+elements wanting the same bottom edge, so they would have collided. Tapping the title asks
+the script to re-open the dialog; the frame's own stop button ends playback.
+
+This applies on every breakpoint, not just mobile. On a phone the bar is what survives a
+screen lock; on a desktop it is what lets a member close the dialog, keep reading their
+sessions, and still see and control what is playing.
 
 ### Deprecated — no longer driven by the script
 

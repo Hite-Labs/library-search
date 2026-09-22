@@ -24,9 +24,14 @@ import { isTrustedParent } from '@/lib/widget/trusted-origins';
  * host page.
  *
  *   in   { type: 'play-item', id, src, title, mediaType }   load this, paused
+ *   in   { type: 'minimise' }                               your dialog closed; be the bar
+ *   in   { type: 'expand' }                                 your dialog reopened
  *   in   { type: 'stop' }                                   the member asked to stop
+ *   out  { type: 'player-ready' }                           I am listening; flush your queue
  *   out  { type: 'resize', height }                         size my frame to fit
- *   out  { type: 'player-state', playing, id, title }       for the host's mini-bar
+ *   out  { type: 'request-expand' }                         member tapped the bar; open up
+ *   out  { type: 'player-stopped' }                         member stopped me; park the frame
+ *   out  { type: 'player-state', playing, id, title }       what is playing, for the host
  *
  * Nothing here pauses or unloads on its own. portal.js closing its modal is a CSS change on
  * our container, never a teardown — which is what lets a member close the dialog, lock the
@@ -50,6 +55,9 @@ function post(message: Record<string, unknown>) {
 
 export function PortalPlayerRoot() {
   const [item, setItem] = useState<PlayItem | null>(null);
+  // Minimised = the host closed its dialog and we are the bar at the bottom of the page.
+  // Only our chrome changes; the media element is untouched, which is the entire point.
+  const [minimised, setMinimised] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Inbound messages. Registered once, empty deps — the same discipline Player's transport
@@ -67,6 +75,13 @@ export function PortalPlayerRoot() {
         // dropped rather than rendered as a broken transport.
         if (!id || !src || !mediaType) return;
         setItem({ id, src, title: title ?? '', mediaType });
+        setMinimised(false);
+      } else if (data.type === 'minimise') {
+        // The host closed its dialog. Same element, same playback — only our own chrome
+        // changes, because this frame is never unmounted or re-parented.
+        setMinimised(true);
+      } else if (data.type === 'expand') {
+        setMinimised(false);
       } else if (data.type === 'stop') {
         // The ONE path that deliberately ends playback. Unmounting the Player detaches the
         // element, which stops it — the member asked, so this is the one time that is right.
@@ -95,12 +110,59 @@ export function PortalPlayerRoot() {
   }, [item]);
 
   return (
-    <div ref={rootRef} className="p-4 font-sans">
+    <div ref={rootRef} className={`font-sans ${minimised ? 'px-4 py-2' : 'p-4'}`}>
+      {/*
+        When minimised THIS frame is the whole bar — there is no Webflow-authored strip
+        beside it. That was the first shape and it was wrong: this frame pins itself to the
+        bottom of the page with its own background, so a second fixed element wanting the
+        same space would have collided with it. One element cannot fight itself.
+
+        So the bar's title and its close control are rendered here, next to the transport
+        they belong to. The host page builds nothing.
+      */}
+      {item && minimised && (
+        <div className="flex items-center gap-3 pb-1">
+          <button
+            type="button"
+            onClick={() => {
+              setMinimised(false);
+              // Ask the host to re-open its dialog around us. It owns that chrome; we only
+              // own what is inside the frame.
+              post({ type: 'request-expand' });
+            }}
+            className="flex-1 min-w-0 text-left"
+            aria-label={`Open ${item.title}`}
+          >
+            <span className="block text-xs font-medium text-petal truncate">{item.title}</span>
+            <span className="block text-[11px] tint-petal-70">Tap to open</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              // The one deliberate stop. Unmounting the Player detaches the element, which
+              // ends playback — right here, because the member asked for it.
+              setItem(null);
+              setMinimised(false);
+              post({ type: 'player-stopped' });
+            }}
+            aria-label="Stop playback"
+            className="shrink-0 w-9 h-9 rounded-full border tint-border-petal-40 text-petal flex items-center justify-center hover:border-gold hover:text-gold transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="5" y="5" width="14" height="14" rx="2" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/*
         One slot, always rendered, exactly as DetailPanel is in the widget. The Player is
         keyed on the item id so a different recording mounts a fresh transport, and NOT on
         src — a signed R2 url is re-minted on every portal fetch, and keying on it would
         remount the player, and kill the audio, the next time the host refreshed its data.
+
+        It renders in BOTH states, unchanged and unmoved: minimising swaps the chrome above
+        it, never this element, so the audio does not notice.
 
         durationSeconds is null because /api/portal does not return a duration for
         recordings. Player treats that as the normal case and fills it in from the file's

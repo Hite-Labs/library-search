@@ -389,6 +389,10 @@
     frame.contentWindow.postMessage(message, APP_URL);
   }
 
+  // Stop and park. Not wired to any control on this page — the frame renders its own stop
+  // button, because the frame IS the bar and a second element fighting it for the bottom of
+  // the screen was the first version's mistake. Kept for the host to call if it ever needs
+  // to end playback itself.
   function stopPlayback() {
     nowPlaying = null;
     queuedPlay = null;
@@ -396,7 +400,6 @@
       playerFrame.contentWindow.postMessage({ type: 'stop' }, APP_URL);
     }
     setPlayerPlacement('parked');
-    hide(byField('player-bar'));
   }
 
   // Where the frame sits. CSS only — see the comment on playerFrame above. 'modal' fills the
@@ -427,7 +430,7 @@
 
     playInFrame(id, title, url, fileType);
     setPlayerPlacement('modal');
-    hide(byField('player-bar'));
+    tellFrame({ type: 'expand' });
 
     if (modal) {
       modal.style.display = 'flex';
@@ -447,31 +450,33 @@
     document.body.style.overflow = '';
 
     if (nowPlaying) {
+      // The frame becomes the bar: it renders the title and its own stop control, so there
+      // is nothing for this page to show or style alongside it.
       setPlayerPlacement('bar');
-      var bar = byField('player-bar');
-      if (bar) {
-        setField(bar, 'player-bar-title', nowPlaying.title);
-        show(bar);
-      }
+      tellFrame({ type: 'minimise' });
     } else {
       setPlayerPlacement('parked');
-      hide(byField('player-bar'));
     }
   }
 
   // Re-open the dialog for whatever is playing. Without this a member who closed the player
   // could only reach it from the lock screen, which is worse than before rather than better.
+  // Re-open the dialog around whatever is playing. Called when the member taps the title in
+  // the minimised bar, which the FRAME reports — this page has no bar of its own to click.
   function reopenModal() {
     if (!nowPlaying) return;
     var modal = byField('media-modal');
     var modalTitle = byField('modal-title');
     if (modalTitle) modalTitle.textContent = nowPlaying.title;
     setPlayerPlacement('modal');
-    hide(byField('player-bar'));
     if (modal) {
       modal.style.display = 'flex';
       document.body.style.overflow = 'hidden';
     }
+  }
+
+  function tellFrame(message) {
+    if (playerFrame && playerReady) playerFrame.contentWindow.postMessage(message, APP_URL);
   }
 
   function initModal() {
@@ -490,20 +495,6 @@
       if (e.key === 'Escape') closeModal();
     });
 
-    // The mini bar. Tapping it re-opens the dialog; only the stop control stops anything,
-    // and it stopPropagation's so a stop tap is not also a re-open.
-    var bar = byField('player-bar');
-    if (bar) {
-      bar.addEventListener('click', reopenModal);
-      var stopBtn = bar.querySelector('[data-field="player-bar-stop"]');
-      if (stopBtn) {
-        stopBtn.addEventListener('click', function (e) {
-          e.stopPropagation();
-          stopPlayback();
-        });
-      }
-    }
-
     // The frame talking back: it is listening, it changed size, or playback started/stopped.
     window.addEventListener('message', function (e) {
       if (!playerFrame || e.source !== playerFrame.contentWindow) return;
@@ -518,14 +509,19 @@
         }
       } else if (data.type === 'resize' && typeof data.height === 'number') {
         playerFrame.style.height = data.height + 'px';
+      } else if (data.type === 'request-expand') {
+        // Member tapped the title in the minimised bar.
+        reopenModal();
+      } else if (data.type === 'player-stopped') {
+        // Member used the frame's own stop button. Park it and forget what was playing.
+        nowPlaying = null;
+        setPlayerPlacement('parked');
       } else if (data.type === 'player-state') {
-        // Keep the bar's label honest if the frame is playing something this script did not
-        // start — a lock-screen tap, say.
-        if (data.title) {
-          nowPlaying = { id: data.id, title: data.title };
-          var barEl = byField('player-bar');
-          if (barEl) setField(barEl, 'player-bar-title', data.title);
-        }
+        // Stay in step with what the frame believes it is playing, which can change without
+        // this script asking — a lock-screen tap, say. The frame renders its own title, so
+        // there is nothing to update on this page; this only keeps nowPlaying honest, which
+        // is what closeModal reads to decide between minimising and parking.
+        if (data.title) nowPlaying = { id: data.id, title: data.title };
       }
     });
   }
