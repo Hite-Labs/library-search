@@ -347,3 +347,66 @@ flipped to Live mode.
 
 This is why `portal.js` changes in this branch were verified by syntax/ES5 checks and by
 reading, rather than in a live staging portal.
+
+---
+
+## Q-10 — Android lock-screen media tile flashes and disappears
+
+**Waiting on:** device data (Russell, plus any iPhone member) · **Raised:** 2026-09-22 ·
+**Blocks:** nothing — logged so it is not rediagnosed from scratch
+
+### What actually happens
+
+On Android, in the member search widget: start a track, lock the phone, and the lock-screen
+media tile appears for a moment and then vanishes. Confirmed **not** a playback bug, which is
+the important part:
+
+- audio keeps playing through the lock and through unlock
+- the notification **shade** (pull down from the top) shows the player correctly and its
+  controls work
+- it is the lock-screen surface specifically
+
+So this is cosmetic. The sleep-listening use case the player exists for is intact.
+
+### Two fixes already shipped that did NOT resolve it (`a6707e2`)
+
+Both were plausible, both were wrong about this symptom, and both are worth keeping on their
+own merits — do not revert them looking for a cause:
+
+1. **`setPositionState` was called ~4x/second**, on a comment's assumption that the browser
+   throttles the notification itself. It is now ~1x/second, gated on drift rather than a
+   timer. Rapid position updates are a documented cause of notification churn generally.
+2. **The artwork declared `sizes: '512x512'` for a file that is 256x256.** Corrected to the
+   truth. No genuine 512 mark exists in the SYS asset folder (`webclip.png`, the source of
+   `public/sys-mark.png`, is 256).
+
+### What was checked and ruled out
+
+Chrome's MediaSession documentation confirms the architecture is the supported one: session
+calls only affect the OS notification when they come from the **same frame** as the media
+element, and ours do — both live inside the widget iframe. That is also why the shade works.
+Nothing in the docs explains a tile that appears and then withdraws while playback continues.
+
+### What would actually narrow it down
+
+Device observation, not code reading. In rough order of value:
+
+1. **Does it happen on iOS?** If the lock screen is fine on an iPhone, this is Android-side
+   and likely OEM-specific, which changes how much it is worth chasing.
+2. **Every track, or only some?** `content_items.duration_seconds` is null for most rows
+   (see the comment at `Player.tsx:98`), so the player reports a duration it learns from
+   `loadedmetadata` rather than one it knew up front. Android reportedly declines to show a
+   media notification for media under five seconds, and an unknown-then-late duration may be
+   hitting adjacent logic. If the flash correlates with rows that have no stored duration,
+   that is the strongest lead available.
+3. **Always-on/ambient display, or the full lock screen after pressing power?** Different
+   surfaces on Android with different rules; knowing which one narrows it considerably.
+4. Which phone and Android version — Samsung's One UI in particular replaces the media
+   notification UI, and several non-Chrome apps report the same symptom on it.
+
+### Why it is parked rather than pursued
+
+It costs a member nothing today: the audio plays, the shade works, the phone can be locked
+and unlocked. Pausing from the lock screen is a nice-to-have, not a requirement. Gathering
+the observations above is cheap and happens naturally as members use it; guessing a third
+time from the code is not.

@@ -229,11 +229,13 @@ export function Player({
         //
         // 256x256 is the file's REAL size — checked, not assumed. This said 512x512 for a
         // 256x256 image, which is a size the OS trusts when it picks and scales the tile:
-        // Android would select it expecting sharpness and then upscale. That mismatch is a
-        // suspected cause of the lock-screen notification redrawing, so the declaration now
-        // tells the truth. Declaring several sizes against this one file would just be the
-        // same lie three times. A genuine 512x512 mark would be the better fix; none exists
-        // in the SYS asset folder today (webclip.png, the source of this file, is 256).
+        // Android would select it expecting sharpness and then upscale. Declaring several
+        // sizes against this one file would just be the same lie three times. A genuine
+        // 512x512 mark would be better; none exists in the SYS asset folder today
+        // (webclip.png, the source of this file, is 256).
+        //
+        // Tried as a fix for the Android lock-screen tile flashing; it did not resolve it.
+        // See Q-10 in docs/open-questions.md. Correct on its own merits either way.
         artwork: [{ src: '/sys-mark.png', sizes: '256x256', type: 'image/png' }],
       });
     }
@@ -294,10 +296,13 @@ export function Player({
     if (!ms?.setPositionState || duration === null || !Number.isFinite(duration)) return;
 
     // `current` ticks ~4x/sec, and this used to report every single one on the assumption
-    // that the browser throttles the notification itself. That assumption holds up poorly
-    // on Android, where a media notification updated that often is a suspected cause of the
-    // lock-screen tile flashing and vanishing. (The notification SHADE was always fine —
-    // it is the lock screen specifically.) So report about once a second instead.
+    // that the browser throttles the notification itself. That assumption holds up poorly:
+    // a media notification updated that often is a documented cause of churn. So report
+    // about once a second instead.
+    //
+    // This was ALSO tried as a fix for the Android lock-screen tile flashing and did not
+    // resolve it — see Q-10 in docs/open-questions.md before spending time here. Kept
+    // because it is right regardless, not because it cured anything.
     //
     // The gate is DRIFT, not a timer: a seek moves `current` by more than a second in one
     // tick and reports immediately, where a timer would leave the lock screen showing a
