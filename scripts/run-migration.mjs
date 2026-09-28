@@ -44,31 +44,41 @@ const sql = neon(process.env.NEON_DATABASE_URL);
 const source = readFileSync(file, 'utf8');
 
 // What this migration intends to add, so the dry run can report on each piece. Parsed from
-// the file rather than hardcoded, so it stays honest if the file changes.
-const columns = [...source.matchAll(/ADD COLUMN (\w+)/g)].map((m) => m[1]);
-const indexes = [...source.matchAll(/CREATE (?:UNIQUE )?INDEX (\w+)/g)].map((m) => m[1]);
-const constraints = [...source.matchAll(/ADD CONSTRAINT (\w+)/g)].map((m) => m[1]);
-const functions = [...source.matchAll(/CREATE OR REPLACE FUNCTION (\w+)/g)].map((m) => m[1]);
+// the file rather than hardcoded, so it stays honest if the file changes. This used to check
+// content_items only, which reported every other migration's columns as "will add" forever.
+const tables = [...source.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?(\w+)/gi)].map((m) => m[1]);
+const touched = [
+  ...new Set([...tables, ...[...source.matchAll(/ALTER TABLE (?:IF EXISTS )?(\w+)/gi)].map((m) => m[1])]),
+];
+const columns = [...source.matchAll(/ADD COLUMN (?:IF NOT EXISTS )?(\w+)/gi)].map((m) => m[1]);
+const indexes = [...source.matchAll(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+)/gi)].map((m) => m[1]);
+const constraints = [...source.matchAll(/ADD CONSTRAINT (\w+)/gi)].map((m) => m[1]);
+const functions = [...source.matchAll(/CREATE OR REPLACE FUNCTION (\w+)/gi)].map((m) => m[1]);
 
 async function inspect() {
+  const existingTables = await sql`
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = ANY(${touched})
+  `;
+  const haveTable = new Set(existingTables.map((r) => r.table_name));
+
   const existingCols = await sql`
     SELECT column_name FROM information_schema.columns
-    WHERE table_name = 'content_items'
+    WHERE table_schema = 'public' AND table_name = ANY(${touched})
   `;
   const have = new Set(existingCols.map((r) => r.column_name));
 
-  const existingIdx = await sql`
-    SELECT indexname FROM pg_indexes WHERE tablename = 'content_items'
-  `;
+  const existingIdx = await sql`SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`;
   const haveIdx = new Set(existingIdx.map((r) => r.indexname));
 
-  const existingCon = await sql`
-    SELECT conname FROM pg_constraint
-    WHERE conrelid = 'content_items'::regclass
-  `;
+  const existingCon = await sql`SELECT conname FROM pg_constraint`;
   const haveCon = new Set(existingCon.map((r) => r.conname));
 
-  console.log('\n  columns:');
+  console.log('\n  tables:');
+  for (const t of tables) {
+    console.log(`    ${haveTable.has(t) ? 'EXISTS  ' : 'will add'}  ${t}`);
+  }
+  console.log('  columns:');
   for (const c of columns) {
     console.log(`    ${have.has(c) ? 'EXISTS  ' : 'will add'}  ${c}`);
   }
@@ -85,14 +95,18 @@ async function inspect() {
     console.log(`    will replace  ${f}`);
   }
 
-  const alreadyApplied = columns.every((c) => have.has(c)) && columns.length > 0;
+  const pieces = tables.length + columns.length + indexes.length;
+  const alreadyApplied =
+    pieces > 0 &&
+    tables.every((t) => haveTable.has(t)) &&
+    columns.every((c) => have.has(c)) &&
+    indexes.every((i) => haveIdx.has(i));
   return { alreadyApplied };
 }
 
-const [{ count }] = await sql`SELECT count(*)::int AS count FROM content_items`;
 console.log(`\nNeon: ${process.env.NEON_DATABASE_URL.replace(/:\/\/[^:]+:[^@]+@/, '://USER:PASS@')}`);
-console.log(`content_items rows: ${count}`);
 console.log(`\nMigration: ${file}`);
+console.log(`Tables touched: ${touched.join(', ') || '(none parsed)'}`);
 
 const { alreadyApplied } = await inspect();
 

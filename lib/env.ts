@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+// A blank `NAME=` line in .env.local reads as '' — treat that as unset, not as a value that
+// fails validation and stops the whole app booting. Used by the intake vars below, which ship
+// blank in .env.example.
+const blankToUndefined = (v: unknown) => (v === '' ? undefined : v);
+const optionalString = (min = 0) => z.preprocess(blankToUndefined, z.string().min(min).optional());
+
 const envSchema = z.object({
   R2_ACCOUNT_ID: z.string().min(1),
   R2_ACCESS_KEY_ID: z.string().min(1),
@@ -68,6 +74,36 @@ const envSchema = z.object({
   // (/api/portal returns it as client.calendar_url when the enrollment's is blank).
   // Optional → the portal falls back to whatever href Webflow authored on the button.
   NEXT_PUBLIC_BOOKING_URL: z.string().url().optional(),
+
+  // ── Coaching intake automation (see docs/intake-setup.md) ──
+  // Every one of these is optional so the app boots without them. A setup step whose
+  // integration is unset parks as `blocked` with "not configured: X" on /attention rather
+  // than failing silently, and the intake endpoint refuses everything while its secret is unset.
+  //
+  // Shared secret GHL sends as the X-Intake-Secret header on POST /api/intake.
+  INTAKE_SECRET: optionalString(16),
+  // Shared secret the droplet crontab sends as X-Cron-Secret on POST /api/jobs/tick.
+  CRON_SECRET: optionalString(16),
+  // Session count for the individual pack an intake creates. Unset → 6, the schema default.
+  INTAKE_DEFAULT_SESSIONS: z.preprocess(blankToUndefined, z.coerce.number().int().positive().optional()),
+  // Google OAuth (an Internal Workspace app, authorised once as Lindsay). Drive + Docs scopes.
+  GOOGLE_CLIENT_ID: optionalString(),
+  GOOGLE_CLIENT_SECRET: optionalString(),
+  GOOGLE_REFRESH_TOKEN: optionalString(),
+  // The Drive folder each client's folder is created inside.
+  GOOGLE_CLIENTS_FOLDER_ID: optionalString(),
+  // The master "Coaching Notes" Google Doc copied for every client.
+  GOOGLE_NOTES_TEMPLATE_DOC_ID: optionalString(),
+  // Link to a contact in GHL, with {id} where the contact id goes, e.g.
+  // https://app.gohighlevel.com/v2/location/<loc>/contacts/detail/{id}
+  GHL_CONTACT_URL_TEMPLATE: optionalString(),
+  // Telegram bot that renames pool groups, makes invite links, and pings Lindsay.
+  TELEGRAM_BOT_TOKEN: optionalString(),
+  // Lindsay's chat id with that bot — where notifications go.
+  TELEGRAM_LINDSAY_CHAT_ID: optionalString(),
+  // The Claude Code routine that drafts the intro email. Unset → that step is skipped.
+  CLAUDE_ROUTINE_ID: optionalString(),
+  CLAUDE_ROUTINE_TOKEN: optionalString(),
 });
 
 type Env = z.infer<typeof envSchema>;

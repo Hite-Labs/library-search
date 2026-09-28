@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getClientWithEnrollments, deleteClient } from '@/lib/db';
+import { getClientWithEnrollments, getClientSetupLinks, deleteClient } from '@/lib/db';
+import { deleteR2Object } from '@/lib/r2';
 
 export const runtime = 'nodejs';
 
@@ -24,11 +25,15 @@ export async function GET(
   }
 
   const active = data.enrollments.find((e) => e.status === 'active') ?? data.enrollments[0];
+  // Drive folder, notes doc and Telegram link, once intake has set them up (CC-9).
+  // Tolerates the intake migration not being applied yet: the page just shows no links.
+  const setup = await getClientSetupLinks(id).catch(() => null);
 
   return NextResponse.json({
     client: data.client,
     enrollments: data.enrollments,
     activeEnrollmentId: active?.id ?? null,
+    setup,
   });
 }
 
@@ -43,6 +48,10 @@ export async function DELETE(
   const deleted = await deleteClient(id);
   if (!deleted) {
     return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+  }
+  // Their custom audio files: best-effort, the rows are already gone.
+  for (const key of deleted.customAudioKeys) {
+    await deleteR2Object(key).catch((err) => console.error('[clients] R2 cleanup failed:', key, err));
   }
   return NextResponse.json({ ok: true });
 }

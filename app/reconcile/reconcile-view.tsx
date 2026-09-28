@@ -27,6 +27,8 @@ interface ReconcileData {
   checkedMembers: number;
   /** Clients whose missing memberstack_id was repaired during this check. */
   backfilled: number;
+  /** Memberstack members with no client row here, whatever plans they hold (or none). */
+  missingMembers: number;
   issues: Issue[];
   error?: string;
 }
@@ -70,6 +72,8 @@ export function ReconcileView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importNote, setImportNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -118,6 +122,23 @@ export function ReconcileView() {
     }
   }
 
+  // Adds client rows only — no enrollments, no plan changes — so it can't change anyone's
+  // portal access, which is why it's one button rather than a per-person confirm.
+  async function importMembers() {
+    setImporting(true); setError(null); setImportNote(null);
+    try {
+      const res = await fetch('/api/reconcile/import', { method: 'POST' });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error ?? 'Import failed');
+      setImportNote(`Added ${d.imported} ${d.imported === 1 ? 'member' : 'members'} to Clients.`);
+      await load();
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-petal/40">
       <Nav />
@@ -157,6 +178,24 @@ export function ReconcileView() {
                 </>
               )}
             </p>
+
+            {data.missingMembers > 0 && (
+              <div className="bg-white rounded-2xl border border-gold/20 p-6 mb-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-slate">
+                  {data.missingMembers} Memberstack{' '}
+                  {data.missingMembers === 1 ? 'member is' : 'members are'} not in the dashboard
+                  yet — usually people who bought the challenge or membership on the site.
+                  Importing adds them to Clients without changing their access.
+                </p>
+                <button type="button" onClick={importMembers} disabled={importing}
+                  className="btn-spark text-xs px-3 py-1.5 shrink-0 disabled:opacity-50">
+                  {importing ? 'Importing…' : `Import ${data.missingMembers}`}
+                </button>
+              </div>
+            )}
+            {importNote && (
+              <p className="text-sm text-forest mb-4">{importNote}</p>
+            )}
 
             {/* 'no-program' is a standing fact, not a disagreement between the two systems,
                 so it's listed below but must not withhold the all-clear on its own. The

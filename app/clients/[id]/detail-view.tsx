@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Nav } from '@/components/Nav';
 import { PencilIcon } from '@/components/PencilIcon';
 import { CopyLinkButton } from '@/components/CopyLinkButton';
+import { CustomAudioSection } from './custom-audio-section';
 
 interface Enrollment {
   id: string;
@@ -28,6 +29,13 @@ interface DetailData {
   client: Client;
   enrollments: Enrollment[];
   activeEnrollmentId: string | null;
+  /** Set up by intake (CC-4, CC-5); all null for clients who predate it. */
+  setup: SetupLinks;
+}
+interface SetupLinks {
+  drive_folder_id: string | null;
+  notes_doc_id: string | null;
+  telegram_invite_link: string | null;
 }
 
 // GET /api/enrollments/[id]/detail — one program's body.
@@ -289,7 +297,7 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
         <Link href="/clients" className="text-sm text-slate/60 hover:text-slate">← All clients</Link>
 
         {/* Person-level identity — one card, always visible, independent of program. */}
-        <IdentityCard client={data.client} />
+        <IdentityCard client={data.client} setup={data.setup} />
 
         {/* Programs the person is in. The selected tab drives everything below it. */}
         <ProgramTabs
@@ -297,6 +305,10 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
           initialId={data.activeEnrollmentId}
           onChange={load}
         />
+
+        {/* Recordings made for this person alone (CC-13). Person-level, like identity: a
+            buyer usually has no program, so this can't live inside a program tab. */}
+        <CustomAudioSection clientId={clientId} clientEmail={data.client.email} />
 
         <AddProgram clientId={clientId} onCreated={load} />
 
@@ -307,13 +319,40 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
 }
 
 // The person: name, email, portal login link. Bound to the human, not to any program.
-function IdentityCard({ client }: { client: Client }) {
+function IdentityCard({ client, setup }: { client: Client; setup?: SetupLinks }) {
   return (
     <div className="mt-2 mb-4 bg-white rounded-2xl border border-gold/20 p-6">
       <h1 className="text-xl font-serif text-slate">{client.name}</h1>
       <p className="text-sm text-slate/60 mt-0.5 truncate">{client.email}</p>
       {/* Login link (email pre-filled, first access) + portal link (returning members). */}
       <ClientPortalLinks email={client.email} />
+      {setup && <SetupLinksRow setup={setup} />}
+    </div>
+  );
+}
+
+/** The permanent homes intake made for this client: Drive folder, notes doc, Telegram. */
+function SetupLinksRow({ setup }: { setup: SetupLinks }) {
+  const links = [
+    setup.drive_folder_id && {
+      label: 'Drive folder',
+      href: `https://drive.google.com/drive/folders/${setup.drive_folder_id}`,
+    },
+    setup.notes_doc_id && {
+      label: 'Notes doc',
+      href: `https://docs.google.com/document/d/${setup.notes_doc_id}/edit`,
+    },
+    setup.telegram_invite_link && { label: 'Telegram space', href: setup.telegram_invite_link },
+  ].filter(Boolean) as { label: string; href: string }[];
+  if (links.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-3">
+      {links.map((l) => (
+        <a key={l.label} href={l.href} target="_blank" rel="noreferrer"
+          className="text-xs text-plum underline underline-offset-2 hover:text-slate">
+          {l.label}
+        </a>
+      ))}
     </div>
   );
 }

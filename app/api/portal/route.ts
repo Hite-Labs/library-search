@@ -14,6 +14,7 @@ import {
   type Promo,
 } from '@/lib/db';
 import { getPresignedGetUrl } from '@/lib/r2';
+import { listDeliveredCustomAudios } from '@/lib/custom-audios';
 import {
   verifyMemberToken,
   getMemberPlanState,
@@ -80,7 +81,47 @@ function emptyIndividual() {
     sessions: [],
     recordings: [],
     files: [],
+    custom_audios: [] as PortalCustomAudio[],
   };
+}
+
+interface PortalCustomAudio {
+  id: string;
+  title: string;
+  description: string | null;
+  delivered_at: string | null;
+  stream_url: string;
+  file_type: 'audio' | 'video';
+}
+
+/**
+ * Custom audios Lindsay made for this person (CC-14), newest first, each with a fresh signed
+ * URL. Keyed by client, not enrollment — a buyer usually has no coaching pack — so it rides
+ * on every path that has a client, including the no-enrollment one. The key is never sent.
+ */
+async function portalCustomAudios(clientId: string): Promise<PortalCustomAudio[]> {
+  // An optional extra must never take the rest of the portal down with it — neither a
+  // signing hiccup nor a deploy that lands before db/intake.sql has been applied.
+  try {
+    return await buildPortalCustomAudios(clientId);
+  } catch (err) {
+    console.error('[portal] custom audios unavailable:', err);
+    return [];
+  }
+}
+
+async function buildPortalCustomAudios(clientId: string): Promise<PortalCustomAudio[]> {
+  const rows = await listDeliveredCustomAudios(clientId);
+  return Promise.all(
+    rows.map(async (a) => ({
+      id: a.id,
+      title: a.title,
+      description: a.description || null,
+      delivered_at: a.delivered_at,
+      stream_url: await getPresignedGetUrl(a.r2_key as string, PLAYBACK_URL_TTL_SECONDS),
+      file_type: a.media_type,
+    })),
+  );
 }
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
@@ -500,12 +541,13 @@ export async function GET(req: NextRequest) {
   //    Plan state decides what we SEND, not just what the portal script chooses to show.
   //    Hiding a panel in the browser still shipped the data, so anyone reading the network
   //    response saw content they hadn't paid for.
-  const [planState, cohortRaw, data, livePromos, challengeRun] = await Promise.all([
+  const [planState, cohortRaw, data, livePromos, challengeRun, customAudios] = await Promise.all([
     getMemberPlanState(verified.id),
     buildCohortObject(verified.id),
     getClientWithEnrollments(client.id),
     listLivePromos(),
     getActiveChallenge(),
+    portalCustomAudios(client.id),
   ]);
 
   // A Memberstack plan can only REVOKE what the dashboard granted, never grant on its own.
@@ -563,6 +605,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         ...emptyIndividual(),
+        // Bought, not enrolled: a custom audio is theirs whatever programs they hold.
+        custom_audios: customAudios,
         cohort,
         challenge,
         getting_started: gettingStarted,
@@ -632,6 +676,7 @@ export async function GET(req: NextRequest) {
       sessions,
       recordings,
       files,
+      custom_audios: customAudios,
       cohort,
       challenge,
       getting_started: gettingStarted,

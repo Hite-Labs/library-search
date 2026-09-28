@@ -11,7 +11,7 @@ import {
 } from './memberstack';
 
 let _sql: NeonQueryFunction<false, false> | null = null;
-function getSql(): NeonQueryFunction<false, false> {
+export function getSql(): NeonQueryFunction<false, false> {
   if (!_sql) _sql = neon(env.NEON_DATABASE_URL);
   return _sql;
 }
@@ -455,6 +455,9 @@ export interface Client {
   name: string;
   email: string;
   memberstack_id: string | null;
+  /** Set by intake (CC-4). Null for clients created before it, or while setup is pending. */
+  drive_folder_id: string | null;
+  notes_doc_id: string | null;
   created_at: string;
 }
 
@@ -481,9 +484,23 @@ export interface SessionLog {
   created_at: string;
 }
 
+/** Emails are stored trimmed and lowercased so one person is one row, whatever case a form
+ *  or a typist used. Everything that writes or looks up `clients.email` goes through this. */
+export function normaliseEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/**
+ * Case-insensitive on purpose. This was `email = ${email}`, and emails were stored as typed,
+ * so "Jane@x.com" from a GHL form would miss the "jane@x.com" row and create a second client
+ * — which then collided with the first on the UNIQUE memberstack_id when provisioning linked
+ * the same Memberstack member. Reconcile already matched on lower(); now this does too.
+ */
 export async function findClientByEmail(email: string): Promise<Client | null> {
   const sql = getSql();
-  const rows = await sql`SELECT * FROM clients WHERE email = ${email}`;
+  const rows = await sql`
+    SELECT * FROM clients WHERE lower(email) = ${normaliseEmail(email)}
+    ORDER BY created_at LIMIT 1`;
   return (rows[0] as Client) ?? null;
 }
 
@@ -678,6 +695,14 @@ export async function createClientWithEnrollment(data: {
   totalSessions: number;
   programType?: 'individual' | 'cohort' | 'both';
   cohortId?: string;
+  /**
+   * When the person already has an active individual pack, return it instead of adding a
+   * second one. The intake webhook sets this: GHL can fire twice, a failed step is retried,
+   * and someone may re-submit the intake form — none of which should mint another pack. The
+   * manual "New client" form leaves it off, because there adding a pack to an existing client
+   * is exactly what Lindsay is asking for.
+   */
+  reuseActiveEnrollment?: boolean;
 }): Promise<{
   client: Client;
   enrollment: Enrollment | null;
@@ -690,7 +715,8 @@ export async function createClientWithEnrollment(data: {
   plansAttached: PlanKey[];
 }> {
   const sql = getSql();
-  const existing = await findClientByEmail(data.email);
+  const email = normaliseEmail(data.email);
+  const existing = await findClientByEmail(email);
 
   // Our clients table stores a single display name; keep that as "First Last" (trimmed).
   const fullName = [data.firstName, data.lastName].filter(Boolean).join(' ').trim();
@@ -702,7 +728,7 @@ export async function createClientWithEnrollment(data: {
     reusedClient = true;
   } else {
     const rows = await sql`
-      INSERT INTO clients (name, email) VALUES (${fullName}, ${data.email})
+      INSERT INTO clients (name, email) VALUES (${fullName}, ${email})
       RETURNING *`;
     client = rows[0] as Client;
     reusedClient = false;
@@ -712,9 +738,13 @@ export async function createClientWithEnrollment(data: {
   const wantsIndividual = programType === 'individual' || programType === 'both';
   const wantsCohort = programType === 'cohort' || programType === 'both';
 
-  const enrollment = wantsIndividual
-    ? await addEnrollment(client.id, { goal: data.goal, totalSessions: data.totalSessions })
-    : null;
+  const reusable =
+    wantsIndividual && data.reuseActiveEnrollment && reusedClient
+      ? await findActiveIndividualEnrollment(client.id)
+      : null;
+  const enrollment = !wantsIndividual
+    ? null
+    : reusable ?? (await addEnrollment(client.id, { goal: data.goal, totalSessions: data.totalSessions }));
 
   let cohortEnrollment: Enrollment | null = null;
   let alreadyMember = false;
@@ -766,6 +796,16 @@ export async function createClientWithEnrollment(data: {
     memberProvisioned,
     plansAttached: provisioned.plansAttached,
   };
+}
+
+/** The person's newest active individual pack, if any. */
+export async function findActiveIndividualEnrollment(clientId: string): Promise<Enrollment | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM enrollments
+    WHERE client_id = ${clientId} AND program_type = 'individual' AND status = 'active'
+    ORDER BY created_at DESC LIMIT 1`;
+  return (rows[0] as Enrollment) ?? null;
 }
 
 export async function addEnrollment(
@@ -885,6 +925,43 @@ export async function listClientsForPicker(): Promise<Pick<Client, 'id' | 'name'
   return rows as Pick<Client, 'id' | 'name' | 'email'>[];
 }
 
+export async function getClientById(clientId: string): Promise<Client | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM clients WHERE id = ${clientId}`;
+  return (rows[0] as Client) ?? null;
+}
+
+/** Record where intake put this client's Drive folder and notes doc (CC-4). */
+export async function setClientDriveIds(
+  clientId: string,
+  ids: { folderId?: string; docId?: string },
+): Promise<void> {
+  const sql = getSql();
+  await sql`
+    UPDATE clients
+    SET drive_folder_id = COALESCE(${ids.folderId ?? null}, drive_folder_id),
+        notes_doc_id    = COALESCE(${ids.docId ?? null}, notes_doc_id)
+    WHERE id = ${clientId}`;
+}
+
+/** The links the client page shows once intake has set someone up. */
+export async function getClientSetupLinks(clientId: string): Promise<{
+  drive_folder_id: string | null;
+  notes_doc_id: string | null;
+  telegram_invite_link: string | null;
+}> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT c.drive_folder_id, c.notes_doc_id, t.invite_link AS telegram_invite_link
+    FROM clients c LEFT JOIN telegram_spaces t ON t.client_id = c.id
+    WHERE c.id = ${clientId}`;
+  return (rows[0] as {
+    drive_folder_id: string | null;
+    notes_doc_id: string | null;
+    telegram_invite_link: string | null;
+  }) ?? { drive_folder_id: null, notes_doc_id: null, telegram_invite_link: null };
+}
+
 export async function getClientWithEnrollments(
   clientId: string,
 ): Promise<{ client: Client; enrollments: Enrollment[] } | null> {
@@ -911,15 +988,35 @@ export async function getEnrollment(id: string): Promise<Enrollment | null> {
  * dashboard if you want to fully free the email for re-provisioning.
  * Returns false if no such client existed.
  */
-export async function deleteClient(clientId: string): Promise<boolean> {
+/**
+ * Returns the R2 keys of the client's custom audios so the caller can delete the files —
+ * the rows cascade away with the client, and the objects would otherwise be orphaned. Null
+ * when there was no such client.
+ */
+export async function deleteClient(clientId: string): Promise<{ customAudioKeys: string[] } | null> {
   const sql = getSql();
   const existing = await sql`SELECT id FROM clients WHERE id = ${clientId}`;
-  if (!existing[0]) return false;
+  if (!existing[0]) return null;
   // Detach private recordings/content from this client (no cascade on content_items).
   await sql`UPDATE content_items SET client_id = NULL WHERE client_id = ${clientId}`;
-  // Enrollments + session_logs cascade from the client delete.
+
+  // Intake tables (db/intake.sql). Guarded so a delete still works before that migration.
+  let customAudioKeys: string[] = [];
+  try {
+    const keys = await sql`
+      SELECT r2_key FROM custom_audios WHERE client_id = ${clientId} AND r2_key IS NOT NULL`;
+    customAudioKeys = keys.map((k) => k.r2_key as string);
+    // Retire their Telegram group rather than recycle it: the person is still IN it, so
+    // handing it to the next client would put two clients in one private chat. (Left alone,
+    // the FK would null client_id and leave an 'assigned' row pointing at nobody.)
+    await sql`DELETE FROM telegram_spaces WHERE client_id = ${clientId}`;
+  } catch (err) {
+    console.warn('[deleteClient] intake tables not available:', err);
+  }
+
+  // Enrollments + session_logs (and custom_audios) cascade from the client delete.
   await sql`DELETE FROM clients WHERE id = ${clientId}`;
-  return true;
+  return { customAudioKeys };
 }
 
 export async function updateEnrollment(
@@ -1374,7 +1471,8 @@ export async function addCohortMember(data: {
       reusedClient = true;
     } else {
       const rows = await sql`
-        INSERT INTO clients (name, email) VALUES (${data.name}, ${data.email}) RETURNING *`;
+        INSERT INTO clients (name, email)
+        VALUES (${data.name}, ${normaliseEmail(data.email)}) RETURNING *`;
       client = rows[0] as Client;
     }
   }
@@ -1472,6 +1570,51 @@ export async function listClientEntitlements(): Promise<ClientEntitlement[]> {
     GROUP BY c.id, c.name, c.email, c.memberstack_id
     ORDER BY c.name`;
   return rows as ClientEntitlement[];
+}
+
+/**
+ * Give every Memberstack member a client row, so the dashboard lists everyone who can log
+ * into the portal — not just the people Lindsay added by hand (CC-0).
+ *
+ * Without this, anyone who bought the 21-day challenge or the audio membership straight from
+ * the site existed only in Memberstack. The Clients list never showed them, /reconcile only
+ * mentioned the ones holding a coaching plan, and a member holding no plan at all appeared
+ * nowhere. It also mattered for intake: matching a new coaching client against the dashboard
+ * has to find those buyers, or they get a second record.
+ *
+ * Imported rows get no enrollment. That is accurate — challenge and membership have no
+ * enrollment behind them, the Memberstack plan is the entitlement — and the "All" tab already
+ * shows such people with a "No program" badge.
+ *
+ * Skips anyone already here by email (case-insensitive) or by member id, so it is safe to run
+ * any number of times. One statement, so a partial run can't leave half a batch behind.
+ */
+export async function importMissingMembers(
+  members: { id: string; email: string; firstName: string; lastName: string }[],
+): Promise<number> {
+  const rows = members
+    .map((m) => ({
+      id: m.id,
+      email: normaliseEmail(m.email),
+      // clients.name is NOT NULL, and plenty of members never filled in their name.
+      name: [m.firstName, m.lastName].filter(Boolean).join(' ').trim() || m.email.trim(),
+    }))
+    .filter((m) => m.email);
+  if (rows.length === 0) return 0;
+
+  const sql = getSql();
+  const inserted = await sql`
+    INSERT INTO clients (name, email, memberstack_id)
+    SELECT DISTINCT ON (t.email) t.name, t.email, t.id
+    FROM unnest(${rows.map((r) => r.name)}::text[],
+                ${rows.map((r) => r.email)}::text[],
+                ${rows.map((r) => r.id)}::text[]) AS t(name, email, id)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM clients c WHERE lower(c.email) = t.email OR c.memberstack_id = t.id
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING id`;
+  return inserted.length;
 }
 
 /**

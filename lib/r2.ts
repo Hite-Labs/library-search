@@ -24,6 +24,20 @@ export function getR2Key(filename: string, mediaType: 'audio' | 'video' | 'pdf')
   return `${prefix}/${randomUUID()}.${ext}`;
 }
 
+/**
+ * Where a custom audio for one member lives (CC-13). Namespaced per client so the bucket is
+ * browsable by person, and random so the key can't be guessed from another member's — the
+ * portal only ever hands it out as a short-lived signed URL, to its owner.
+ */
+export function getCustomAudioKey(clientId: string, filename: string): string {
+  const ext = (filename.split('.').pop() ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 8);
+  return `clients/${clientId}/custom-audio/${randomUUID()}${ext ? `.${ext}` : ''}`;
+}
+
+export function isCustomAudioKeyFor(clientId: string, r2Key: string): boolean {
+  return r2Key.startsWith(`clients/${clientId}/custom-audio/`) && !r2Key.includes('..');
+}
+
 export function getPublicUrl(r2Key: string): string {
   const base = env.R2_PUBLIC_URL_BASE.replace(/\/$/, '');
   return `${base}/${r2Key}`;

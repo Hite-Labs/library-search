@@ -341,3 +341,38 @@ export const SuggestionCreateSchema = z.object({
 export const SuggestionUpdateSchema = z.object({
   status: z.enum(['new', 'reviewed', 'actioned', 'dismissed']),
 });
+
+// ── Coaching intake (CC-1) ───────────────────────────────────────────────────
+
+// The body GHL's workflow webhook sends. Deliberately NOT strict about email: a payload that
+// arrives without one is still stored (as `invalid`) so Lindsay hears about it, rather than
+// being rejected where nobody would see it. Every field is length-capped — this is a public
+// route, gated only by the shared secret.
+export const IntakeWebhookSchema = z.object({
+  type: z.literal('new_coaching_client'),
+  ghl_contact_id: z.string().trim().min(1).max(100),
+  first_name: z.string().trim().max(100).default(''),
+  last_name: z.string().trim().max(100).default(''),
+  email: z.string().trim().max(200).default(''),
+});
+
+export const TelegramSpaceRegisterSchema = z.object({
+  // Group and supergroup ids are negative integers; accept them as text to keep all digits.
+  chatId: z.string().trim().regex(/^-?\d{5,20}$/, 'A Telegram chat id is a (usually negative) number'),
+});
+
+// ── Custom audio (CC-13) ─────────────────────────────────────────────────────
+
+export const CustomAudioCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(1000).default(''),
+});
+
+export const CustomAudioUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(1000).optional(),
+  // Set after a (re)upload. The old object is deleted once the row points at the new one.
+  r2Key: z.string().min(1).max(500).optional(),
+  mediaType: z.enum(['audio', 'video']).optional(),
+  status: z.enum(['in_progress', 'delivered']).optional(),
+});

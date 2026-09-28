@@ -269,7 +269,10 @@
       'cohort-files-list',
       'cohort-files-empty',
       'cohort-my-files-list',
-      'cohort-my-files-empty'
+      'cohort-my-files-empty',
+      // Custom audios: the whole section stays hidden unless this member has one.
+      'custom-audios-section',
+      'custom-audios-list'
     ].forEach(function (name) {
       hide(byField(name));
     });
@@ -792,6 +795,40 @@
     });
   }
 
+  // ===== Custom audios (CC-14) =====
+  //
+  // Recordings Lindsay made for this one person. The payload carries an id per item (unlike
+  // recordings/files), so the player key uses it — stable across re-renders even though the
+  // signed stream_url is re-minted on every fetch.
+  function fillCustomAudioCard(card, audio) {
+    setField(card, 'custom-audio-title', audio.title);
+    setField(card, 'custom-audio-description', audio.description || '');
+    setField(card, 'custom-audio-date', formatDateShort(audio.delivered_at));
+    setIcon(card, 'custom-audio-icon', audio.file_type);
+
+    var url = audio.stream_url || '';
+    var fileType = audio.file_type || 'audio';
+    var title = audio.title || '';
+
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', function () {
+      openSheet('custom-' + audio.id, title, url, fileType);
+    });
+  }
+
+  // No empty state on purpose: most members will never have one, so an empty section would
+  // only advertise something they can't get here. With none, the section stays hidden.
+  function renderCustomAudios(audios) {
+    var section = byField('custom-audios-section');
+    audios = audios || [];
+    if (!audios.length) {
+      hide(section);
+      return;
+    }
+    renderList(byField('custom-audios-list'), null, audios, fillCustomAudioCard);
+    show(section);
+  }
+
   // ===== Cohort render (new) =====
 
   // A session is locked until its own date passes, UNLESS the cohort's
@@ -1015,6 +1052,7 @@
       data.files,
       fillFileCard
     );
+    renderCustomAudios(data.custom_audios);
 
     if (data.cohort) renderCohort(data.cohort);
 

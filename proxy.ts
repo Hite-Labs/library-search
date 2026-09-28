@@ -42,7 +42,14 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/api/reconcile') ||
     pathname.startsWith('/api/promos') ||
     pathname.startsWith('/api/challenges') ||
-    pathname.startsWith('/api/library');
+    pathname.startsWith('/api/library') ||
+    pathname.startsWith('/api/recordings') ||
+    pathname.startsWith('/api/attention') ||
+    pathname.startsWith('/api/telegram-spaces') ||
+    pathname.startsWith('/api/custom-audios') ||
+    // Only the GET (the dashboard queue) is admin. POST is the public, member-facing write
+    // and must stay reachable without the cookie — see app/api/suggestions/route.ts.
+    (pathname === '/api/suggestions' && request.method === 'GET');
 
   if (!isProtectedApi) return NextResponse.next();
 
@@ -66,6 +73,7 @@ export const config = {
     '/api/cohorts/:path*',
     '/api/cohorts',
     '/api/reconcile',
+    '/api/reconcile/:path*',
     // Both entries are required: '/api/library/:path*' does not match the bare
     // '/api/library' list route, and the matcher gates whether proxy() runs at all.
     '/api/library/:path*',
@@ -77,5 +85,17 @@ export const config = {
     // And again for challenges — same pairing, same reason.
     '/api/challenges/:path*',
     '/api/challenges',
+    // DELETE /api/recordings/[id] was missing from both lists, leaving it publicly callable.
+    '/api/recordings/:path*',
+    // GET only — proxy() checks the method; POST is the public member-facing write.
+    '/api/suggestions',
+    // Intake admin surfaces. /api/intake and /api/jobs/tick are deliberately NOT here: they
+    // are called by GHL and the droplet cron, which have no cookie, and check their own
+    // shared-secret headers instead.
+    '/api/attention/:path*',
+    '/api/attention',
+    '/api/telegram-spaces/:path*',
+    '/api/telegram-spaces',
+    '/api/custom-audios/:path*',
   ],
 };

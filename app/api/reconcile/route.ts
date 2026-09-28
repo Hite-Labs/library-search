@@ -181,6 +181,15 @@ export async function GET() {
     }
   }
 
+  // Every member with no client row, whatever they hold — including no plan at all, which
+  // the orphan list below deliberately skips. This is the count the "Import" button acts on.
+  // Same rule as importMissingMembers: known by email OR by member id, so the number shown
+  // is exactly what pressing Import would add.
+  const knownIds = new Set(clients.map((c) => c.memberstack_id).filter(Boolean));
+  const notInDashboard = members.filter(
+    (m) => m.email && !seenEmails.has(m.email.toLowerCase()) && !knownIds.has(m.id),
+  );
+
   // Members carrying a coaching plan with no matching client record at all.
   for (const m of members) {
     if (seenEmails.has(m.email.toLowerCase())) continue;
@@ -208,6 +217,7 @@ export async function GET() {
     checkedClients: clients.length,
     checkedMembers: members.length,
     backfilled,
+    missingMembers: notInDashboard.length,
     issues,
   });
 }

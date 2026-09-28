@@ -6,6 +6,9 @@ import { usePathname } from 'next/navigation';
 
 const LINKS = [
   // Upload lives inside Library now — it's the same task as browsing what's there.
+  // New intakes and anything stuck in their setup, plus custom audios in progress. First,
+  // because it's the one place something may be waiting on Lindsay.
+  { href: '/attention', label: 'Needs attention' },
   { href: '/library', label: 'Library' },
   { href: '/clients', label: 'Clients' },
   { href: '/cohorts', label: 'Cohorts' },

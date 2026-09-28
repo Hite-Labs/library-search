@@ -84,6 +84,22 @@ repeated card (the list's first child is the template).
 | `ind-file-icon` | icon | `files[].file_type` | media icon, see §I | |
 | _(file card click)_ | — | `files[].public_url` + `.file_type` | opens modal or new tab (pdf) | default type `audio` |
 
+### Custom audios — `custom-audio*` (CC-14)
+
+Recordings Lindsay made for this one member, delivered from their client page in the
+dashboard. Most members have none, so there is **no empty state**: the whole section is hidden
+unless the array has items.
+
+| data-field | kind | source | shows | notes |
+|---|---|---|---|---|
+| `custom-audios-section` | wrapper | `data.custom_audios[]` | the section (heading + list) | hidden when the array is empty |
+| `custom-audios-list` | list | `data.custom_audios[]` | repeater of audio cards | newest first |
+| `custom-audio-title` | item | `custom_audios[].title` | title | |
+| `custom-audio-description` | item | `custom_audios[].description` | description | blank if none |
+| `custom-audio-date` | item | `custom_audios[].delivered_at` | `"Month Day"` | the day it was delivered |
+| `custom-audio-icon` | icon | `custom_audios[].file_type` | media icon, see §I | `audio` or `video` |
+| _(custom audio card click)_ | — | `custom_audios[].stream_url` + `.file_type` | opens the player | signed URL, 12h |
+
 **Repeater mechanics (applies to every `*-list`):** the list's **first child** is used as the
 card template — style/populate it in Webflow; the script clones it per item, strips its `id`, and
 fills the `item` fields. Keep exactly one template child.
@@ -315,6 +331,12 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
     { "title": "string", "description": "string|null",
       "uploaded_at": "2026-06-01T18:22:00Z",  // = content_items.created_at (upload time)
       "public_url": "https://…signed…", "file_type": "video|audio|pdf" }
+  ],
+  "custom_audios": [                // delivered only, newest first; [] when none — also sent
+                                    // to members with no enrollment, [] with no client row
+    { "id": "uuid", "title": "string", "description": "string|null",
+      "delivered_at": "2026-09-28T14:00:00Z",
+      "stream_url": "https://…signed…", "file_type": "audio|video" }
   ],
   "cohort": { /* object below, or null */ },
   "getting_started": { /* object below — ALWAYS present, never null */ },

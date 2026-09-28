@@ -261,6 +261,9 @@ export interface MemberPlanState {
   email: string;
   /** Active connections only — a cancelled/expired plan grants no portal access. */
   plans: PlanFlags;
+  /** From the `first-name` / `last-name` custom fields; empty when never filled in. */
+  firstName: string;
+  lastName: string;
 }
 
 /**
@@ -297,6 +300,12 @@ function activePlanIdsOf(planConnections: unknown): Set<string> {
  * one: Memberstack keeps cancelled connections on the member, and treating those as
  * live access would hide real drift.
  */
+/** The SDK types customFields as `{}`; read one as a trimmed string, '' when absent. */
+function customField(fields: unknown, key: string): string {
+  const value = (fields as Record<string, unknown> | null | undefined)?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> {
   const client = getClient();
   if (!client) return null;
@@ -315,6 +324,8 @@ export async function listMembersWithPlans(): Promise<MemberPlanState[] | null> 
         id: m.id,
         email: m.auth?.email ?? '',
         plans: flagsFromPlanIds(activePlanIdsOf(m.planConnections)),
+        firstName: customField(m.customFields, 'first-name'),
+        lastName: customField(m.customFields, 'last-name'),
       });
     }
 
