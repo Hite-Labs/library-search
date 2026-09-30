@@ -68,7 +68,7 @@ repeated card (the list's first child is the template).
 | `ind-sessions-empty` | empty | — | shown when `sessions[]` empty | |
 | `ind-session-number` | item | `sessions[].session_number` | number (oldest = 1) | inside session card |
 | `ind-session-date` | item | `sessions[].session_date` | `"Year Month Day"` | inside session card |
-| `ind-session-notes` | item | `sessions[].next_actions` | the next-actions text | ⚠️ maps to `next_actions`, NOT internal notes (notes/coach_actions are never sent) |
+| `ind-session-notes` | item | `sessions[].next_action_items` | the client actions, one row per item | the script fills it with `div.portal-action-item` rows (8px padding, light rule between; restyle via that class). Falls back to the plain `next_actions` text. ⚠️ NOT internal notes (notes/coach_actions are never sent) |
 | `ind-recordings-list` | list | `data.recordings[]` | repeater of recording cards | |
 | `ind-recordings-empty` | empty | — | shown when `recordings[]` empty | |
 | `ind-recording-title` | item | `recordings[].title` | title | |
@@ -320,7 +320,9 @@ Self-contained reference for debugging. `public_url`s are fresh signed R2 URLs. 
     "calendar_url": "https://cal.com/…"  // enrollment's own link, else NEXT_PUBLIC_BOOKING_URL, else null
   },
   "sessions": [                     // oldest session_number = 1
-    { "session_date": "2026-06-01", "next_actions": "string", "session_number": 1 }
+    { "session_date": "2026-06-01", "next_actions": "string", // one item per line
+      "next_action_items": ["string"],   // the same, split into items, bullets stripped
+      "session_number": 1 }
   ],
   "recordings": [
     { "title": "string", "session_label": "string|null",

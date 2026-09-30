@@ -15,6 +15,7 @@ import {
 } from '@/lib/db';
 import { getPresignedGetUrl } from '@/lib/r2';
 import { listDeliveredCustomAudios } from '@/lib/custom-audios';
+import { splitActionItems } from '@/lib/action-items';
 import {
   verifyMemberToken,
   getMemberPlanState,
@@ -625,6 +626,9 @@ export async function GET(req: NextRequest) {
   const sessions = logs.map((l, i) => ({
     session_date: l.session_date,
     next_actions: l.next_actions,
+    // The same client actions as separate items, so the portal can show them as rows
+    // instead of one run-on line. next_actions stays for older portal scripts.
+    next_action_items: splitActionItems(l.next_actions),
     session_number: total - i, // DESC array → oldest gets 1
   }));
 

@@ -7,6 +7,7 @@ import { Nav } from '@/components/Nav';
 import { PencilIcon } from '@/components/PencilIcon';
 import { CopyLinkButton } from '@/components/CopyLinkButton';
 import { CustomAudioSection } from './custom-audio-section';
+import { splitActionItems } from '@/lib/action-items';
 
 interface Enrollment {
   id: string;
@@ -702,15 +703,21 @@ function SessionLogger({ enrollmentId, onLogged }: { enrollmentId: string; onLog
       </div>
       <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={8} placeholder="What happened this session…"
         className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-y" />
+      {/* One item per line. A pasted bulleted list is split into items on save, bullets
+          removed (lib/action-items.ts); the portal shows each as its own row. */}
       <div>
         <label className={INPUT_LABEL}>Client actions</label>
-        <input type="text" value={nextActions} onChange={(e) => setNextActions(e.target.value)} placeholder="Tasks & tools the client owns"
-          className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+        <textarea value={nextActions} onChange={(e) => setNextActions(e.target.value)} rows={6}
+          placeholder="Tasks & tools the client owns — one per line, or paste a bulleted list"
+          className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-y" />
+        <p className="text-xs text-slate/50 mt-1">Shown to the client in their portal.</p>
       </div>
       <div>
-        <label className={INPUT_LABEL}>Coach actions</label>
-        <input type="text" value={coachActions} onChange={(e) => setCoachActions(e.target.value)} placeholder="Follow-ups Lindsay owns"
-          className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+        <label className={INPUT_LABEL}>Coach actions (internal only)</label>
+        <textarea value={coachActions} onChange={(e) => setCoachActions(e.target.value)} rows={6}
+          placeholder="Follow-ups Lindsay owns — one per line, or paste a bulleted list"
+          className="w-full border border-slate/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold resize-y" />
+        <p className="text-xs text-slate/50 mt-1">Never shown to the client.</p>
       </div>
       <button type="submit" disabled={saving || !notes.trim()}
         className="btn-spark disabled:opacity-50">
@@ -730,11 +737,27 @@ function SessionHistory({ logs }: { logs: SessionLog[] }) {
           <div key={l.id} className="border border-gold/20 rounded-lg p-3">
             <p className="text-xs text-slate/60 mb-1">{fmtDate(l.session_date)}</p>
             <p className="text-sm text-slate whitespace-pre-wrap">{l.notes}</p>
-            {l.next_actions && <p className="text-xs text-slate/60 mt-2"><span className="font-medium">Client actions:</span> {l.next_actions}</p>}
-            {l.coach_actions && <p className="text-xs text-slate/60 mt-1"><span className="font-medium">Coach actions:</span> {l.coach_actions}</p>}
+            <ActionItems label="Client actions" text={l.next_actions} />
+            <ActionItems label="Coach actions (internal only)" text={l.coach_actions} />
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** A session log's action items as a short list — one row per item, not one run-on line. */
+function ActionItems({ label, text }: { label: string; text: string }) {
+  const items = splitActionItems(text);
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <p className="text-xs font-medium text-slate/60">{label}</p>
+      <ul className="mt-1 space-y-1 list-disc pl-4">
+        {items.map((item, i) => (
+          <li key={i} className="text-xs text-slate/70">{item}</li>
+        ))}
+      </ul>
     </div>
   );
 }

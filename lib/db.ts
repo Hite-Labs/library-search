@@ -9,6 +9,7 @@ import {
   type PlanType,
   type PlanKey,
 } from './memberstack';
+import { normaliseActionItems } from './action-items';
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 export function getSql(): NeonQueryFunction<false, false> {
@@ -1044,9 +1045,12 @@ export async function addSessionLog(
   data: { notes: string; nextActions: string; coachActions: string; sessionDate?: string },
 ): Promise<{ log: SessionLog; enrollment: Enrollment }> {
   const sql = getSql();
+  // Action items are stored one per line with pasted bullets stripped (lib/action-items.ts).
+  const nextActions = normaliseActionItems(data.nextActions);
+  const coachActions = normaliseActionItems(data.coachActions);
   const [logRows, enrollRows] = await sql.transaction([
     sql`INSERT INTO session_logs (enrollment_id, notes, next_actions, coach_actions, session_date)
-        VALUES (${enrollmentId}, ${data.notes}, ${data.nextActions}, ${data.coachActions},
+        VALUES (${enrollmentId}, ${data.notes}, ${nextActions}, ${coachActions},
                 ${data.sessionDate ?? new Date().toISOString()})
         RETURNING *`,
     sql`UPDATE enrollments SET sessions_done = sessions_done + 1

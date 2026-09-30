@@ -743,10 +743,38 @@
     show(listEl);
   }
 
+  /**
+   * Client actions as separate rows with a light rule between them, not one run-on line.
+   * Built here with inline styles so it works on the existing Webflow element unchanged;
+   * `.portal-action-item` lets Webflow restyle the rows later. textContent per item, so
+   * nothing typed in the dashboard is ever parsed as HTML. Falls back to the plain text
+   * when the API predates `next_action_items`.
+   */
+  function fillActionItems(root, name, items, fallbackText) {
+    var el =
+      root.querySelector('[data-field="' + name + '"]') ||
+      root.querySelector('.' + name) ||
+      root.querySelector('#' + name);
+    if (!el) return;
+    if (!items || !items.length) {
+      el.textContent = fallbackText == null ? '' : String(fallbackText);
+      return;
+    }
+    el.textContent = '';
+    for (var i = 0; i < items.length; i++) {
+      var row = document.createElement('div');
+      row.className = 'portal-action-item';
+      row.style.padding = '8px 0';
+      if (i > 0) row.style.borderTop = '1px solid rgba(0, 0, 0, 0.08)';
+      row.textContent = String(items[i]);
+      el.appendChild(row);
+    }
+  }
+
   function fillSessionCard(card, session) {
     setField(card, 'ind-session-number', session.session_number);
     setField(card, 'ind-session-date', formatDate(session.session_date));
-    setField(card, 'ind-session-notes', session.next_actions);
+    fillActionItems(card, 'ind-session-notes', session.next_action_items, session.next_actions);
   }
 
   function fillRecordingCard(card, recording, index) {
