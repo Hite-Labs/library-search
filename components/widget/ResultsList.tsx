@@ -27,7 +27,7 @@ function renderBold(text: string) {
 // they are two fixed Webflow pages, and a round trip to learn URLs that never change would
 // delay the one screen that most needs to be immediate.
 const SUGGEST_URL = 'https://www.showyourspark.com/coaching/sys-audio-suggestion';
-const CUSTOM_URL = 'https://www.showyourspark.com/coaching/sys-custom-hypnosis';
+const CUSTOM_URL = 'https://event.showyourspark.com/custom-audio-bundle';
 
 // The two no-match CTAs, now inline in prose rather than pill buttons.
 //
