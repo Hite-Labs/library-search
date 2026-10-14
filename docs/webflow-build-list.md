@@ -391,13 +391,14 @@ Webflow generated from the class name you typed will work. Removing only one spe
 leave the block hidden by the other while the DOM looked revealed — hard to spot, since the
 element ends up with `style=""` and no obviously matching class.
 
-**On the membership/library page** there are three ids, all safe to mark hidden:
+**On the membership/library page** there are four ids, all safe to mark hidden:
 
 | Id | Who sees it |
 |---|---|
 | `library-search-widget` | **members only** — the library IS the paid product |
 | `library-upsell` | anyone WITHOUT a live audio membership |
 | `library-member-content` | only a live audio-membership holder — the custom audio and anything else members-only |
+| `library-lapsed` | *optional* — a coaching client whose free library access ended in the last N days (Access page setting, default 30). Shown INSTEAD of `library-upsell`. Without it they see `library-upsell` |
 
 **The widget is gated on the membership, not on reaching the page.** The search API is open,
 which is why the widget *can* run without a login — but that is not a reason it should. This
@@ -408,13 +409,14 @@ A non-member gets the upsell and no search. The upsell is therefore a cross-sell
 customers rather than an acquisition surface; cold prospects see the marketing landing page,
 outside this system.
 
-None of the three needs a hidden class in Webflow — the script hides all of them up front and
+None of them needs a hidden class in Webflow — the script hides all of them up front and
 reveals only what the answer allows. A class is still worth adding, since it removes the
 brief moment before the script runs.
 
 `library-upsell` and `library-member-content` are opposites: exactly one of them shows. Put
 whatever members-only content you like inside the second wrapper; adding blocks to it needs
-no code change. A lapsed member sees the upsell again, not the content.
+no code change. A lapsed member sees the upsell again, not the content — or `library-lapsed`,
+if the page has it and they were a coaching client whose included access just ended.
 
 **On the membership/library page**, `library-upsell` is the "what is the membership" block.
 Mark it `is-hidden` and `embed.js` reveals it for anyone who does not hold the audio

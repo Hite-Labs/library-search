@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { addSessionLog, getSessionLogs, getEnrollment } from '@/lib/db';
 import { SessionLogSchema } from '@/lib/schemas';
+import { refreshAfterSession } from '@/lib/library-access';
 
 export const runtime = 'nodejs';
 
@@ -32,6 +33,17 @@ export async function POST(
   }
 
   const { log, enrollment: updated } = await addSessionLog(id, parsed.data);
+
+  // Coming back to coaching brings the library back if it had lapsed. Best-effort: the
+  // session is saved either way, and a failure is logged rather than shown.
+  if (updated.program_type === 'individual') {
+    try {
+      const library = await refreshAfterSession(updated.client_id, log.session_date);
+      if (library.warning) console.error('[sessions] library access:', library.warning);
+    } catch (err) {
+      console.error('[sessions] library access refresh failed:', err);
+    }
+  }
   // Signal the UI to prompt "mark complete?" once the pack's sessions are done (L-08).
   const suggestComplete = updated.sessions_done >= updated.total_sessions && updated.status !== 'complete';
 

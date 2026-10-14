@@ -85,6 +85,9 @@ export type { PlanKey, PlanFlags } from './plan-keys';
 export function planIdsFor(key: PlanKey): string[] {
   const ids = [planIdFor(key)];
   if (key === 'challenge') ids.push(env.MEMBERSTACK_CHALLENGE_INCLUDED_PLAN_ID);
+  // Same trick for the library: a coaching client's free "membership included" plan counts
+  // as the membership everywhere access is read. Written only by lib/library-access.ts.
+  if (key === 'membership') ids.push(env.MEMBERSTACK_MEMBERSHIP_INCLUDED_PLAN_ID);
   return ids.filter((id): id is string => Boolean(id));
 }
 
@@ -431,6 +434,44 @@ export async function setMemberPlan(
   const planId = planIdFor(planKey);
   if (!planId) return false;
 
+  if (attached) await client.members.addFreePlan({ id: memberstackId, data: { planId } });
+  else await client.members.removeFreePlan({ id: memberstackId, data: { planId } });
+  return true;
+}
+
+/**
+ * Does this member actively hold the free "membership included" plan?
+ *
+ * Asked about that one plan id rather than through PlanFlags, because the flags fold it into
+ * `membership` together with the paid plan — and whether to attach it depends on THIS plan,
+ * not on whether they also pay. null = unknown (unconfigured or unreadable); callers must not
+ * read that as "doesn't hold it".
+ */
+export async function holdsIncludedMembership(memberstackId: string): Promise<boolean | null> {
+  const client = getClient();
+  const planId = env.MEMBERSTACK_MEMBERSHIP_INCLUDED_PLAN_ID;
+  if (!client || !planId) return null;
+  try {
+    const res = await client.members.retrieve({ id: memberstackId });
+    return activePlanIdsOf(res?.data?.planConnections).has(planId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Attach or detach the free "membership included" plan. Its own function rather than a
+ * PlanKey, because the `membership` key is the PAID plan — which must stay non-attachable
+ * (isPlanAttachable) so nothing here can ever hand out SYS Society itself. Returns false when
+ * Memberstack or the plan id isn't configured.
+ */
+export async function setIncludedMembershipPlan(
+  memberstackId: string,
+  attached: boolean,
+): Promise<boolean> {
+  const client = getClient();
+  const planId = env.MEMBERSTACK_MEMBERSHIP_INCLUDED_PLAN_ID;
+  if (!client || !planId) return false;
   if (attached) await client.members.addFreePlan({ id: memberstackId, data: { planId } });
   else await client.members.removeFreePlan({ id: memberstackId, data: { planId } });
   return true;

@@ -12,7 +12,9 @@ import {
   type Enrollment,
   type ContentItem,
   type Promo,
+  type Client,
 } from '@/lib/db';
+import { isLibraryLapsed } from '@/lib/library-access';
 import { getPresignedGetUrl } from '@/lib/r2';
 import { listDeliveredCustomAudios } from '@/lib/custom-audios';
 import { splitActionItems } from '@/lib/action-items';
@@ -445,6 +447,27 @@ function planFlagsForClient(planState: PlanFlags | null): Record<string, boolean
 }
 
 /**
+ * Where this member stands with the audio library, for the library page (public/embed.js).
+ *
+ *   member  — holds the membership: paid SYS Society, or a coaching client's free included plan
+ *   lapsed  — a coaching client whose included access ended within the last N days; the page
+ *             shows them a different pitch (#library-lapsed) instead of the normal one
+ *   none    — everyone else
+ *
+ * null when the plan lookup failed, so the page falls back to its own check as it did before.
+ * A lapsed lookup that fails reads as `none`: the normal pitch is never wrong, just less apt.
+ */
+async function libraryAccessFor(
+  planState: PlanFlags | null,
+  client: Client | null,
+): Promise<'member' | 'lapsed' | 'none' | null> {
+  if (!planState) return null;
+  if (planState.membership) return 'member';
+  if (client && (await isLibraryLapsed(client).catch(() => false))) return 'lapsed';
+  return 'none';
+}
+
+/**
  * Can someone still join the active challenge run right now?
  *
  * Sent separately from the challenge object because they serve opposite audiences: that
@@ -530,6 +553,7 @@ export async function GET(req: NextRequest) {
         getting_started: gettingStarted,
         promo_codes: codesOnly,
         plans: planFlagsForClient(codesPlanState),
+        library_access: await libraryAccessFor(codesPlanState, null),
         challenge_joining_open: joiningOpen(runOnly),
       },
       { headers: cors },
@@ -574,6 +598,7 @@ export async function GET(req: NextRequest) {
   }
 
   const cohort = revoked('cohort') ? null : cohortRaw;
+  const libraryAccess = await libraryAccessFor(planState, client);
 
   // Uses planState directly rather than `revoked()`: revoked() answers "should we take
   // access away", which is intentionally conservative, whereas this asks the simpler
@@ -613,6 +638,7 @@ export async function GET(req: NextRequest) {
         getting_started: gettingStarted,
         promo_codes: promoCodes,
         plans: planFlagsForClient(planState),
+        library_access: libraryAccess,
         challenge_joining_open: joiningOpen(challengeRun),
       },
       { headers: cors },
@@ -686,6 +712,7 @@ export async function GET(req: NextRequest) {
       getting_started: gettingStarted,
       promo_codes: promoCodes,
       plans: planFlagsForClient(planState),
+      library_access: libraryAccess,
       challenge_joining_open: joiningOpen(challengeRun),
     },
     { headers: cors },

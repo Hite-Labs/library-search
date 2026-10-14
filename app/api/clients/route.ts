@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listClientsWithEnrollments, createClientWithEnrollment } from '@/lib/db';
 import { CreateClientSchema } from '@/lib/schemas';
+import { grantCoachingLibraryAccess } from '@/lib/library-access';
 
 export const runtime = 'nodejs';
 
@@ -21,6 +22,13 @@ export async function POST(req: NextRequest) {
   }
   try {
     const result = await createClientWithEnrollment(parsed.data);
+    // An individual pack comes with the audio library while they're coached (and N days
+    // after). Cohort-only clients don't get it. Shares the warning line with provisioning.
+    const library = result.enrollment
+      ? await grantCoachingLibraryAccess(result.client)
+      : { granted: false as const, warning: undefined };
+    const provisionWarning =
+      [result.provisionWarning, library.warning].filter(Boolean).join(' ') || undefined;
     return NextResponse.json({
       ok: true,
       client: result.client,
@@ -28,7 +36,7 @@ export async function POST(req: NextRequest) {
       cohortEnrollment: result.cohortEnrollment,
       reusedClient: result.reusedClient,
       alreadyMember: result.alreadyMember,
-      provisionWarning: result.provisionWarning,
+      provisionWarning,
       memberProvisioned: result.memberProvisioned,
       plansAttached: result.plansAttached,
     });

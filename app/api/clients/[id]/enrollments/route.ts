@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { addEnrollment, ensureMemberProvisioned, getClientWithEnrollments } from '@/lib/db';
 import { AddEnrollmentSchema } from '@/lib/schemas';
+import { grantCoachingLibraryAccess } from '@/lib/library-access';
 
 export const runtime = 'nodejs';
 
@@ -45,11 +46,14 @@ export async function POST(
     totalSessions: parsed.data.totalSessions,
     planType: ['individual'],
   });
+  // A new pack restarts their library access (granted today, so the full N days at least).
+  const library = await grantCoachingLibraryAccess(provisioned.client);
 
   return NextResponse.json({
     ok: true,
     enrollment,
-    provisionWarning: provisioned.provisionWarning,
+    provisionWarning:
+      [provisioned.provisionWarning, library.warning].filter(Boolean).join(' ') || undefined,
     plansAttached: provisioned.plansAttached,
     memberProvisioned: provisioned.memberProvisioned,
   });

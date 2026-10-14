@@ -53,6 +53,9 @@
       // it, and a mismatch would silently never match, showing the offer to everyone.
       key: 'membership',
       planId: 'pln_sys-society-6h2m809m5',
+      // The free "membership included" plan a coaching client holds while they're coached
+      // counts as the membership too (lib/library-access.ts, planIdsFor on the server).
+      altPlanIds: ['pln_membership-included-34f09b7'],
       panelId: null,
       tabField: null,
       has: false
@@ -1566,6 +1569,10 @@
         // Resolve every plan from the registry rather than two hardcoded lookups.
         for (i = 0; i < PLANS.length; i++) {
           PLANS[i].has = plans.indexOf(PLANS[i].planId) !== -1;
+          var alts = PLANS[i].altPlanIds || [];
+          for (var ai = 0; ai < alts.length; ai++) {
+            if (plans.indexOf(alts[ai]) !== -1) PLANS[i].has = true;
+          }
         }
 
         // The upsell asks "is any PANEL going to appear?", not "does this member hold

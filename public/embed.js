@@ -108,7 +108,13 @@
   // Lindsay adds to that column later. One id for the whole wrapper, so adding a second
   // block inside it needs no code change.
   var LIBRARY_MEMBER_ID = 'library-member-content';
-  var MEMBERSHIP_PLAN_ID = 'pln_sys-society-6h2m809m5';
+  // A coaching client whose free library access has ended within the last N days sees this
+  // block instead of the normal upsell — a pitch written for someone who has just had the
+  // library. Optional: a page without it shows them the normal upsell.
+  var LIBRARY_LAPSED_ID = 'library-lapsed';
+  // Either plan is the library: the paid SYS Society membership, or the free "membership
+  // included" plan coaching clients hold while they're coached (lib/library-access.ts).
+  var MEMBERSHIP_PLAN_IDS = ['pln_sys-society-6h2m809m5', 'pln_membership-included-34f09b7'];
   // Same endpoint the portal uses. Asked here only for its `plans` flags.
   var PORTAL_API_URL = 'https://dashboard.showyourspark.com/api/portal';
 
@@ -190,7 +196,7 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || !d.plans) return null;
-        return d.plans.membership === true;
+        return { member: d.plans.membership === true, lapsed: d.library_access === 'lapsed' };
       })
       .catch(function () { return null; });
   }
@@ -198,6 +204,7 @@
   function revealLibraryUpsell(member) {
     var upsellEl = document.getElementById(LIBRARY_UPSELL_ID);
     var memberEl = document.getElementById(LIBRARY_MEMBER_ID);
+    var lapsedEl = document.getElementById(LIBRARY_LAPSED_ID);
     if (!upsellEl && !memberEl) {
       // No gated blocks on this page, so there is no membership question being asked here —
       // the widget is embedded somewhere that does its own gating (or none). Reveal it and
@@ -211,6 +218,7 @@
     // member" — and a block authored without the hidden class would otherwise be visible to
     // everyone, which is how it shipped: the upsell carried the class and this one did not.
     rehide(memberEl);
+    rehide(lapsedEl);
     // And the widget, for the same reason: it is the paid product, so "not yet decided"
     // must look like "not a member". The page does not carry a hidden class on it, and
     // relying on it to is what let the library show to non-members in the first place.
@@ -222,7 +230,7 @@
     var holds = false;
     for (var i = 0; i < conns.length; i++) {
       var c = conns[i];
-      if (!c || typeof c === 'string' || c.planId !== MEMBERSHIP_PLAN_ID) continue;
+      if (!c || typeof c === 'string' || MEMBERSHIP_PLAN_IDS.indexOf(c.planId) === -1) continue;
       // Same liveness test as portal.js and the server: `active` disqualifies only when
       // EXPLICITLY false, since this SDK's payload cannot be verified from the repo.
       if (c.active === false) continue;
@@ -239,15 +247,23 @@
     //
     // The server is asked first and wins when it answers; `holds` above is the fallback.
     resolveMembership(member).then(function (serverSays) {
-      var decided = serverSays === null ? holds : serverSays;
+      var decided = serverSays === null ? holds : serverSays.member;
+      // Only the server knows someone is lapsed; the local fallback can't tell.
+      var lapsed = !decided && serverSays !== null && serverSays.lapsed && Boolean(lapsedEl);
       // Explicitly hide the other one rather than merely revealing the right one. Revealing
       // alone cannot correct anything: if a block is already open, leaving it open is a
       // decision too, and the wrong one whenever the answer has changed.
       if (decided) {
         rehide(el);
+        rehide(lapsedEl);
         unhide(memberEl);
+      } else if (lapsed) {
+        rehide(memberEl);
+        rehide(el);
+        unhide(lapsedEl);
       } else {
         rehide(memberEl);
+        rehide(lapsedEl);
         unhide(el);
       }
       // The widget follows the membership, not the page.

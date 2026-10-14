@@ -459,6 +459,9 @@ export interface Client {
   /** Set by intake (CC-4). Null for clients created before it, or while setup is pending. */
   drive_folder_id: string | null;
   notes_doc_id: string | null;
+  /** Coaching library access (db/library-access.sql). Absent before that migration runs. */
+  library_access_granted_at?: string | null;
+  library_access_ended_at?: string | null;
   created_at: string;
 }
 

@@ -298,7 +298,11 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
         <Link href="/clients" className="text-sm text-slate/60 hover:text-slate">← All clients</Link>
 
         {/* Person-level identity — one card, always visible, independent of program. */}
-        <IdentityCard client={data.client} setup={data.setup} />
+        <IdentityCard
+          client={data.client}
+          setup={data.setup}
+          hasIndividual={data.enrollments.some((e) => e.program_type === 'individual')}
+        />
 
         {/* Programs the person is in. The selected tab drives everything below it. */}
         <ProgramTabs
@@ -320,7 +324,15 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
 }
 
 // The person: name, email, portal login link. Bound to the human, not to any program.
-function IdentityCard({ client, setup }: { client: Client; setup?: SetupLinks }) {
+function IdentityCard({
+  client,
+  setup,
+  hasIndividual,
+}: {
+  client: Client;
+  setup?: SetupLinks;
+  hasIndividual: boolean;
+}) {
   return (
     <div className="mt-2 mb-4 bg-white rounded-2xl border border-gold/20 p-6">
       <h1 className="text-xl font-serif text-slate">{client.name}</h1>
@@ -328,8 +340,49 @@ function IdentityCard({ client, setup }: { client: Client; setup?: SetupLinks })
       {/* Login link (email pre-filled, first access) + portal link (returning members). */}
       <ClientPortalLinks email={client.email} />
       {setup && <SetupLinksRow setup={setup} />}
+      {hasIndividual && <LibraryAccessLine client={client} />}
     </div>
   );
+}
+
+interface LibraryAccessInfo {
+  configured: boolean;
+  days: number;
+  status: 'running' | 'ended' | 'never';
+  endedAt: string | null;
+  lastSessionAt: string | null;
+  endsAt: string | null;
+}
+
+/**
+ * When this coaching client's free library access ends (lib/library-access.ts). Refetched
+ * whenever the page reloads its client, so logging a session moves the date straight away.
+ * Says nothing until the feature is set up, or if the lookup fails.
+ */
+function LibraryAccessLine({ client }: { client: Client }) {
+  const [info, setInfo] = useState<LibraryAccessInfo | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/clients/${client.id}/library-access`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setInfo(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [client]);
+
+  if (!info || !info.configured) return null;
+
+  let text: string;
+  if (info.status === 'running' && info.endsAt) {
+    const basis = info.lastSessionAt ? 'after last session' : 'after access was given';
+    text = `Library access until ${fmtDate(info.endsAt)} (${info.days} days ${basis})`;
+  } else if (info.status === 'ended') {
+    text = `Library access ended ${fmtDate(info.endedAt)} — logging a session gives it back`;
+  } else {
+    text = 'No library access yet — give it from the Access page';
+  }
+  return <p className="text-xs text-slate/60 mt-3">{text}</p>;
 }
 
 /** The permanent homes intake made for this client: Drive folder, notes doc, Telegram. */

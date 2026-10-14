@@ -6,6 +6,7 @@ import { Nav } from '@/components/Nav';
 // Type-only: erased at compile time, so this client component never pulls in the
 // memberstack module (or the server env it reads) at runtime.
 import type { PlanKey } from '@/lib/memberstack';
+import { LibraryAccessCard } from './library-access-card';
 
 interface Issue {
   kind: 'missing-plan' | 'extra-plan' | 'not-provisioned' | 'no-program' | 'orphan-member';
@@ -154,6 +155,8 @@ export function ReconcileView() {
           Compares this dashboard against Memberstack. The dashboard is the source of truth —
           anything listed here means the two disagree about what someone can see in the portal.
         </p>
+
+        <LibraryAccessCard />
 
         {error && (
           <div className="bg-white rounded-2xl border border-red-200 p-4 mb-4">

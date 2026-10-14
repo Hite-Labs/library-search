@@ -54,6 +54,11 @@ const envSchema = z.object({
   // SYS Society. Holding EITHER plan is challenge access; see planIdsFor.
   // Unset → only the paid plan grants the challenge, and the bundle silently does nothing.
   MEMBERSTACK_CHALLENGE_INCLUDED_PLAN_ID: z.string().optional(),
+  // Optional: the FREE "membership included" plan id (pln_…). Individual coaching clients get
+  // it while they're being coached and for N days after their last session, which is what
+  // gives them the audio library (see lib/library-access.ts). Holding EITHER this or the paid
+  // membership is library access; see planIdsFor. Unset → coaching clients get no library.
+  MEMBERSTACK_MEMBERSHIP_INCLUDED_PLAN_ID: optionalString(),
 
   UPLOAD_TOOL_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(32),

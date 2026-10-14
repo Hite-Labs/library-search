@@ -1,4 +1,5 @@
 import { createClientWithEnrollment } from '../../db';
+import { grantCoachingLibraryAccess } from '../../library-access';
 import { env } from '../../env';
 import { isMemberstackConfigured, planIdFor } from '../../memberstack';
 import { notConfigured, TransientError } from '../errors';
@@ -40,6 +41,11 @@ export const clientStep: StepHandler = async ({ event }) => {
   // failure to retry; the re-run skips everything that already succeeded.
   if (out.provisionWarning) throw new TransientError(out.provisionWarning);
 
+  // The audio library comes with coaching. Same treatment: a failure is retried. Safe to
+  // repeat — a plan they already hold isn't re-added, and the clock just restarts today.
+  const library = await grantCoachingLibraryAccess(out.client);
+  if (library.warning) throw new TransientError(library.warning);
+
   return {
     clientId: out.client.id,
     memberstackId: out.client.memberstack_id,
@@ -47,5 +53,6 @@ export const clientStep: StepHandler = async ({ event }) => {
     reusedClient: out.reusedClient,
     memberCreated: out.memberProvisioned,
     plansAttached: out.plansAttached,
+    libraryAccess: library.granted,
   };
 };
