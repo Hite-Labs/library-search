@@ -355,7 +355,11 @@ export function Player({
           // our controls never appear.
           playsInline
           preload="metadata"
-          className="w-full max-h-80 rounded-xl bg-black"
+          // The picture itself is the obvious thing to tap — especially for the inline
+          // welcome video, which is on screen before anything has been chosen. Same toggle as
+          // the button; the element's own events still drive the UI (rule 3).
+          onClick={toggle}
+          className="w-full max-h-80 rounded-xl bg-black cursor-pointer"
         />
       ) : (
         // Present but never shown: all transport is ours. Kept in the DOM (rather than

@@ -34,6 +34,14 @@
  * Everything reads and writes through this module. Moving to Neon means changing what is in
  * here plus adding a route; WidgetRoot and Player do not change. Do it when cross-device
  * history or "what are members listening to?" is actually asked for — not before.
+ *
+ * ── The welcome video ───────────────────────────────────────────────────────────────
+ *
+ * The module also remembers one other thing: whether this device has watched the welcome
+ * video (the Getting Started Primary). That video is an introduction, not a track someone
+ * returns to, so playing it is never recorded as a play — it flips this flag instead, and
+ * the flag is what moves it out of its inline spot under the search box. See the
+ * welcome section at the bottom.
  */
 
 import type { Result } from '@/components/widget/types';
@@ -134,4 +142,70 @@ export function recordPlay(key: string, item: Result): Result[] {
     // still correct for the rest of the session; only persistence is lost.
   }
   return next;
+}
+
+/** Remove one item from the stored list and return what is left. Same failure rules as recordPlay. */
+function forgetPlay(key: string, id: string): Result[] {
+  const next = readRecent(key).filter((r) => r.id !== id);
+  if (typeof window === 'undefined') return next;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(next));
+  } catch {
+    // As recordPlay: the returned list is still right for this session.
+  }
+  return next;
+}
+
+// ── Welcome video ────────────────────────────────────────────────────────────────────
+
+/**
+ * Per DEVICE, deliberately not per member like the history above.
+ *
+ * The flag has to be readable on first paint, because it decides whether a large video block
+ * renders under the search box — and the member id is not known until embed.js forwards the
+ * token, a beat after mount. A member-scoped flag would show every returning member the
+ * inline video and then snatch it away. And unlike listening history, "has seen the intro"
+ * is nothing anyone on a shared device needs hidden from them; at worst the next person sees
+ * the welcome as a card rather than inline, which is still one tap away.
+ */
+const WELCOME_KEY = `sys:welcome:v${VERSION}`;
+
+/**
+ * Stores the Primary's ID, not a boolean, so it is "has watched THIS welcome". If Lindsay
+ * promotes a different Primary, every device sees the new one inline again.
+ */
+export function hasWatchedWelcome(welcomeId: string): boolean {
+  return readRaw(WELCOME_KEY) === welcomeId;
+}
+
+export function markWelcomeWatched(welcomeId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(WELCOME_KEY, welcomeId);
+  } catch {
+    // Not persisted: the welcome shows inline again next visit. Harmless.
+  }
+}
+
+/**
+ * The stored history with the welcome video taken out, plus whether it has been watched.
+ *
+ * Before the welcome was treated differently it was recorded like any other play, so
+ * existing histories can contain it. Finding it there is proof it was watched: it is
+ * removed from the list (and from storage, so this happens once) and the flag is set, which
+ * keeps someone who already watched it from suddenly seeing it inline again.
+ *
+ * With no welcomeId (none curated, or the fetch has not landed) the list is returned as-is.
+ */
+export function readHistory(
+  key: string,
+  welcomeId: string | null,
+): { recent: Result[]; welcomeWatched: boolean } {
+  let recent = readRecent(key);
+  if (!welcomeId) return { recent, welcomeWatched: false };
+  if (recent.some((r) => r.id === welcomeId)) {
+    recent = forgetPlay(key, welcomeId);
+    markWelcomeWatched(welcomeId);
+  }
+  return { recent, welcomeWatched: hasWatchedWelcome(welcomeId) };
 }

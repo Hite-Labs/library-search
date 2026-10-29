@@ -1,14 +1,20 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { SearchBox } from './SearchBox';
 import { ResultsList } from './ResultsList';
 import { DetailPanel } from './DetailPanel';
 import { IdleContent } from './IdleContent';
 import { SwitchConfirm, type PendingAction } from './SwitchConfirm';
-import { bucketKey, readRecent, recordPlay } from '@/lib/widget/recently-played';
+import {
+  bucketKey,
+  markWelcomeWatched,
+  readHistory,
+  readRecent,
+  recordPlay,
+} from '@/lib/widget/recently-played';
 import { isTrustedParent } from '@/lib/widget/trusted-origins';
-import type { GettingStarted, Result } from './types';
+import { gettingStartedToResult, type GettingStarted, type Result } from './types';
 
 type State = 'idle' | 'searching' | 'results' | 'error';
 
@@ -66,6 +72,23 @@ export function WidgetRoot() {
   // one is adopted in the postMessage handler above.
   const [recent, setRecent] = useState<Result[]>([]);
   const recentRef = useRef<Result[]>([]);
+
+  // Has this device watched the welcome video (the Getting Started Primary)? Until it has,
+  // the welcome renders inline under the search box rather than as a card to tap into.
+  //
+  // Ref and state for the same reason as `recent`: playing the welcome flips the ref at once
+  // (handlePlayed), but the visible state waits for a teardown or a reload. Flipping it
+  // mid-play would unmount the very video being watched.
+  //
+  // Starts false, which is safe without a seed: the welcome cannot render until
+  // gettingStarted lands, and that fetch resolves this in the same batch.
+  const [welcomeWatched, setWelcomeWatched] = useState(false);
+  const welcomeWatchedRef = useRef(false);
+
+  // Read by handlers registered once at mount, which would otherwise see the values as they
+  // were then — the same problem canShowShelfRef solves below.
+  const welcomeIdRef = useRef<string | null>(null);
+  const memberIdRef = useRef<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -129,9 +152,19 @@ export function WidgetRoot() {
         // would otherwise see the state as it was at mount), which is what stops a token
         // arriving mid-track from re-rendering over a playing <audio> element.
         if (userId) {
-          const mine = readRecent(bucketKey(userId));
-          recentRef.current = mine;
-          if (canShowShelfRef.current) setRecent(mine);
+          memberIdRef.current = userId;
+          const mine = readHistory(bucketKey(userId), welcomeIdRef.current);
+          recentRef.current = mine.recent;
+          if (canShowShelfRef.current) setRecent(mine.recent);
+          // Only ever false → true here, when this member's old history held the welcome.
+          // Gated on playingRef as well: the shelf can be on screen with the inline welcome
+          // playing, and flipping this would unmount it mid-video.
+          if (welcomeIdRef.current) {
+            welcomeWatchedRef.current = mine.welcomeWatched;
+            if (canShowShelfRef.current && !playingRef.current) {
+              setWelcomeWatched(mine.welcomeWatched);
+            }
+          }
         }
       }
     }
@@ -167,7 +200,18 @@ export function WidgetRoot() {
     fetch('/api/getting-started')
       .then((res) => (res.ok ? res.json() : null))
       .then((data: GettingStarted | null) => {
-        if (!cancelled && data) setGettingStarted(data);
+        if (cancelled || !data) return;
+        // Now the welcome's id is known, the history can be cleaned of it and the watched
+        // flag resolved — in the same batch as setGettingStarted, so the welcome never
+        // paints inline for a device that has already watched it.
+        const welcomeId = data.primary?.id ?? null;
+        welcomeIdRef.current = welcomeId;
+        const history = readHistory(bucketKey(memberIdRef.current), welcomeId);
+        recentRef.current = history.recent;
+        welcomeWatchedRef.current = history.welcomeWatched;
+        if (canShowShelfRef.current) setRecent(history.recent);
+        setWelcomeWatched(history.welcomeWatched);
+        setGettingStarted(data);
       })
       .catch(() => {
         // Swallowed: no shelf is a valid state, and search still works without it.
@@ -195,7 +239,14 @@ export function WidgetRoot() {
     // `pendingSelect` is here on the same argument: the switch prompt grows the root the
     // instant a member taps a card mid-playback, and the observer would otherwise report it
     // a frame late — a visible jump on the host page at the worst moment.
-  }, [state, results, selected, gettingStarted, recent, pendingSelect]);
+  }, [state, results, selected, gettingStarted, recent, welcomeWatched, pendingSelect]);
+
+  // The welcome as a Result, for the inline player and for naming it in the switch prompt.
+  // Memoised so the inline DetailPanel gets a stable item rather than a fresh object each render.
+  const welcome = useMemo(
+    () => (gettingStarted?.primary ? gettingStartedToResult(gettingStarted.primary) : null),
+    [gettingStarted],
+  );
 
   async function handleSearch() {
     if (!query.trim()) return;
@@ -246,9 +297,34 @@ export function WidgetRoot() {
    * Nothing is lost by waiting. The recently-played shelf is not on screen at the moment of
    * play — the member is looking at the player. It only has to be correct the next time the
    * idle state renders, which is handleReset below.
+   *
+   * The welcome video is the exception: it is an introduction, not something to return to,
+   * so it never enters the list. Playing it — inline or from its card — marks it watched
+   * instead, under the same ref-now-state-later rule.
    */
   function handlePlayed(item: Result) {
+    if (item.id === welcomeIdRef.current) {
+      markWelcomeWatched(item.id);
+      welcomeWatchedRef.current = true;
+      return;
+    }
     recentRef.current = recordPlay(bucketKey(memberstackUserId), item);
+  }
+
+  /** Shared by both players: the selected one and the inline welcome. */
+  function handlePlayingChange(p: boolean) {
+    playingRef.current = p;
+    // If the thing we were protecting stops on its own — the track ends, or the
+    // member pauses from the lock screen — the open prompt is asking whether to stop
+    // something that already stopped. Drop it: there is nothing left to protect, and
+    // a question about a finished track is just confusing.
+    //
+    // It is dropped rather than auto-answered. Switching for them would move the page
+    // under someone who never said yes, and the card they tapped is still sitting
+    // there to tap again. Safe to setState from a media event here because it only
+    // runs while a prompt is open, which means the member is reading a question
+    // rather than listening to anything.
+    if (!p) setPendingSelect(null);
   }
 
   /**
@@ -278,6 +354,7 @@ export function WidgetRoot() {
     // track that already stopped.
     setPendingSelect(null);
     setRecent(recentRef.current);
+    setWelcomeWatched(welcomeWatchedRef.current);
   }
 
   /**
@@ -318,7 +395,9 @@ export function WidgetRoot() {
     // Without the guard it hands DetailPanel a fresh object for the same id: a pointless
     // render over live audio.
     if (selected && item.id === selected.id) return;
-    if (!selected || !playingRef.current) {
+    // Asks whenever anything is playing, not only the selected player: with nothing selected
+    // the inline welcome video can be, and opening a card hides it.
+    if (!playingRef.current) {
       setSelected(item);
       return;
     }
@@ -342,6 +421,7 @@ export function WidgetRoot() {
     // which would unmount and remount the panel rather than swapping the item in place.
     playingRef.current = false;
     setRecent(recentRef.current);
+    setWelcomeWatched(welcomeWatchedRef.current);
     // The new Player mounts paused, which is deliberate: two taps to start audio is fine,
     // and it keeps us clear of the browser gesture rules that govern programmatic play().
   }
@@ -360,6 +440,7 @@ export function WidgetRoot() {
     // The one moment the shelf becomes visible again, so the one moment it needs to catch
     // up with whatever handlePlayed recorded while the player was open.
     setRecent(recentRef.current);
+    setWelcomeWatched(welcomeWatchedRef.current);
   }
 
   return (
@@ -416,20 +497,7 @@ export function WidgetRoot() {
       <DetailPanel
         item={selected}
         onFirstPlay={() => selected && handlePlayed(selected)}
-        onPlayingChange={(p) => {
-          playingRef.current = p;
-          // If the thing we were protecting stops on its own — the track ends, or the
-          // member pauses from the lock screen — the open prompt is asking whether to stop
-          // something that already stopped. Drop it: there is nothing left to protect, and
-          // a question about a finished track is just confusing.
-          //
-          // It is dropped rather than auto-answered. Switching for them would move the page
-          // under someone who never said yes, and the card they tapped is still sitting
-          // there to tap again. Safe to setState from a media event here because it only
-          // runs while a prompt is open, which means the member is reading a question
-          // rather than listening to anything.
-          if (!p) setPendingSelect(null);
-        }}
+        onPlayingChange={handlePlayingChange}
       />
 
       {/*
@@ -450,7 +518,8 @@ export function WidgetRoot() {
       */}
       <SwitchConfirm
         pending={pendingSelect}
-        current={selected}
+        // With nothing selected, the only thing that can be playing is the inline welcome.
+        current={selected ?? welcome}
         onConfirm={confirmSwitch}
         onCancel={() => setPendingSelect(null)}
       />
@@ -463,6 +532,12 @@ export function WidgetRoot() {
               recent={recent}
               selectedId={selected?.id ?? null}
               onSelect={handleSelect}
+              // Inline only until watched, and hidden while another item is open so two
+              // players never run at once. A tap that would hide it mid-play goes through
+              // handleSelect's prompt first.
+              welcome={!welcomeWatched && !selected ? welcome : null}
+              onWelcomeFirstPlay={() => welcome && handlePlayed(welcome)}
+              onWelcomePlayingChange={handlePlayingChange}
             />
           </div>
         </div>

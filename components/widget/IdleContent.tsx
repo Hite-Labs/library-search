@@ -1,6 +1,7 @@
 'use client';
 
 import { ItemTags } from '@/components/MediaBadge';
+import { DetailPanel } from './DetailPanel';
 import { ResultCard } from './ResultCard';
 import { gettingStartedToResult, type GettingStarted, type Result } from './types';
 
@@ -11,6 +12,14 @@ interface IdleContentProps {
   recent: Result[];
   selectedId: string | null;
   onSelect: (item: Result) => void;
+  /**
+   * The welcome video to show inline, ready to play, or null when it should not be — already
+   * watched, none curated, or another item is open. WidgetRoot decides; this only renders.
+   */
+  welcome: Result | null;
+  onWelcomeFirstPlay: () => void;
+  /** Must land in a ref — see Player's onPlayingChange docs. */
+  onWelcomePlayingChange: (playing: boolean) => void;
 }
 
 /**
@@ -28,11 +37,56 @@ interface IdleContentProps {
  *                     not being introduced.
  *   Begin here      — Lindsay's curated on-ramp, for everyone else.
  *
+ * Above whichever shelf shows, the welcome video sits INLINE until it has been watched —
+ * a player right under the search box, not a card to tap into, because the video is about
+ * that search box. Once watched it drops back to being the Primary card in "Begin here".
+ *
  * Rendering nothing is a legitimate third state: no curated items set, or the fetch failed.
  * The widget then looks exactly as it did before this component existed, which is a working
  * search box — a fetch failure must never cost a member the ability to search.
  */
-export function IdleContent({ gettingStarted, recent, selectedId, onSelect }: IdleContentProps) {
+export function IdleContent({
+  gettingStarted,
+  recent,
+  selectedId,
+  onSelect,
+  welcome,
+  onWelcomeFirstPlay,
+  onWelcomePlayingChange,
+}: IdleContentProps) {
+  const shelf = renderShelf({ gettingStarted, recent, selectedId, onSelect, welcomeInline: !!welcome });
+  if (!welcome && !shelf) return null;
+
+  // The welcome is always the FIRST child, and nothing above it toggles. The shelf below
+  // does change while the video plays (a member token arriving swaps in their history), and
+  // React reconciles by position — so it must only ever be able to move things after it.
+  return (
+    <div className="space-y-6">
+      {welcome && (
+        <WelcomeInline
+          item={welcome}
+          onFirstPlay={onWelcomeFirstPlay}
+          onPlayingChange={onWelcomePlayingChange}
+        />
+      )}
+      {shelf}
+    </div>
+  );
+}
+
+function renderShelf({
+  gettingStarted,
+  recent,
+  selectedId,
+  onSelect,
+  welcomeInline,
+}: {
+  gettingStarted: GettingStarted | null;
+  recent: Result[];
+  selectedId: string | null;
+  onSelect: (item: Result) => void;
+  welcomeInline: boolean;
+}) {
   if (recent.length > 0) {
     return (
       <section className="space-y-3">
@@ -59,7 +113,8 @@ export function IdleContent({ gettingStarted, recent, selectedId, onSelect }: Id
     );
   }
 
-  const primary = gettingStarted?.primary ?? null;
+  // Not repeated as a card while it is already playable just above.
+  const primary = welcomeInline ? null : (gettingStarted?.primary ?? null);
   const secondary = gettingStarted?.secondary ?? [];
   if (!primary && secondary.length === 0) return null;
 
@@ -85,6 +140,30 @@ export function IdleContent({ gettingStarted, recent, selectedId, onSelect }: Id
           })}
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * The welcome video, loaded and ready, for a member who has not watched it yet.
+ *
+ * DetailPanel reused as-is, so this is the same Player — and the same lock-screen and
+ * background-playback rules — as an item opened from a card. It carries its own title
+ * because the page h1 still reads "Audio Membership" here: nothing is selected.
+ */
+function WelcomeInline({
+  item,
+  onFirstPlay,
+  onPlayingChange,
+}: {
+  item: Result;
+  onFirstPlay: () => void;
+  onPlayingChange: (playing: boolean) => void;
+}) {
+  return (
+    <section className="space-y-3">
+      <h2 className="font-serif text-lg text-petal leading-snug">{item.title}</h2>
+      <DetailPanel item={item} onFirstPlay={onFirstPlay} onPlayingChange={onPlayingChange} />
     </section>
   );
 }
