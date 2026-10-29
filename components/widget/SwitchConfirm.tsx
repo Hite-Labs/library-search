@@ -11,7 +11,9 @@ import type { Result } from './types';
  */
 export type PendingAction =
   | { kind: 'switch'; item: Result }
-  | { kind: 'close' };
+  | { kind: 'close' }
+  // Submitting a search while the inline welcome video plays.
+  | { kind: 'search' };
 
 interface SwitchConfirmProps {
   /** What the member just asked for, or null when there is nothing to confirm. */
@@ -69,7 +71,7 @@ export function SwitchConfirm({ pending, current, onConfirm, onCancel }: SwitchC
   // Focus the safe option when the prompt OPENS. Keyed on a stable identity for what is
   // being asked, rather than on `pending` itself, so a parent re-render while the prompt is
   // up cannot yank focus back here from wherever the member has tabbed to.
-  const pendingId = pending ? (pending.kind === 'switch' ? pending.item.id : 'close') : null;
+  const pendingId = pending ? (pending.kind === 'switch' ? pending.item.id : pending.kind) : null;
   useEffect(() => {
     if (pendingId) cancelRef.current?.focus();
   }, [pendingId]);
@@ -119,6 +121,8 @@ export function SwitchConfirm({ pending, current, onConfirm, onCancel }: SwitchC
             <span className="font-medium">{pending.item.title}</span> will open instead, ready to
             play.
           </>
+        ) : pending.kind === 'search' ? (
+          'Searching closes the video, so nothing will be playing.'
         ) : (
           'Going back closes the player, so nothing will be playing.'
         )}
@@ -135,7 +139,7 @@ export function SwitchConfirm({ pending, current, onConfirm, onCancel }: SwitchC
           Keep playing
         </button>
         <button type="button" onClick={onConfirm} className="btn-spark-outline-light text-xs">
-          {pending.kind === 'switch' ? 'Switch' : 'Go back'}
+          {pending.kind === 'switch' ? 'Switch' : pending.kind === 'search' ? 'Search' : 'Go back'}
         </button>
       </div>
     </div>

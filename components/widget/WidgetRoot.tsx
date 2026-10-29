@@ -156,14 +156,17 @@ export function WidgetRoot() {
           const mine = readHistory(bucketKey(userId), welcomeIdRef.current);
           recentRef.current = mine.recent;
           if (canShowShelfRef.current) setRecent(mine.recent);
-          // Only ever false → true here, when this member's old history held the welcome.
-          // Gated on playingRef as well: the shelf can be on screen with the inline welcome
-          // playing, and flipping this would unmount it mid-video.
-          if (welcomeIdRef.current) {
-            welcomeWatchedRef.current = mine.welcomeWatched;
-            if (canShowShelfRef.current && !playingRef.current) {
-              setWelcomeWatched(mine.welcomeWatched);
-            }
+          // Combined, never overwritten: if storage refused handlePlayed's write (Safari
+          // private mode), the stored flag reads false and would undo this session's play.
+          //
+          // The visible state flips here ONLY when the ref was still false, which means the
+          // welcome has not been played this session — so this is the old-history migration,
+          // not a pause. A ref already true came from handlePlayed, and that flip belongs to
+          // the teardown flushes: the inline video may be sitting paused mid-way, and
+          // hiding it now would throw away where they were. playingRef covers the rest.
+          if (welcomeIdRef.current && !welcomeWatchedRef.current && mine.welcomeWatched) {
+            welcomeWatchedRef.current = true;
+            if (canShowShelfRef.current && !playingRef.current) setWelcomeWatched(true);
           }
         }
       }
@@ -208,9 +211,11 @@ export function WidgetRoot() {
         welcomeIdRef.current = welcomeId;
         const history = readHistory(bucketKey(memberIdRef.current), welcomeId);
         recentRef.current = history.recent;
-        welcomeWatchedRef.current = history.welcomeWatched;
+        // Combined for the same reason as the ms-user handler. Safe to set state outright:
+        // the inline welcome cannot be on screen, let alone playing, before this lands.
+        welcomeWatchedRef.current = welcomeWatchedRef.current || history.welcomeWatched;
         if (canShowShelfRef.current) setRecent(history.recent);
-        setWelcomeWatched(history.welcomeWatched);
+        setWelcomeWatched(welcomeWatchedRef.current);
         setGettingStarted(data);
       })
       .catch(() => {
@@ -248,8 +253,23 @@ export function WidgetRoot() {
     [gettingStarted],
   );
 
-  async function handleSearch() {
+  /**
+   * The search box's submit, guarded like the cards.
+   *
+   * The box is hidden while a selected item plays, so the only thing that can be playing
+   * here is the inline welcome — and the welcome is ABOUT the search box, so trying a search
+   * mid-video is the expected move. Leaving idle unmounts the video, so ask first.
+   */
+  function handleSearch() {
     if (!query.trim()) return;
+    if (playingRef.current) {
+      setPendingSelect({ kind: 'search' });
+      return;
+    }
+    void runSearch();
+  }
+
+  async function runSearch() {
     setState('searching');
     setErrorMsg('');
     // Drop the open player: it belongs to the previous set of results, and leaving it
@@ -412,6 +432,11 @@ export function WidgetRoot() {
       closePlayer();
       return;
     }
+    // runSearch tears down through closePlayer itself, which clears the prompt.
+    if (pendingSelect.kind === 'search') {
+      void runSearch();
+      return;
+    }
     setSelected(pendingSelect.item);
     setPendingSelect(null);
     // Switching tears down a Player just as closing one does, so it owes the same two
@@ -535,7 +560,10 @@ export function WidgetRoot() {
               // Inline only until watched, and hidden while another item is open so two
               // players never run at once. A tap that would hide it mid-play goes through
               // handleSelect's prompt first.
-              welcome={!welcomeWatched && !selected ? welcome : null}
+              //
+              // Never inline for a PDF: its "player" is a link, onFirstPlay never fires, so it
+              // would never be marked watched and would sit here for good. It stays a card.
+              welcome={!welcomeWatched && !selected && welcome?.mediaType !== 'pdf' ? welcome : null}
               onWelcomeFirstPlay={() => welcome && handlePlayed(welcome)}
               onWelcomePlayingChange={handlePlayingChange}
             />
